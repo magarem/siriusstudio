@@ -3,12 +3,14 @@ import { resolve, join } from 'node:path';
 import Database from 'better-sqlite3';
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig();
   const body = await readBody(event);
   const { username, password, domain } = body;
 
   // Em vez de '..', use o caminho absoluto que você confirmou no Finder
   // Ajuste esta string para o caminho REAL no seu Mac:
-  const BASE_PATH = '/Users/marceloamagalhaes/desenv/apps/storage';
+  const BASE_PATH = config.storagePath + '/storage';
+  
   const dbPath = join(BASE_PATH, domain, 'data', 'database.sqlite');
 
   console.log('Tentando abrir banco em:', dbPath);
