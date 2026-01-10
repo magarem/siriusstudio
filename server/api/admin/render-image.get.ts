@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
   const APPS_ROOT = resolve(process.cwd(), '..');
   const filePath = join(APPS_ROOT, 'storage', site as string, 'images', file as string);
 
+  console.log('Buscando imagem em:', filePath);
   if (!existsSync(filePath)) {
     throw createError({ statusCode: 404, statusMessage: 'Imagem não encontrada' });
   }

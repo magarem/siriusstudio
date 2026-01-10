@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
 
 // Verifica se a config existe, se não, usa o diretório atual como fallback
   const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
-  
+  console.log('APPS_ROOT definido como:', APPS_ROOT);
   // Sua lógica de join está perfeita
   const targetDir = join(APPS_ROOT, 'storage', site, folder);
 

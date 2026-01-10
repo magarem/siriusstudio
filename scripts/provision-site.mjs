@@ -67,7 +67,8 @@ try {
     [join(STORAGE_DIR, 'images'),     join(SITE_DIR, 'public', 'images')],
     [join(STORAGE_DIR, 'images'),     join(SITE_DIR, 'public', 'images')],
     [join(SIRIUSSTUDIO_DIR, 'app/composables'),     join(SITE_DIR, 'app/composables')],
-    [join(SIRIUSSTUDIO_DIR, 'server'),     join(SITE_DIR, 'server')]
+    [join(SIRIUSSTUDIO_DIR, 'server'),     join(SITE_DIR, 'server')],
+    [join(SIRIUSSTUDIO_DIR, 'app/components/content'),     join(SITE_DIR, 'app/components/content')]
   ];
 
   mappings.forEach(([target, link]) => forceSymlink(target, link));
