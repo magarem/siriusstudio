@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), 'schema.json')
 
-
+console.log('schemaPath:', schemaPath);
   try {
     // 2. Tenta ler o arquivo
     const fileContent = await fs.readFile(schemaPath, 'utf-8')

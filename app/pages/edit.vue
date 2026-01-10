@@ -10,8 +10,8 @@ const route = useRoute();
 const siteContext = useCookie('cms_site_context');
 
 // --- 2. ESTADOS DO SISTEMA ---
-const showSidebar = ref(false); // Sidebar de Arquivos
-const showMetaSidebar = ref(true); // Sidebar de Metadados (Frontmatter)
+const showSidebar = ref(false); // Sidebar de Navegação
+const showMetaSidebar = ref(true); // Sidebar de Metadados
 const currentFile = ref(route.query.file || '');
 const currentFolder = ref(route.query.folder || 'content');
 
@@ -25,12 +25,12 @@ const imageTarget = ref(null);
 // Controle visual (Sanfona dos campos)
 const collapsedFields = ref({});
 
-// --- ESTADOS PARA CRIAÇÃO DE ARQUIVO ---
+// --- ESTADOS PARA MODAIS ---
 const showCreateModal = ref(false);
-const newFileForm = ref({
-  name: '',
-  type: 'default'
-});
+const showFolderModal = ref(false);
+
+const newFileForm = ref({ name: '', type: 'default' });
+const newFolderName = ref('');
 
 // --- 3. FETCH DE DADOS ---
 
@@ -52,12 +52,11 @@ const { data: fileData } = await useAsyncData(
   { watch: [currentFile] }
 );
 
-// Schema da Pasta (Modelos)
+// Schema da Pasta
 const { data: schemaData } = await useFetch('/api/admin/schema', {
   query: { 
     site: siteContext, 
     folder: currentFolder, 
-    // Garante que a API receba algo mesmo sem arquivo selecionado
     filename: computed(() => currentFile.value ? currentFile.value.split('/').pop() : '') 
   },
   watch: [currentFolder, currentFile]
@@ -67,24 +66,20 @@ const { data: schemaData } = await useFetch('/api/admin/schema', {
 const currentModel = computed(() => {
   if (!schemaData.value) return { fields: [] };
   
-  // 1. Pelo Frontmatter
   const fmSchema = form.value.frontmatter?.schema;
   if (fmSchema && schemaData.value.types?.[fmSchema]) {
     return schemaData.value.types[fmSchema];
   }
 
-  // 2. Pelo Mapping do JSON
   const filename = currentFile.value.split('/').pop();
   const mapSchema = schemaData.value.mapping?.[filename];
   if (mapSchema && schemaData.value.types?.[mapSchema]) {
     return schemaData.value.types[mapSchema];
   }
 
-  // 3. Fallback
   return schemaData.value.types?.['default'] || { fields: [] };
 });
 
-// Lista de tipos para o modal de criação
 const availableTypes = computed(() => {
   if (!schemaData.value || !schemaData.value.types) {
     return [{ key: 'default', label: 'Padrão', icon: 'pi-file' }];
@@ -98,17 +93,6 @@ const availableTypes = computed(() => {
 });
 
 // --- 5. WATCHERS E PARSERS ---
-
-// Inicializa os campos como fechados (collapsed)
-watch(currentModel, (newModel) => {
-  if (newModel && newModel.fields) {
-    const initialState = {};
-    newModel.fields.forEach(field => {
-      initialState[field.key] = true;
-    });
-    collapsedFields.value = initialState;
-  }
-}, { immediate: true });
 
 // Parse Markdown <-> Form
 const parseMD = (full) => {
@@ -128,8 +112,56 @@ watch(fileData, (newData) => {
   if (newData?.content) parseMD(newData.content);
 }, { immediate: true });
 
-// --- 6. FUNÇÕES AUXILIARES ---
+// --- WATCHER DE CORREÇÃO E CARREGAMENTO (IMPORTANTE) ---
+// Monitora mudanças no modelo ou nos dados para:
+// 1. Converter listas de strings antigas em objetos para o Repeater
+// 2. Adicionar UUIDs para o VueDraggable funcionar
+// 3. Inicializar o estado dos campos (sanfona)
+watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
+  if (!newModel || !fm || !newModel.fields) return;
 
+  newModel.fields.forEach(field => {
+    // Tratamento para Repeater
+    if (field.type === 'repeater') {
+      const currentData = fm[field.key];
+
+      if (!currentData) return;
+
+      // CASO 1: Lista simples de Strings (Formato antigo/YAML manual)
+      // Ex: ["Item 1", "Item 2"] -> Converte para [{ topico: "Item 1", _uuid: ... }]
+      if (Array.isArray(currentData) && currentData.length > 0 && typeof currentData[0] !== 'object') {
+        const firstSchemaKey = field.schema?.[0]?.key || 'text'; 
+        console.log(`[Sirius] Convertendo lista simples de '${field.key}' para objetos...`);
+        
+        fm[field.key] = currentData.map(str => ({
+          [firstSchemaKey]: str,
+          _uuid: crypto.randomUUID()
+        }));
+      }
+      
+      // CASO 2: Lista de Objetos sem UUID (Carregado do disco)
+      else if (Array.isArray(currentData)) {
+        currentData.forEach(item => {
+          if (typeof item === 'object' && item !== null && !item._uuid) {
+            item._uuid = crypto.randomUUID();
+          }
+        });
+      }
+    }
+  });
+
+  // Inicializa Sanfona (apenas para campos novos)
+  const initialState = { ...collapsedFields.value };
+  newModel.fields.forEach(field => {
+    if (initialState[field.key] === undefined) {
+      initialState[field.key] = true;
+    }
+  });
+  collapsedFields.value = initialState;
+
+}, { immediate: true, deep: true });
+
+// --- 6. FUNÇÕES AUXILIARES ---
 const toggleField = (key) => collapsedFields.value[key] = !collapsedFields.value[key];
 
 const getFieldSummary = (field) => {
@@ -147,15 +179,16 @@ const getImageUrl = (path) => {
   return `/api/admin/render-image?site=${siteContext.value}&file=${encodeURIComponent(cleanPath)}`;
 };
 
-// --- 7. NAVEGAÇÃO E OPERAÇÕES DE ARQUIVO ---
+const removeExtension = (filename) => {
+  return filename.replace(/\.[^/.]+$/, "");
+};
 
+// --- 7. NAVEGAÇÃO ---
 const enterFolder = (f) => currentFolder.value = `${currentFolder.value}/${f}`;
-
 const goBack = () => {
   const parts = currentFolder.value.split('/');
   if (parts.length > 1) { parts.pop(); currentFolder.value = parts.join('/'); }
 };
-
 const selectFile = (f) => {
   currentFile.value = f;
   const newUrl = `?file=${f}&folder=${currentFolder.value}`;
@@ -163,11 +196,16 @@ const selectFile = (f) => {
   showSidebar.value = false;
 };
 
-// --- CRIAR ARQUIVO ---
+// --- AÇÕES: ARQUIVO E PASTA ---
 const openCreateModal = () => {
   newFileForm.value.name = '';
   newFileForm.value.type = 'default';
   showCreateModal.value = true;
+};
+
+const openFolderModal = () => {
+  newFolderName.value = '';
+  showFolderModal.value = true;
 };
 
 const handleCreateFile = async () => {
@@ -188,32 +226,42 @@ const handleCreateFile = async () => {
   try {
     await $fetch('/api/admin/storage', { 
       method: 'POST', 
-      body: { 
-        site: siteContext.value, 
-        folder: currentFolder.value, 
-        file: filename, 
-        content: content 
-      } 
+      body: { site: siteContext.value, folder: currentFolder.value, file: filename, content: content } 
     });
-
     toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Arquivo criado.', life: 3000 });
     showCreateModal.value = false;
     await refreshFiles();
     selectFile(filename);
-
   } catch (err) {
     toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao criar arquivo.', life: 3000 });
   }
 };
 
-// --- 8. LÓGICA DE EDIÇÃO (REPEATER E LISTAS) ---
+const handleCreateFolder = async () => {
+  if (!newFolderName.value.trim()) return;
+  try {
+    await $fetch('/api/admin/storage/mkdir', {
+      method: 'POST',
+      body: { site: siteContext.value, folder: currentFolder.value, name: newFolderName.value }
+    });
+    toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Pasta criada.', life: 3000 });
+    showFolderModal.value = false;
+    await refreshFiles();
+  } catch (err) {
+    toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao criar pasta.', life: 3000 });
+  }
+};
 
+// --- 8. LÓGICA DE EDIÇÃO (REPEATER) ---
 const addRepeaterItem = (fieldKey, itemSchema) => {
   if (!form.value.frontmatter[fieldKey]) form.value.frontmatter[fieldKey] = [];
-  const newItem = {};
+  
+  // Gera ID único
+  const newItem = { _uuid: crypto.randomUUID() };
   itemSchema.forEach(f => newItem[f.key] = '');
+  
   form.value.frontmatter[fieldKey].push(newItem);
-  collapsedFields.value[fieldKey] = false; // Abre automaticamente
+  collapsedFields.value[fieldKey] = false; 
 };
 
 const removeRepeaterItem = (fieldKey, index) => {
@@ -225,12 +273,10 @@ const removeImageFromList = (list, index) => {
 };
 
 // --- 9. GESTÃO DE IMAGENS ---
-
 const openForSingleImage = (targetObj, key) => {
   imageTarget.value = { mode: 'set', obj: targetObj, key: key };
   showImageModal.value = true;
 };
-
 const openForImageList = (targetArray) => {
   if (!Array.isArray(targetArray)) { 
     toast.add({ severity: 'error', summary: 'Erro', detail: 'Campo de lista inválido.', life: 3000 });
@@ -239,12 +285,10 @@ const openForImageList = (targetArray) => {
   imageTarget.value = { mode: 'push', list: targetArray };
   showImageModal.value = true;
 };
-
 const openForMarkdown = () => {
   imageTarget.value = { mode: 'markdown' };
   showImageModal.value = true;
 };
-
 const handleImageSelect = (url) => {
   const target = imageTarget.value;
   if (!target || target.mode === 'markdown') {
@@ -261,12 +305,28 @@ const handleImageSelect = (url) => {
   imageTarget.value = null;
 };
 
-// --- 10. PERSISTÊNCIA ---
+// --- 10. SALVAR (COM LIMPEZA) ---
 const saveFile = async () => {
   if (!currentFile.value) return;
   loadingSave.value = true;
-  const y = yaml.dump(form.value.frontmatter, { indent: 2, lineWidth: -1, noRefs: true });
+
+  // Clona e limpa os _uuid antes de salvar
+  const dataToSave = JSON.parse(JSON.stringify(form.value.frontmatter));
+  for (const key in dataToSave) {
+    if (Array.isArray(dataToSave[key])) {
+      dataToSave[key] = dataToSave[key].map(item => {
+        if (typeof item === 'object' && item !== null && item._uuid) {
+          const { _uuid, ...cleanItem } = item;
+          return cleanItem;
+        }
+        return item;
+      });
+    }
+  }
+
+  const y = yaml.dump(dataToSave, { indent: 2, lineWidth: -1, noRefs: true });
   const finalContent = `---\n${y}---\n\n${form.value.content}`;
+  
   try {
     await $fetch('/api/admin/storage', { 
       method: 'POST', 
@@ -295,32 +355,31 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
         </div>
       </template>
       
-      <div class="flex flex-col gap-2 p-2 mt-4">
-        <Button 
-          v-if="currentFolder.includes('content') || currentFolder === 'pages'" 
-          label="NOVO ARQUIVO" 
-          icon="pi pi-plus" 
-          class="w-full mb-4 bg-[#6f942e] border-none text-black font-black text-xs tracking-widest"
-          @click="openCreateModal"
-        />
+      <div class="flex flex-col h-full w-full">
+        <div class="p-3 border-b border-white/5 bg-[#141b18] shrink-0 z-10">
+          <div class="flex gap-2 mb-4">
+             <Button label="ARQUIVO" icon="pi pi-file-plus" class="flex-1 bg-[#6f942e] border-none text-black font-black text-[10px] tracking-widest" @click="openCreateModal" />
+             <Button label="PASTA" icon="pi pi-folder-plus" class="flex-1 bg-white/10 border-none text-slate-300 hover:bg-white/20 font-black text-[10px] tracking-widest" @click="openFolderModal" />
+          </div>
 
-        <div class="mb-6 bg-black/20 p-2 rounded-sm border border-white/5 flex flex-wrap gap-1">
-          <button v-for="root in ['content', 'pages', 'components', 'data', 'layout']" :key="root"
-                  @click="currentFolder = root"
-                  :class="['text-[9px] px-2 py-1 rounded uppercase font-bold transition-all', currentFolder.startsWith(root) ? 'bg-[#6f942e] text-black' : 'bg-white/5 text-slate-500 hover:text-white']">
-            {{ root }}
-          </button>
+          <div class="bg-black/20 p-2 rounded-sm border border-white/5 flex flex-wrap gap-1">
+            <button v-for="root in ['content', 'pages', 'components', 'data', 'layout']" :key="root"
+                    @click="currentFolder = root"
+                    :class="['text-[9px] px-2 py-1 rounded uppercase font-bold transition-all', currentFolder.startsWith(root) ? 'bg-[#6f942e] text-black' : 'bg-white/5 text-slate-500 hover:text-white']">
+              {{ root }}
+            </button>
+          </div>
         </div>
 
-        <div class="space-y-1">
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
           <div v-if="currentFolder.includes('/')" @click="goBack" class="flex items-center gap-3 p-3 rounded-sm cursor-pointer hover:bg-[#6f942e]/10 text-[#6f942e] border border-dashed border-[#6f942e]/20 mb-2">
             <i class="pi pi-arrow-up text-xs"></i><span class="text-xs font-bold uppercase tracking-widest">.. / Voltar</span>
           </div>
           
           <div v-for="file in files" :key="file.name" @click="file.isDirectory ? enterFolder(file.name) : selectFile(file.name)"
-               :class="['flex items-center gap-3 p-3 rounded-sm cursor-pointer transition-all border border-transparent', currentFile === file.name ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-lg' : 'hover:bg-white/5 text-slate-500']">
-            <i :class="[file.isDirectory ? 'pi pi-folder text-yellow-600' : 'pi pi-file-edit text-indigo-500']"></i>
-            <span class="text-[11px] font-mono truncate">{{ file.name }}</span>
+               :class="['flex items-center gap-3 p-3 rounded-sm cursor-pointer transition-all border border-transparent mb-1', currentFile === file.name ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-lg' : 'hover:bg-white/5 text-slate-300']">
+            <i :class="[file.isDirectory ? 'pi pi-folder text-yellow-600 text-lg' : 'pi pi-file text-indigo-400 text-lg']"></i>
+            <span class="text-sm font-medium truncate">{{ file.isDirectory ? file.name : removeExtension(file.name) }}</span>
           </div>
         </div>
       </div>
@@ -339,8 +398,7 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
             <div v-for="type in availableTypes" :key="type.key" @click="newFileForm.type = type.key"
               :class="['p-3 rounded-sm border cursor-pointer flex items-center gap-3 transition-all', 
                 newFileForm.type === type.key ? 'bg-[#6f942e]/20 border-[#6f942e] text-white' : 'bg-black/20 border-white/5 text-slate-500 hover:bg-white/5'
-              ]"
-            >
+              ]">
               <i :class="['pi', type.icon]" class="text-lg"></i>
               <div class="flex flex-col">
                 <span class="text-xs font-bold uppercase">{{ type.label }}</span>
@@ -354,35 +412,36 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
       </div>
     </Dialog>
 
+    <Dialog v-model:visible="showFolderModal" modal header="NOVA PASTA" :style="{ width: '350px' }" class="bg-[#141b18]">
+      <div class="flex flex-col gap-6 pt-4">
+        <div class="flex flex-col gap-2">
+          <label class="text-[10px] uppercase font-black tracking-widest text-[#6f942e]">Nome da Pasta</label>
+          <InputText v-model="newFolderName" placeholder="Ex: viagens-2024" class="bg-[#0a0f0d] border border-white/10 text-white" />
+        </div>
+        <Button label="CRIAR PASTA" icon="pi pi-check" class="bg-[#6f942e] border-none font-black text-xs tracking-widest w-full py-3" @click="handleCreateFolder" :disabled="!newFolderName" />
+      </div>
+    </Dialog>
+
     <Dialog v-model:visible="showImageModal" modal header="BIBLIOTECA DE MEDIA" :style="{ width: '85vw' }" class="bg-[#141b18]">
       <ImageExplorer @select="handleImageSelect" />
     </Dialog>
 
     <header class="sticky top-0 z-50 w-full bg-[#141b18] border-b border-white/5 h-14 px-4 flex justify-between items-center shadow-md relative overflow-hidden group">
-        
         <div class="absolute -top-10 -left-10 w-32 h-32 bg-[#6f942e]/10 rounded-full blur-3xl pointer-events-none"></div>
-
         <div class="flex items-center gap-4 z-10 h-full">
           <div class="flex items-center gap-2 pr-4 border-r border-white/5 h-8">
             <Button icon="pi pi-bars" text @click="showSidebar = true" class="!w-8 !h-8 !p-0 text-[#6f942e] hover:bg-[#6f942e]/10" v-tooltip.bottom="'Explorer'" />
             <Button :icon="showMetaSidebar ? 'pi pi-sliders-h' : 'pi pi-sliders-v'" text @click="showMetaSidebar = !showMetaSidebar" :class="showMetaSidebar ? 'text-[#6f942e] bg-[#6f942e]/10' : 'text-slate-500 hover:text-white'" class="!w-8 !h-8 !p-0 transition-colors" v-tooltip.bottom="'Metadados'" />
-            
             <div class="flex flex-col select-none pl-2 justify-center">
               <h1 class="text-sm font-black text-white leading-none tracking-tighter flex items-center gap-2">
                 <i class="pi pi-star-fill text-[#6f942e] text-[10px]"></i> SIRIUS STUDIO
               </h1>
             </div>
           </div>
-
           <div v-if="currentFile" class="flex items-center gap-2 select-none text-[14px]">
              <span class="uppercase tracking-widest text-[#6f942e] font-black opacity-60">{{ siteContext }}</span>
-             <!-- <span class="text-slate-600 font-bold">/</span>
-             <span class="uppercase tracking-widest text-[#6f942e] font-black opacity-60">{{ currentFolder }}</span>
-             <span class="text-slate-600 font-bold">/</span>
-             <span class="font-mono text-slate-300 text-xs">{{ currentFile }}</span> -->
           </div>
         </div>
-
         <div class="flex gap-2 z-10">
           <Button label="Salvar" icon="pi pi-save" size="small" :loading="loadingSave" @click="saveFile" :disabled="!currentFile" class="bg-[#6f942e] border-none px-4 py-1 font-bold text-[10px] tracking-widest hover:bg-[#5a7a25]" />
           <Button icon="pi pi-sign-out" severity="danger" text size="small" class="!w-8 !h-8 !p-0" @click="logout" v-tooltip.bottom="'Sair'" />
@@ -390,15 +449,13 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
     </header>
 
     <div class="p-4 md:p-6 max-w-[1700px] mx-auto pb-32">
-      
       <div v-if="currentFile" class="grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-120px)] transition-all duration-300">
         
         <aside v-show="showMetaSidebar" class="lg:col-span-4 overflow-y-auto pr-2 custom-scrollbar space-y-3 pb-20">
-          
           <div v-if="currentModel.fields.length === 0" class="bg-yellow-500/10 p-4 rounded-sm border border-yellow-500/20 text-yellow-500 text-xs">
             <i class="pi pi-exclamation-triangle mr-2"></i> Nenhum modelo detectado. Editando modo raw.
           </div>
-
+          
           <div v-for="field in currentModel.fields" :key="field.key" class="bg-[#141b18] rounded-[0.5vw] border border-white/5 overflow-hidden transition-all duration-300">
             <div @click="toggleField(field.key)" class="p-3 flex items-center justify-between cursor-pointer hover:bg-white/5 select-none" :class="{ 'border-b border-white/5': !collapsedFields[field.key] }">
               <div class="flex items-center gap-3">
@@ -410,11 +467,9 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
               </div>
               <i v-if="field.description && !collapsedFields[field.key]" class="pi pi-info-circle text-[10px] text-slate-600" v-tooltip.top="field.description"></i>
             </div>
-
+            
             <div v-show="!collapsedFields[field.key]" class="p-5 pt-4 bg-[#0a0f0d]/30">
-              
               <input v-if="field.type === 'text'" v-model="form.frontmatter[field.key]" :placeholder="field.placeholder" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:border-[#6f942e] outline-none transition-colors" />
-              
               <textarea v-else-if="field.type === 'textarea'" v-model="form.frontmatter[field.key]" rows="3" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:border-[#6f942e] outline-none transition-colors resize-none"></textarea>
               
               <div v-else-if="field.type === 'image'" class="flex gap-2 items-stretch">
@@ -430,11 +485,10 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
               
               <div v-else-if="field.type === 'image_list'" class="bg-black/20 p-4 rounded-sm border border-white/5 mt-2">
                  <div v-if="!form.frontmatter[field.key]">{{ form.frontmatter[field.key] = [] }}</div>
-                 <draggable v-if="form.frontmatter[field.key]?.length > 0" v-model="form.frontmatter[field.key]" item-key="index" class="grid grid-cols-3 gap-3 mb-3" ghost-class="ghost-image">
+                 <draggable v-if="form.frontmatter[field.key]?.length > 0" v-model="form.frontmatter[field.key]" :item-key="element => element" class="grid grid-cols-3 gap-3 mb-3" ghost-class="ghost-image">
                     <template #item="{ element, index }">
                       <div class="relative group aspect-square bg-black rounded-sm overflow-hidden border border-white/10 cursor-move hover:border-[#6f942e]/50 transition-all">
                          <img :src="getImageUrl(element.replace('/images', ''))" class="w-full h-full object-cover pointer-events-none" />
-                         <div class="absolute top-1 right-1 bg-black/50 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity z-10"><i class="pi pi-arrows-alt text-[8px] text-white"></i></div>
                          <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                             <Button icon="pi pi-trash" rounded text severity="danger" size="small" @click="removeImageFromList(form.frontmatter[field.key], index)" />
                          </div>
@@ -446,7 +500,7 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
               </div>
               
               <div v-else-if="field.type === 'repeater'" class="mt-2">
-                <draggable v-model="form.frontmatter[field.key]" item-key="index" handle=".drag-handle" class="space-y-3">
+                <draggable v-model="form.frontmatter[field.key]" item-key="_uuid" handle=".drag-handle" class="space-y-3">
                   <template #item="{ element, index }">
                     <div class="bg-black/20 p-4 rounded-sm border border-white/5 relative group">
                       <div class="flex justify-between items-center mb-3 border-b border-white/5 pb-2">
@@ -464,7 +518,7 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
                           <div v-else-if="subField.type === 'image'" class="flex gap-2 items-stretch">
                              <div class="relative flex-1"><input v-model="element[subField.key]" class="w-full bg-transparent border-b border-white/10 text-sm py-1 outline-none focus:border-[#6f942e]" /></div>
                              <Button icon="pi pi-search" size="small" text rounded severity="secondary" @click="openForSingleImage(element, subField.key)" />
-                             <div v-if="element[subField.key]" class="w-8 shrink-0 aspect-square bg-black rounded border border-white/20 overflow-hidden relative">
+                             <div v-if="element[subField.key]" class="w-8 shrink-0 aspect-square bg-black rounded-sm border border-white/20 overflow-hidden relative">
                                 <img :src="getImageUrl(element[subField.key])" class="w-full h-full object-cover" />
                              </div>
                           </div>
@@ -482,7 +536,6 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
 
         <main class="bg-[#141b18] rounded-[0.5vw] border border-white/5 flex flex-col overflow-hidden shadow-2xl relative"
               :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'">
-          
           <div class="px-8 py-4 border-b border-white/5 bg-white/5 flex justify-between items-center z-10">
              <div class="flex items-center gap-3">
                 <div class="h-8 w-8 rounded-sm bg-black/40 flex items-center justify-center border border-white/5">
@@ -499,7 +552,6 @@ const logout = () => { siteContext.value = null; navigateTo('/login'); };
              </div>
              <Button label="Inserir Imagem" icon="pi pi-image" text size="small" class="text-[10px]" @click="openForMarkdown()" />
           </div>
-
           <textarea v-model="form.content" class="flex-1 p-7 bg-transparent text-indigo-50 font-mono text-[14px] leading-[1.8] outline-none resize-none custom-scrollbar z-0" spellcheck="false" placeholder="# Escreva seu conteúdo Markdown aqui..."></textarea>
         </main>
       </div>
