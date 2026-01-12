@@ -66,6 +66,7 @@ export default defineEventHandler(async (event) => {
             metadata = {
               title: data.title || item.name.replace('.md', ''),
               // Aqui está o ajuste das imagens que você pediu:
+              topimages: data.topimages || (data.topimage ? [data.topimage] : []),
               images: data.images || (data.image ? [data.image] : []),
               description: data.description || ''
             };

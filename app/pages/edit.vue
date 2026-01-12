@@ -17,12 +17,18 @@ const siteContext = useCookie('cms_site_context');
 // Estados
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
+
+// --- ESTADOS DO MODO RAW ---
+const showRawMode = ref(false); 
+const rawContent = ref(''); 
+
 const currentFile = ref(route.query.file || '');
 const currentFolder = ref(route.query.folder || 'content');
 const loadingSave = ref(false);
+const loadingPublish = ref(false); // <--- NOVO REF
 const form = ref({ frontmatter: {}, content: '' });
 
-// Modais
+// Modais (Mantidos iguais)
 const showCreateModal = ref(false);
 const showFolderModal = ref(false);
 const showImageModal = ref(false);
@@ -36,23 +42,79 @@ const { data: files, refresh: refreshFiles } = await useFetch('/api/admin/storag
   watch: [currentFolder]
 });
 
+
+// --- FUNÇÃO DE PUBLICAR ---
+const handlePublish = async () => {
+  if (!confirm(`Deseja rodar o build para o site "${siteContext.value}"?\nIsso pode levar alguns minutos.`)) return;
+
+  loadingPublish.value = true;
+  
+  try {
+    const res = await $fetch('/api/admin/publish', {
+      method: 'POST',
+      body: { site: siteContext.value }
+    });
+    
+    toast.add({ 
+      severity: 'success', 
+      summary: 'Publicado!', 
+      detail: 'O site foi compilado com sucesso.', 
+      life: 5000 
+    });
+    console.log('Build Logs:', res.logs);
+
+  } catch (error) {
+    console.error(error);
+    toast.add({ 
+      severity: 'error', 
+      summary: 'Erro no Build', 
+      detail: 'Verifique o console para mais detalhes.', 
+      life: 5000 
+    });
+  } finally {
+    loadingPublish.value = false;
+  }
+};
+
+// --- NOVO: COMPUTED PARA ORDENAR (Pastas no topo) ---
+const sortedFiles = computed(() => {
+  if (!files.value) return [];
+  
+  // Cria uma cópia para não mutar o original e ordena
+  return [...files.value].sort((a, b) => {
+    // Critério 1: Pastas primeiro
+    if (a.isDirectory && !b.isDirectory) return -1;
+    if (!a.isDirectory && b.isDirectory) return 1;
+    
+    // Critério 2: Ordem alfabética
+    return a.name.localeCompare(b.name);
+  });
+});
+
+
+
+
+
 const { data: fileData } = await useAsyncData('file-content', 
   () => currentFile.value ? $fetch('/api/admin/storage', { params: { site: siteContext.value, folder: currentFolder.value, file: currentFile.value } }) : null,
   { watch: [currentFile] }
 );
+
+
+
+
 
 const { data: schemaData } = await useFetch('/api/admin/schema', {
   query: { site: siteContext, folder: currentFolder, filename: computed(() => currentFile.value ? currentFile.value.split('/').pop() : '') },
   watch: [currentFolder, currentFile]
 });
 
-// --- COMPUTEDS ---
+// --- COMPUTEDS (Mantidos iguais) ---
 const currentModel = computed(() => {
   if (!schemaData.value) return { fields: [] };
   const fmSchema = form.value.frontmatter?.schema;
   const filename = currentFile.value.split('/').pop();
   const mapSchema = schemaData.value.mapping?.[filename];
-  
   const typeKey = fmSchema || mapSchema || 'default';
   return schemaData.value.types?.[typeKey] || { fields: [] };
 });
@@ -60,67 +122,118 @@ const currentModel = computed(() => {
 const availableTypes = computed(() => {
   if (!schemaData.value?.types) return [{ key: 'default', label: 'Padrão', icon: 'pi-file' }];
   return Object.entries(schemaData.value.types).map(([key, val]) => ({
-    key,
-    label: val.label || key,
-    icon: val.icon || 'pi-file',
-    description: val.description || ''
+    key, label: val.label || key, icon: val.icon || 'pi-file', description: val.description || ''
   }));
 });
 
-// --- WATCHERS (Data Parsing & Repair) ---
-const parseMD = (full) => {
-  try {
-    const parts = full.split('---');
-    if (parts.length >= 3) {
-      form.value.frontmatter = yaml.load(parts[1]) || {};
-      form.value.content = parts.slice(2).join('---').trim();
-    } else {
-      form.value.frontmatter = {};
-      form.value.content = full;
+// --- HELPERS DE LIMPEZA ---
+// Função centralizada para limpar dados antes de gerar o YAML
+const getCleanData = () => {
+  const cleanData = JSON.parse(JSON.stringify(form.value.frontmatter));
+  const modelFields = currentModel.value.fields || [];
+  
+  modelFields.forEach(field => {
+    const data = cleanData[field.key];
+    if (!Array.isArray(data)) return;
+
+    // Limpeza de Simple List e Repeater
+    if (field.type === 'simple_list') {
+       cleanData[field.key] = data.map(item => item.text || ''); 
     }
-  } catch (e) { console.error(e); }
+    if (field.type === 'repeater') {
+       cleanData[field.key] = data.map(item => {
+         const { _uuid, ...rest } = item;
+         return rest;
+       });
+    }
+  });
+  return cleanData;
 };
 
-watch(fileData, (newData) => { if (newData?.content) parseMD(newData.content); }, { immediate: true });
+// --- PARSER ROBUSTO (Substitua o antigo parseMD) ---
+const parseMD = (full) => {
+  if (!full) {
+    form.value.frontmatter = {};
+    form.value.content = '';
+    return;
+  }
 
-// --- WATCHER DE CORREÇÃO (CORRIGIDO FINAL) ---
-// Removemos qualquer referência a 'collapsedFields' aqui.
-// A responsabilidade visual agora é do componente filho (MetaEditor).
+  // Normaliza quebras de linha para evitar erros de Windows/Linux
+  const normalized = full.replace(/\r\n/g, '\n');
+  
+  // Regex: Procura bloco YAML estritamente no início do arquivo
+  // ^---\n       -> Começa com --- e quebra de linha
+  // ([\s\S]*?)   -> Grupo 1: Captura tudo (não guloso)
+  // \n---\n      -> Até encontrar o fechamento --- e quebra
+  // ([\s\S]*)    -> Grupo 2: O resto é conteúdo
+  const fmRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+  const match = normalized.match(fmRegex);
 
-// --- WATCHER INTELIGENTE (Carrega e Converte Dados) ---
-watch(currentModel, (newModel) => {
-  if (!newModel?.fields || !form.value.frontmatter) return;
-  const fm = form.value.frontmatter;
+  try {
+    if (match) {
+      // Arquivo com Frontmatter válido
+      form.value.frontmatter = yaml.load(match[1]) || {};
+      form.value.content = match[2].trim(); // Remove espaços extras no início do conteúdo
+    } else {
+      // Arquivo sem Frontmatter ou mal formatado
+      // Tenta detectar se o usuário tentou fazer um frontmatter mas errou (ex: faltou fechar)
+      if (normalized.trim().startsWith('---')) {
+        console.warn("[Sirius] Possível frontmatter quebrado. Tentando fallback.");
+        // Fallback simples: Se tiver 2 '---', tenta separar, senão assume tudo como texto
+        const parts = normalized.split('---');
+        if (parts.length >= 3 && parts[0].trim() === '') {
+           form.value.frontmatter = yaml.load(parts[1]) || {};
+           form.value.content = parts.slice(2).join('---').trim();
+        } else {
+           // Estrutura inválida, trata tudo como conteúdo para não perder dados
+           form.value.frontmatter = {};
+           form.value.content = normalized;
+        }
+      } else {
+        // Texto puro sem cabeçalho
+        form.value.frontmatter = {};
+        form.value.content = normalized;
+      }
+    }
+  } catch (e) { 
+    console.error("YAML Parse Error:", e);
+    toast.add({ severity: 'error', summary: 'Erro de Sintaxe', detail: 'O YAML do cabeçalho está inválido.' });
+    // Mantém o estado anterior se possível ou define erro
+  }
+};
+
+watch(fileData, (newData) => { 
+  if (newData?.content) {
+    parseMD(newData.content);
+    // Atualiza o rawContent também para garantir sincronia inicial
+    rawContent.value = newData.content;
+  }
+}, { immediate: true });
+
+// Correção Automática (Strings -> Objetos para UI)
+watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
+  if (showRawMode.value) return; // PAUSA a correção se estiver no modo Raw
+  if (!newModel?.fields || !fm) return;
 
   newModel.fields.forEach(field => {
     const data = fm[field.key];
     if (!Array.isArray(data)) return;
 
-    // TRATAMENTO: Simple List (Converte ["Texto"] -> [{text: "Texto", _uuid: ...}])
     if (field.type === 'simple_list') {
-      // Se detectarmos strings simples, convertemos para objetos para a edição fluir
       if (data.length > 0 && typeof data[0] !== 'object') {
         fm[field.key] = data.map(str => ({ text: str, _uuid: crypto.randomUUID() }));
-      }
-      // Se for array vazio ou já for objeto mas sem UUID
-      else {
-        data.forEach(item => {
-           if (typeof item === 'object' && !item._uuid) item._uuid = crypto.randomUUID();
-        });
+      } else {
+        data.forEach(item => { if (typeof item === 'object' && !item._uuid) item._uuid = crypto.randomUUID(); });
       }
     }
 
-    // TRATAMENTO: Repeater (Adiciona UUID se faltar)
     if (field.type === 'repeater') {
       data.forEach(item => { 
         if (item && typeof item === 'object' && !item._uuid) item._uuid = crypto.randomUUID(); 
       });
     }
   });
-}, { immediate: true, deep: true });
-
-
-
+}, { deep: true });
 
 // --- AÇÕES ---
 const navigate = {
@@ -133,10 +246,12 @@ const navigate = {
     currentFile.value = f;
     window.history.pushState({}, '', `?file=${f}&folder=${currentFolder.value}`);
     showSidebar.value = false;
+    showRawMode.value = false; // Reset ao mudar arquivo
   },
   changeRoot: (r) => currentFolder.value = r
 };
 
+// --- CREATE & IMAGES (Mantidos iguais) ---
 const createActions = {
   openFile: () => { newFileForm.value = { name: '', type: 'default' }; showCreateModal.value = true; },
   openFolder: () => { newFolderName.value = ''; showFolderModal.value = true; },
@@ -148,7 +263,7 @@ const createActions = {
     showCreateModal.value = false; await refreshFiles(); navigate.selectFile(name);
   },
   handleFolder: async () => {
-    await $fetch('/api/admin/storage/mkdir', { method: 'POST', body: { site: siteContext.value, folder: currentFolder.value, name: newFolderName.value } });
+    await $fetch('/api/admin/mkdir', { method: 'POST', body: { site: siteContext.value, folder: currentFolder.value, name: newFolderName.value } });
     showFolderModal.value = false; await refreshFiles();
   }
 };
@@ -161,53 +276,77 @@ const imageActions = {
     showImageModal.value = true;
   },
   handleSelect: (url) => {
-    const t = imageTarget.value;
-    if (t.mode === 'markdown') form.value.content += `\n![](${url})`;
-    else if (t.mode === 'set') t.obj[t.key] = url;
-    else if (t.mode === 'push') t.list.push(url);
+    // Se estiver no modo RAW, insere no final do texto (simples)
+    if (showRawMode.value) {
+      rawContent.value += `\n![](${url})`;
+    } else {
+      const t = imageTarget.value;
+      if (t.mode === 'markdown') form.value.content += `\n![](${url})`;
+      else if (t.mode === 'set') t.obj[t.key] = url;
+      else if (t.mode === 'push') t.list.push(url);
+    }
     showImageModal.value = false;
   }
 };
 
-// --- SALVAR INTELIGENTE (Limpa os dados antes de gravar) ---
+const toggleRawMode = () => {
+  if (!showRawMode.value) {
+    // INDO PARA MODO RAW: Gera o texto limpo
+    const cleanData = getCleanData();
+    // lineWidth: -1 evita quebras de linha indesejadas em strings longas
+    const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+    
+    // Reconstrói o arquivo. Se content estiver vazio, não adiciona quebras extras
+    const contentPart = form.value.content ? `\n\n${form.value.content.trim()}` : '';
+    rawContent.value = `---\n${y.trim()}\n---${contentPart}`;
+    
+  } else {
+    // SAINDO DO MODO RAW: Processa o texto de volta para visual
+    parseMD(rawContent.value);
+  }
+  showRawMode.value = !showRawMode.value;
+};
+
+// --- SAVE (Unificado) ---
 const saveFile = async () => {
   if (!currentFile.value) return;
   loadingSave.value = true;
-
-  // Clona os dados para limpar sem afetar a tela
-  const cleanData = JSON.parse(JSON.stringify(form.value.frontmatter));
   
-  // Percorre os campos para limpar a "sujeira" (UUIDs e Wrappers)
-  const modelFields = currentModel.value.fields || [];
-  
-  modelFields.forEach(field => {
-    const data = cleanData[field.key];
-    if (!Array.isArray(data)) return;
+  let finalContent = '';
 
-    // LIMPEZA: Simple List (Volta de [{text: "..."}] para ["..."])
-    if (field.type === 'simple_list') {
-       cleanData[field.key] = data.map(item => item.text || ''); 
-    }
+  if (showRawMode.value) {
+    // MODO RAW: Salva EXATAMENTE o que o usuário digitou no textarea
+    // Não rodamos parseMD aqui para não arriscar mudar a formatação do usuário
+    finalContent = rawContent.value;
     
-    // LIMPEZA: Repeater (Remove apenas o _uuid, mantém as outras chaves)
-    if (field.type === 'repeater') {
-       cleanData[field.key] = data.map(item => {
-         const { _uuid, ...rest } = item;
-         return rest;
-       });
-    }
-  });
+    // Atualiza o visual silenciosamente apenas para manter sincronia se ele sair do raw depois
+    // Mas o que vai pro disco é o rawContent
+    try {
+       const parts = rawContent.value.split('---'); // Check básico de sanidade
+       if(parts.length >= 3) parseMD(rawContent.value);
+    } catch(e) {}
+
+  } else {
+    // MODO VISUAL: Gera o YAML limpo
+    const cleanData = getCleanData();
+    const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+    const contentPart = form.value.content ? `\n\n${form.value.content.trim()}` : '';
+    finalContent = `---\n${y.trim()}\n---${contentPart}`;
+  }
   
   try {
-    const content = `---\n${yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true })}---\n\n${form.value.content}`;
     await $fetch('/api/admin/storage', { 
       method: 'POST', 
-      body: { site: siteContext.value, folder: currentFolder.value, file: currentFile.value, content } 
+      body: { 
+        site: siteContext.value, 
+        folder: currentFolder.value, 
+        file: currentFile.value, 
+        content: finalContent 
+      } 
     });
-    toast.add({ severity: 'success', summary: 'Salvo', detail: 'Alterações salvas.', life: 2000 });
+    toast.add({ severity: 'success', summary: 'Salvo', detail: 'Arquivo atualizado.', life: 2000 });
   } catch (e) { 
     toast.add({ severity: 'error', summary: 'Erro ao salvar' }); 
-    console.error(e);
   } finally { 
     loadingSave.value = false; 
   }
@@ -215,35 +354,24 @@ const saveFile = async () => {
 
 const logout = () => { siteContext.value = null; navigateTo('/login'); };
 
-// --- ATALHOS DE TECLADO (CTRL+S / CMD+S) ---
+// Atalhos
 const handleKeydown = (e) => {
-  // Verifica se CTRL ou CMD (Mac) está pressionado E se a tecla é 's' ou 'S'
   if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
-    e.preventDefault(); // Impede o "Salvar Página" do navegador
-    if (currentFile.value) {
-      saveFile();
-    }
+    e.preventDefault(); 
+    if (currentFile.value) saveFile();
   }
 };
-
-onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown);
-});
-
+onMounted(() => window.addEventListener('keydown', handleKeydown));
+onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
   <div class="min-h-screen bg-[#0a0f0d] text-slate-200 font-sans selection:bg-[#6f942e]/30 flex flex-col">
     <Toast />
 
-    <AdminSidebar 
+  <AdminSidebar 
       v-model:visible="showSidebar"
-      :files="files"
-      :current-folder="currentFolder"
+      :files="sortedFiles"  :current-folder="currentFolder"
       :current-file="currentFile"
       @navigate="navigate.enterFolder"
       @select="navigate.selectFile"
@@ -253,37 +381,59 @@ onUnmounted(() => {
       @create-folder="createActions.openFolder"
     />
 
-    <AdminTopbar 
+   <AdminTopbar 
       :site-context="siteContext"
       :current-folder="currentFolder"
       :current-file="currentFile"
       :loading-save="loadingSave"
+      :loading-publish="loadingPublish" 
       :show-meta-sidebar="showMetaSidebar"
+      :is-raw-mode="showRawMode"
       @toggle-sidebar="showSidebar = true"
       @toggle-meta="showMetaSidebar = !showMetaSidebar"
+      @toggle-raw="toggleRawMode"
       @save="saveFile"
+      @publish="handlePublish" 
       @logout="logout"
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
-      <div v-if="currentFile" class="grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-120px)] transition-all duration-300">
+      <div v-if="currentFile">
         
-        <aside v-show="showMetaSidebar" class="lg:col-span-4 overflow-y-auto pr-2 custom-scrollbar">
-          <AdminMetaEditor 
-            :fields="currentModel.fields"
-            :frontmatter="form.frontmatter"
-            :site-context="siteContext"
-            @open-image="imageActions.open"
-          />
-        </aside>
+        <div v-if="showRawMode" class="h-[calc(100vh-120px)] animate-fade-in">
+           <div class="w-full h-full bg-[#141b18] rounded-[0.5vw] border border-white/5 flex flex-col overflow-hidden shadow-2xl relative">
+              <div class="px-6 py-2 border-b border-white/5 bg-white/5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                <span>Editando Código Fonte (YAML + Markdown)</span>
+                <span class="text-orange-500 flex items-center gap-1"><i class="pi pi-exclamation-triangle"></i> Atenção à indentação</span>
+              </div>
+              <textarea 
+                v-model="rawContent" 
+                class="flex-1 p-6 bg-transparent text-[#a3d95b] font-mono text-[13px] leading-[1.6] outline-none resize-none custom-scrollbar"
+                spellcheck="false"
+              ></textarea>
+           </div>
+        </div>
 
-        <div :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'" class="transition-all duration-300">
-          <AdminMarkdownEditor 
-            v-model:content="form.content"
-            :current-folder="currentFolder"
-            :current-file="currentFile"
-            @open-image="imageActions.open()"
-          />
+        <div v-else class="grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-120px)] transition-all duration-300 animate-fade-in">
+          
+          <aside v-show="showMetaSidebar" class="lg:col-span-4 overflow-y-auto pr-2 custom-scrollbar">
+            <AdminMetaEditor 
+              :fields="currentModel.fields"
+              :frontmatter="form.frontmatter"
+              :site-context="siteContext"
+              @open-image="imageActions.open"
+            />
+          </aside>
+
+          <div :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'" class="transition-all duration-300">
+            <AdminMarkdownEditor 
+              v-model:content="form.content"
+              :current-folder="currentFolder"
+              :current-file="currentFile"
+              @open-image="imageActions.open()"
+            />
+          </div>
+
         </div>
 
       </div>
@@ -331,4 +481,7 @@ onUnmounted(() => {
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(111, 148, 46, 0.2); border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(111, 148, 46, 0.5); }
 .ghost-image { opacity: 0.4; border: 2px dashed #6f942e !important; transform: scale(0.98); }
+
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 </style>

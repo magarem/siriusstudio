@@ -170,6 +170,7 @@ async function saveFile() {
 
     <Dialog v-model:visible="showImageModal" modal header="Sirius Studio | Assets" :style="{ width: '85vw' }" class="bg-[#141b18]">
       <ImageExplorer @select="(url) => insertImageAtCursor(url)" />
+      <ImageExplorer @select="(url) => form.frontmatter.image = url" />
     </Dialog>
 
     <div class="p-4 md:p-6 max-w-[1700px] mx-auto">
