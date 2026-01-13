@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import matter from 'gray-matter'; // Adicione esta importação
+import matter from 'gray-matter'; 
+import yaml from 'js-yaml'; // <--- 1. IMPORTAÇÃO ADICIONADA
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
@@ -17,16 +18,10 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  // const APPS_ROOT = resolve('/Users/marceloamagalhaes/desenv/apps');
-  // const APPS_ROOT = resolve(config.storagePath)
-  // const targetDir = join(APPS_ROOT, 'storage', site, folder);
-
-// Verifica se a config existe, se não, usa o diretório atual como fallback
   const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
   console.log('APPS_ROOT definido como:', APPS_ROOT);
-  // Sua lógica de join está perfeita
+  
   const targetDir = join(APPS_ROOT, 'storage', site, folder);
-
 
   if (!existsSync(targetDir)) {
     return [];
@@ -45,27 +40,26 @@ export default defineEventHandler(async (event) => {
       };
     }
 
-    // CASO B: Listagem de Diretório (O que o List.vue usa)
-    const items = readdirSync(targetDir, { withFileTypes: true });
-    
-    return items
-      .filter(item => !item.name.startsWith('.') && item.name !== 'index.md')
+    // CASO B: Listagem de Diretório COM ORDENAÇÃO
+    // 1. Ler os itens brutos do diretório
+    const rawItems = readdirSync(targetDir, { withFileTypes: true });
+
+    // 2. Processar metadados (Frontmatter) de cada item
+    let processedFiles = rawItems
+      .filter(item => !item.name.startsWith('.') && item.name !== 'index.md') // Filtros iniciais
       .map(item => {
         const isDirectory = item.isDirectory();
         let metadata = {};
 
-        // Se for um arquivo Markdown, abrimos para ler as imagens do frontmatter
+        // Se for Markdown, extrai dados do frontmatter
         if (!isDirectory && item.name.endsWith('.md')) {
           try {
             const filePath = join(targetDir, item.name);
             const fileRaw = readFileSync(filePath, 'utf-8');
-            
-            // O gray-matter extrai o title, imagens, etc.
             const { data } = matter(fileRaw);
             
             metadata = {
               title: data.title || item.name.replace('.md', ''),
-              // Aqui está o ajuste das imagens que você pediu:
               topimages: data.topimages || (data.topimage ? [data.topimage] : []),
               images: data.images || (data.image ? [data.image] : []),
               description: data.description || ''
@@ -78,9 +72,49 @@ export default defineEventHandler(async (event) => {
         return {
           name: item.name,
           isDirectory,
-          data: metadata // O componente List.vue agora terá acesso a file.data.images
+          data: metadata
         };
       });
+
+    // 3. Ler o arquivo _order.yml para descobrir a ordem manual
+    const orderFilePath = join(targetDir, '_order.yml');
+    let orderMap = new Map();
+
+    if (existsSync(orderFilePath)) {
+      try {
+        const fileContent = readFileSync(orderFilePath, 'utf-8');
+        const loaded = yaml.load(fileContent);
+        
+        if (Array.isArray(loaded)) {
+          // Cria um mapa { 'nome_do_arquivo': index } para acesso rápido
+          orderMap = new Map(loaded.map((name, index) => [name, index]));
+        }
+      } catch (e) {
+        console.warn('Erro ao ler _order.yml, usando ordenação padrão.', e);
+      }
+    }
+
+    // 4. Aplicar a Ordenação
+    processedFiles.sort((a, b) => {
+      // Verifica se os itens têm posição definida no _order.yml
+      const indexA = orderMap.has(a.name) ? orderMap.get(a.name) : 9999;
+      const indexB = orderMap.has(b.name) ? orderMap.get(b.name) : 9999;
+
+      // Se ambos tiverem ordem manual, respeita o YAML
+      if (indexA !== 9999 || indexB !== 9999) {
+        return indexA - indexB;
+      }
+
+      // Se nenhum tiver ordem (arquivos novos), usa o padrão:
+      // Pastas primeiro, depois ordem alfabética
+      if (a.isDirectory !== b.isDirectory) {
+        return a.isDirectory ? -1 : 1;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    // 5. Filtrar o próprio arquivo de ordem da lista final
+    return processedFiles.filter(f => f.name !== '_order.yml');
 
   } catch (error: any) {
     throw createError({

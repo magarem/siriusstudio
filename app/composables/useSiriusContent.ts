@@ -6,7 +6,7 @@ export const useSiriusContent = async (path: string) => {
   
   // Controle de Estado
   const isPreview = computed(() => route.query.preview === 'true')
-  const currentSite = siteCookie.value || 'paravyomayoga'
+  const currentSite = siteCookie.value || ''
   const liveData = ref(null)
   const isSyncing = ref(false)
 

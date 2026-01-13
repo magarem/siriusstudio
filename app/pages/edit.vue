@@ -7,6 +7,7 @@ import AdminSidebar from '~/components/admin/Sidebar.vue';
 import AdminTopbar from '~/components/admin/Topbar.vue';
 import AdminMetaEditor from '~/components/admin/MetaEditor.vue';
 import AdminMarkdownEditor from '~/components/admin/MarkdownEditor.vue';
+import ImageExplorer from '~/components/admin/ImageExplorer.vue';
 
 definePageMeta({ layout: '' });
 
@@ -14,21 +15,20 @@ const toast = useToast();
 const route = useRoute();
 const siteContext = useCookie('cms_site_context');
 
-// Estados
+// --- ESTADOS GERAIS ---
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
+const loadingSave = ref(false);
+const loadingPublish = ref(false);
+const currentFile = ref(route.query.file || '');
+const currentFolder = ref(route.query.folder || 'content');
+const form = ref({ frontmatter: {}, content: '' });
 
 // --- ESTADOS DO MODO RAW ---
 const showRawMode = ref(false); 
 const rawContent = ref(''); 
 
-const currentFile = ref(route.query.file || '');
-const currentFolder = ref(route.query.folder || 'content');
-const loadingSave = ref(false);
-const loadingPublish = ref(false); // <--- NOVO REF
-const form = ref({ frontmatter: {}, content: '' });
-
-// Modais (Mantidos iguais)
+// --- MODAIS ---
 const showCreateModal = ref(false);
 const showFolderModal = ref(false);
 const showImageModal = ref(false);
@@ -36,80 +36,32 @@ const imageTarget = ref(null);
 const newFileForm = ref({ name: '', type: 'default' });
 const newFolderName = ref('');
 
-// --- DATA FETCHING ---
+// --- DATA FETCHING (LISTA DE ARQUIVOS) ---
 const { data: files, refresh: refreshFiles } = await useFetch('/api/admin/storage', {
   query: { site: siteContext, folder: currentFolder },
   watch: [currentFolder]
 });
 
-
-// --- FUNÇÃO DE PUBLICAR ---
-const handlePublish = async () => {
-  if (!confirm(`Deseja rodar o build para o site "${siteContext.value}"?\nIsso pode levar alguns minutos.`)) return;
-
-  loadingPublish.value = true;
-  
-  try {
-    const res = await $fetch('/api/admin/publish', {
-      method: 'POST',
-      body: { site: siteContext.value }
-    });
-    
-    toast.add({ 
-      severity: 'success', 
-      summary: 'Publicado!', 
-      detail: 'O site foi compilado com sucesso.', 
-      life: 5000 
-    });
-    console.log('Build Logs:', res.logs);
-
-  } catch (error) {
-    console.error(error);
-    toast.add({ 
-      severity: 'error', 
-      summary: 'Erro no Build', 
-      detail: 'Verifique o console para mais detalhes.', 
-      life: 5000 
-    });
-  } finally {
-    loadingPublish.value = false;
-  }
-};
-
-// --- NOVO: COMPUTED PARA ORDENAR (Pastas no topo) ---
+// --- COMPUTED: ORDENAÇÃO DA LISTA ---
+// [CORREÇÃO]: Agora confiamos na ordem que vem do Backend (que lê o _order.yml).
+// Não reordenamos alfabeticamente aqui para não quebrar o Drag & Drop.
 const sortedFiles = computed(() => {
-  if (!files.value) return [];
-  
-  // Cria uma cópia para não mutar o original e ordena
-  return [...files.value].sort((a, b) => {
-    // Critério 1: Pastas primeiro
-    if (a.isDirectory && !b.isDirectory) return -1;
-    if (!a.isDirectory && b.isDirectory) return 1;
-    
-    // Critério 2: Ordem alfabética
-    return a.name.localeCompare(b.name);
-  });
+  return files.value || [];
 });
 
-
-
-
-
+// --- DATA FETCHING (CONTEÚDO DO ARQUIVO) ---
 const { data: fileData } = await useAsyncData('file-content', 
   () => currentFile.value ? $fetch('/api/admin/storage', { params: { site: siteContext.value, folder: currentFolder.value, file: currentFile.value } }) : null,
   { watch: [currentFile] }
 );
 
-
-
-
-
+// --- DATA FETCHING (SCHEMA) ---
 const { data: schemaData } = await useFetch('/api/admin/schema', {
   query: { site: siteContext, folder: currentFolder, filename: computed(() => currentFile.value ? currentFile.value.split('/').pop() : '') },
   watch: [currentFolder, currentFile]
 });
 
-// --- COMPUTEDS (Mantidos iguais) ---
+// --- COMPUTEDS DO MODELO ---
 const currentModel = computed(() => {
   if (!schemaData.value) return { fields: [] };
   const fmSchema = form.value.frontmatter?.schema;
@@ -126,8 +78,7 @@ const availableTypes = computed(() => {
   }));
 });
 
-// --- HELPERS DE LIMPEZA ---
-// Função centralizada para limpar dados antes de gerar o YAML
+// --- HELPERS DE PARSE E LIMPEZA ---
 const getCleanData = () => {
   const cleanData = JSON.parse(JSON.stringify(form.value.frontmatter));
   const modelFields = currentModel.value.fields || [];
@@ -135,8 +86,6 @@ const getCleanData = () => {
   modelFields.forEach(field => {
     const data = cleanData[field.key];
     if (!Array.isArray(data)) return;
-
-    // Limpeza de Simple List e Repeater
     if (field.type === 'simple_list') {
        cleanData[field.key] = data.map(item => item.text || ''); 
     }
@@ -150,47 +99,31 @@ const getCleanData = () => {
   return cleanData;
 };
 
-// --- PARSER ROBUSTO (Substitua o antigo parseMD) ---
 const parseMD = (full) => {
   if (!full) {
     form.value.frontmatter = {};
     form.value.content = '';
     return;
   }
-
-  // Normaliza quebras de linha para evitar erros de Windows/Linux
   const normalized = full.replace(/\r\n/g, '\n');
-  
-  // Regex: Procura bloco YAML estritamente no início do arquivo
-  // ^---\n       -> Começa com --- e quebra de linha
-  // ([\s\S]*?)   -> Grupo 1: Captura tudo (não guloso)
-  // \n---\n      -> Até encontrar o fechamento --- e quebra
-  // ([\s\S]*)    -> Grupo 2: O resto é conteúdo
   const fmRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
   const match = normalized.match(fmRegex);
 
   try {
     if (match) {
-      // Arquivo com Frontmatter válido
       form.value.frontmatter = yaml.load(match[1]) || {};
-      form.value.content = match[2].trim(); // Remove espaços extras no início do conteúdo
+      form.value.content = match[2].trim();
     } else {
-      // Arquivo sem Frontmatter ou mal formatado
-      // Tenta detectar se o usuário tentou fazer um frontmatter mas errou (ex: faltou fechar)
       if (normalized.trim().startsWith('---')) {
-        console.warn("[Sirius] Possível frontmatter quebrado. Tentando fallback.");
-        // Fallback simples: Se tiver 2 '---', tenta separar, senão assume tudo como texto
         const parts = normalized.split('---');
         if (parts.length >= 3 && parts[0].trim() === '') {
            form.value.frontmatter = yaml.load(parts[1]) || {};
            form.value.content = parts.slice(2).join('---').trim();
         } else {
-           // Estrutura inválida, trata tudo como conteúdo para não perder dados
            form.value.frontmatter = {};
            form.value.content = normalized;
         }
       } else {
-        // Texto puro sem cabeçalho
         form.value.frontmatter = {};
         form.value.content = normalized;
       }
@@ -198,21 +131,20 @@ const parseMD = (full) => {
   } catch (e) { 
     console.error("YAML Parse Error:", e);
     toast.add({ severity: 'error', summary: 'Erro de Sintaxe', detail: 'O YAML do cabeçalho está inválido.' });
-    // Mantém o estado anterior se possível ou define erro
   }
 };
 
+// --- WATCHERS ---
 watch(fileData, (newData) => { 
   if (newData?.content) {
     parseMD(newData.content);
-    // Atualiza o rawContent também para garantir sincronia inicial
     rawContent.value = newData.content;
   }
 }, { immediate: true });
 
 // Correção Automática (Strings -> Objetos para UI)
 watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
-  if (showRawMode.value) return; // PAUSA a correção se estiver no modo Raw
+  if (showRawMode.value) return; 
   if (!newModel?.fields || !fm) return;
 
   newModel.fields.forEach(field => {
@@ -235,7 +167,7 @@ watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
   });
 }, { deep: true });
 
-// --- AÇÕES ---
+// --- AÇÕES DE NAVEGAÇÃO ---
 const navigate = {
   enterFolder: (f) => currentFolder.value = `${currentFolder.value}/${f}`,
   goBack: () => {
@@ -246,12 +178,12 @@ const navigate = {
     currentFile.value = f;
     window.history.pushState({}, '', `?file=${f}&folder=${currentFolder.value}`);
     showSidebar.value = false;
-    showRawMode.value = false; // Reset ao mudar arquivo
+    showRawMode.value = false;
   },
   changeRoot: (r) => currentFolder.value = r
 };
 
-// --- CREATE & IMAGES (Mantidos iguais) ---
+// --- CREATE & IMAGES ---
 const createActions = {
   openFile: () => { newFileForm.value = { name: '', type: 'default' }; showCreateModal.value = true; },
   openFolder: () => { newFolderName.value = ''; showFolderModal.value = true; },
@@ -276,7 +208,6 @@ const imageActions = {
     showImageModal.value = true;
   },
   handleSelect: (url) => {
-    // Se estiver no modo RAW, insere no final do texto (simples)
     if (showRawMode.value) {
       rawContent.value += `\n![](${url})`;
     } else {
@@ -289,25 +220,20 @@ const imageActions = {
   }
 };
 
+// --- RAW MODE TOGGLE ---
 const toggleRawMode = () => {
   if (!showRawMode.value) {
-    // INDO PARA MODO RAW: Gera o texto limpo
     const cleanData = getCleanData();
-    // lineWidth: -1 evita quebras de linha indesejadas em strings longas
     const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
-    
-    // Reconstrói o arquivo. Se content estiver vazio, não adiciona quebras extras
     const contentPart = form.value.content ? `\n\n${form.value.content.trim()}` : '';
     rawContent.value = `---\n${y.trim()}\n---${contentPart}`;
-    
   } else {
-    // SAINDO DO MODO RAW: Processa o texto de volta para visual
     parseMD(rawContent.value);
   }
   showRawMode.value = !showRawMode.value;
 };
 
-// --- SAVE (Unificado) ---
+// --- SALVAR & PUBLICAR ---
 const saveFile = async () => {
   if (!currentFile.value) return;
   loadingSave.value = true;
@@ -315,19 +241,12 @@ const saveFile = async () => {
   let finalContent = '';
 
   if (showRawMode.value) {
-    // MODO RAW: Salva EXATAMENTE o que o usuário digitou no textarea
-    // Não rodamos parseMD aqui para não arriscar mudar a formatação do usuário
     finalContent = rawContent.value;
-    
-    // Atualiza o visual silenciosamente apenas para manter sincronia se ele sair do raw depois
-    // Mas o que vai pro disco é o rawContent
     try {
-       const parts = rawContent.value.split('---'); // Check básico de sanidade
+       const parts = rawContent.value.split('---');
        if(parts.length >= 3) parseMD(rawContent.value);
     } catch(e) {}
-
   } else {
-    // MODO VISUAL: Gera o YAML limpo
     const cleanData = getCleanData();
     const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
     const contentPart = form.value.content ? `\n\n${form.value.content.trim()}` : '';
@@ -352,6 +271,21 @@ const saveFile = async () => {
   }
 };
 
+const handlePublish = async () => {
+  if (!confirm(`Deseja rodar o build para o site "${siteContext.value}"?\nIsso pode levar alguns minutos.`)) return;
+  loadingPublish.value = true;
+  try {
+    const res = await $fetch('/api/admin/publish', { method: 'POST', body: { site: siteContext.value } });
+    toast.add({ severity: 'success', summary: 'Publicado!', detail: 'Build iniciado.', life: 5000 });
+    console.log('Build Logs:', res.logs);
+  } catch (error) {
+    console.error(error);
+    toast.add({ severity: 'error', summary: 'Erro no Build', detail: 'Verifique o console.', life: 5000 });
+  } finally {
+    loadingPublish.value = false;
+  }
+};
+
 const logout = () => { siteContext.value = null; navigateTo('/login'); };
 
 // Atalhos
@@ -369,32 +303,34 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
   <div class="min-h-screen bg-[#0a0f0d] text-slate-200 font-sans selection:bg-[#6f942e]/30 flex flex-col">
     <Toast />
 
-  <AdminSidebar 
-      v-model:visible="showSidebar"
-      :files="sortedFiles"  :current-folder="currentFolder"
-      :current-file="currentFile"
-      @navigate="navigate.enterFolder"
-      @select="navigate.selectFile"
-      @back="navigate.goBack"
-      @change-root="navigate.changeRoot"
-      @create-file="createActions.openFile"
-      @create-folder="createActions.openFolder"
+    <AdminSidebar 
+        v-model:visible="showSidebar"
+        :files="sortedFiles" 
+        :current-folder="currentFolder"
+        :current-file="currentFile"
+        @refresh="refreshFiles()"
+        @navigate="navigate.enterFolder"
+        @select="navigate.selectFile"
+        @back="navigate.goBack"
+        @change-root="navigate.changeRoot"
+        @create-file="createActions.openFile"
+        @create-folder="createActions.openFolder"
     />
 
-   <AdminTopbar 
-      :site-context="siteContext"
-      :current-folder="currentFolder"
-      :current-file="currentFile"
-      :loading-save="loadingSave"
-      :loading-publish="loadingPublish" 
-      :show-meta-sidebar="showMetaSidebar"
-      :is-raw-mode="showRawMode"
-      @toggle-sidebar="showSidebar = true"
-      @toggle-meta="showMetaSidebar = !showMetaSidebar"
-      @toggle-raw="toggleRawMode"
-      @save="saveFile"
-      @publish="handlePublish" 
-      @logout="logout"
+    <AdminTopbar 
+        :site-context="siteContext"
+        :current-folder="currentFolder"
+        :current-file="currentFile"
+        :loading-save="loadingSave"
+        :loading-publish="loadingPublish" 
+        :show-meta-sidebar="showMetaSidebar"
+        :is-raw-mode="showRawMode"
+        @toggle-sidebar="showSidebar = true"
+        @toggle-meta="showMetaSidebar = !showMetaSidebar"
+        @toggle-raw="toggleRawMode"
+        @save="saveFile"
+        @publish="handlePublish" 
+        @logout="logout"
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
