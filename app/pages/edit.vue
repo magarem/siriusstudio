@@ -8,6 +8,7 @@ import AdminTopbar from '~/components/admin/Topbar.vue';
 import AdminMetaEditor from '~/components/admin/MetaEditor.vue';
 import AdminMarkdownEditor from '~/components/admin/MarkdownEditor.vue';
 import ImageExplorer from '~/components/admin/ImageExplorer.vue';
+import DashboardHome from '~/components/admin/DashboardHome.vue';
 
 definePageMeta({ layout: '' });
 
@@ -15,6 +16,8 @@ const toast = useToast();
 const route = useRoute();
 const siteContext = useCookie('cms_site_context');
 
+
+console.log("siteCopntext:", siteContext.value)
 // --- ESTADOS GERAIS ---
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
@@ -180,7 +183,15 @@ const navigate = {
     showSidebar.value = false;
     showRawMode.value = false;
   },
-  changeRoot: (r) => currentFolder.value = r
+  changeRoot: (r) => currentFolder.value = r,
+  // --- NOVA FUNÇÃO ---
+  toDashboard: () => {
+    currentFile.value = ''; // Limpa o arquivo atual -> Mostra Dashboard
+    // Limpa o parâmetro 'file' da URL para ficar limpo no refresh
+    const url = new URL(window.location);
+    url.searchParams.delete('file');
+    window.history.pushState({}, '', url);
+  }
 };
 
 // --- CREATE & IMAGES ---
@@ -295,6 +306,34 @@ const handleKeydown = (e) => {
     if (currentFile.value) saveFile();
   }
 };
+
+// --- AÇÃO DE EXCLUIR ---
+const handleDeleteFile = async (item) => {
+  try {
+    await $fetch('/api/admin/storage', { 
+      method: 'DELETE', 
+      body: { 
+        site: siteContext.value, 
+        folder: currentFolder.value, 
+        file: item.name 
+      } 
+    });
+    
+    toast.add({ severity: 'success', summary: 'Excluído', detail: 'Item removido com sucesso.', life: 3000 });
+    
+    // Se o arquivo excluído for o que está aberto no editor, limpamos a tela
+    if (currentFile.value === item.name) {
+      currentFile.value = '';
+      window.history.pushState({}, '', `?folder=${currentFolder.value}`);
+    }
+
+    await refreshFiles(); // Atualiza a lista
+  } catch (e) {
+    console.error(e);
+    toast.add({ severity: 'error', summary: 'Erro', detail: 'Não foi possível excluir o item.', life: 3000 });
+  }
+};
+
 onMounted(() => window.addEventListener('keydown', handleKeydown));
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 </script>
@@ -315,6 +354,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         @change-root="navigate.changeRoot"
         @create-file="createActions.openFile"
         @create-folder="createActions.openFolder"
+        @delete="handleDeleteFile"
     />
 
     <AdminTopbar 
@@ -331,6 +371,8 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
         @save="saveFile"
         @publish="handlePublish" 
         @logout="logout"
+        @open-media="imageActions.open()"
+        @go-dashboard="navigate.toDashboard"
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
@@ -374,10 +416,19 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
       </div>
 
-      <div v-else class="h-[75vh] flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[3rem] opacity-30 text-center select-none">
-         <div class="w-24 h-24 bg-[#6f942e]/10 rounded-full flex items-center justify-center mb-6"><i class="pi pi-star text-[#6f942e] text-3xl animate-pulse"></i></div>
-         <h2 class="font-black text-2xl tracking-tighter text-white uppercase">Sirius Studio</h2>
-         <p class="font-mono text-[10px] mt-2 uppercase tracking-[0.4em]">Selecione um arquivo para editar</p>
+     <div v-else class="h-[calc(100vh-120px)] w-full">
+         <DashboardHome 
+           :site-context="displaySiteName"
+           :current-folder="currentFolder"
+           :files="sortedFiles"
+           @navigate="(path) => {
+              if(path.endsWith('.md')) navigate.selectFile(path);
+              else navigate.changeRoot(path);
+           }"
+           @create-file="createActions.openFile"
+           @open-media="imageActions.open()"
+           @publish="handlePublish"
+         />
       </div>
     </div>
 

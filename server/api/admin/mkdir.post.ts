@@ -29,13 +29,34 @@ export default defineEventHandler(async (event) => {
 
   // 2. Construir o caminho
   const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
-  const targetPath = path.join(APPS_ROOT, 'storage', site, folder, safeName)
+  
+  // Caminho da pasta PAI (onde estamos agora, antes de criar a nova)
+  const parentPath = path.join(APPS_ROOT, 'storage', site, folder);
+  
+  // Caminho da NOVA pasta
+  const targetPath = path.join(parentPath, safeName);
 
   console.log('Criando pasta em:', targetPath)
   try {
     // 3. Criar a pasta
     await fs.mkdir(targetPath, { recursive: true })
     
+    // --- NOVO: LÓGICA DE COPIAR O SCHEMA ---
+    try {
+      const sourceSchema = path.join(parentPath, 'schema.json');
+      const destSchema = path.join(targetPath, 'schema.json');
+
+      // Tenta copiar. Se o arquivo origem não existir, o fs lança erro e cai no catch abaixo.
+      console.log("tentando copiar::", sourceSchema, destSchema);
+      await fs.copyFile(sourceSchema, destSchema);
+      console.log(`✅ Schema copiado com sucesso para: ${destSchema}`);
+    } catch (copyError) {
+      // Ignora erro se o schema não existir na pasta pai. 
+      // A criação da pasta é mais importante que a cópia do schema.
+      // console.log('ℹ️ Nenhum schema.json encontrado na pasta pai para copiar.');
+    }
+    // ----------------------------------------
+
     return { success: true, folderName: safeName }
   } catch (error) {
     console.error('Erro ao criar pasta:', error)

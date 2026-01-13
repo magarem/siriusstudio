@@ -1,6 +1,9 @@
 <script setup>
 defineProps({
-  siteContext: String,
+  siteContext: {
+    type: String,
+    default: 'Carregando...'
+  },
   currentFolder: String,
   currentFile: String,
   loadingSave: Boolean,
@@ -9,8 +12,10 @@ defineProps({
   isRawMode: Boolean
 });
 
+
+
 // Adicione 'publish' na lista de emits
-const emit = defineEmits(['toggle-sidebar', 'toggle-meta', 'toggle-raw', 'save', 'publish', 'logout']);
+const emit = defineEmits(['toggle-sidebar', 'toggle-meta', 'toggle-raw', 'save', 'publish', 'logout', 'open-media', 'go-dashboard']);
 </script>
 
 <template>
@@ -21,18 +26,37 @@ const emit = defineEmits(['toggle-sidebar', 'toggle-meta', 'toggle-raw', 'save',
          <div class="flex items-center gap-2 pr-4 border-r border-white/5 h-8">
           <Button icon="pi pi-bars" text @click="emit('toggle-sidebar')" class="!w-8 !h-8 !p-0 text-[#6f942e] hover:bg-[#6f942e]/10" v-tooltip.bottom="'Explorer'" />
           <Button v-if="!isRawMode" :icon="showMetaSidebar ? 'pi pi-sliders-h' : 'pi pi-sliders-v'" text @click="emit('toggle-meta')" :class="showMetaSidebar ? 'text-[#6f942e] bg-[#6f942e]/10' : 'text-slate-500 hover:text-white'" class="!w-8 !h-8 !p-0 transition-colors" v-tooltip.bottom="'Metadados'" />
-          <div class="flex flex-col select-none pl-2 justify-center">
+          <div 
+            class="flex flex-col select-none pl-2 justify-center cursor-pointer hover:opacity-80 transition-opacity"
+            @click="emit('go-dashboard')"
+            title="Ir para Dashboard"
+          >
             <h1 class="text-sm font-black text-white leading-none tracking-tighter flex items-center gap-2">
               <i class="pi pi-star-fill text-[#6f942e] text-[10px]"></i> SIRIUS STUDIO
             </h1>
+            <span class="text-[10px] uppercase tracking-widest text-[#6f942e] opacity-60 leading-none mt-1 pl-5">
+              {{ siteContext }}
+            </span>
           </div>
         </div>
-        <div v-if="currentFile" class="flex items-center gap-2 select-none text-[14px]">
+        <div class="flex items-center gap-2 select-none text-[14px]">
            <span class="uppercase tracking-widest text-[#6f942e] font-black opacity-60">{{ siteContext }}</span>
         </div>
       </div>
 
       <div class="flex gap-2 z-10">
+        <Button 
+          label="Media" 
+          icon="pi pi-images" 
+          size="small" 
+          text
+          class="!text-[10px] !font-bold tracking-widest text-slate-300 hover:text-white"
+          @click="emit('open-media')" 
+          v-tooltip.bottom="'Gerenciar Imagens'"
+        />
+
+        <div class="w-px h-6 bg-white/10 mx-1 self-center"></div>
+
         <Button 
           label="Publicar" 
           icon="pi pi-cloud-upload" 

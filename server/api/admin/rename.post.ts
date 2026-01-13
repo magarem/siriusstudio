@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
   }
   
   // Sanitização básica do nome (remove caracteres perigosos)
-  finalNewName = finalNewName.replace(/[^a-z0-9\._-]/gi, '-')
+  // finalNewName = finalNewName.replace(/[^a-z0-9\._-]/gi, '-')
 
   const newPath = path.join(baseDir, finalNewName)
 
@@ -42,10 +42,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, message: 'Já existe um arquivo com este nome.' })
   }
 
+  console.log("oldPath, newPath:", oldPath, newPath)
   try {
     fs.renameSync(oldPath, newPath)
     return { success: true, oldFile, newFile: finalNewName }
   } catch (error) {
+    console.error('❌ ERRO AO RENOMEAR:', error);
     throw createError({ statusCode: 500, message: 'Erro ao renomear arquivo: ' + error.message })
   }
 })
