@@ -13,7 +13,7 @@ const emit = defineEmits(['navigate', 'create-file', 'open-media', 'publish']);
 const shortcuts = [
   { label: 'Conteúdo', folder: 'content', icon: 'pi pi-align-left', color: 'text-blue-400', bg: 'bg-blue-400/10' },
   { label: 'Páginas', folder: 'pages', icon: 'pi pi-clone', color: 'text-purple-400', bg: 'bg-purple-400/10' },
-  { label: 'Layouts', folder: 'layout', icon: 'pi pi-th-large', color: 'text-orange-400', bg: 'bg-orange-400/10' },
+  { label: 'Layouts', folder: 'layouts', icon: 'pi pi-th-large', color: 'text-orange-400', bg: 'bg-orange-400/10' },
   { label: 'Componentes', folder: 'components', icon: 'pi pi-box', color: 'text-cyan-400', bg: 'bg-cyan-400/10' },
 ];
 

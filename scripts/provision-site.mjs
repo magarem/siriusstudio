@@ -31,8 +31,8 @@ allFolders.forEach(f => {
   const path = join(STORAGE_DIR, f);
   if (!existsSync(path)) {
     mkdirSync(path);
-    if (f === 'content') writeFileSync(join(path, 'index.md'), `---\ntitle: Home ${siteName}\n---\n# Conteúdo do Storage`);
-    if (f === 'pages') writeFileSync(join(path, 'index.vue'), `<template><ContentDoc /></template>`);
+    if (f === 'content') writeFileSync(join(path, '_index.md'), `---\ntitle: Home ${siteName}\n---\n# Conteúdo do Storage`);
+    if (f === 'pages') writeFileSync(join(path, '_index.vue'), `<template><ContentDoc /></template>`);
   }
 });
 

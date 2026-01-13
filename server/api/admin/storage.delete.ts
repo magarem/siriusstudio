@@ -1,4 +1,4 @@
-import { unlink, rmdir, lstat } from 'node:fs/promises';
+import { unlink, rm, lstat } from 'node:fs/promises'; // Troquei rmdir por rm
 import { resolve } from 'node:path';
 
 export default defineEventHandler(async (event) => {
@@ -10,7 +10,6 @@ export default defineEventHandler(async (event) => {
   }
 
   // Monta o caminho absoluto
-  // Nota: Ajuste os '..' conforme a estrutura real do seu servidor se necessário
   const filePath = resolve(process.cwd(), '..', 'storage', site, folder, file);
 
   console.log("Tentando deletar:", filePath);
@@ -20,9 +19,9 @@ export default defineEventHandler(async (event) => {
     const stats = await lstat(filePath);
 
     if (stats.isDirectory()) {
-      // 2. Se for pasta, tenta remover com rmdir
-      // O rmdir nativamente falha se a pasta tiver conteúdo
-      await rmdir(filePath);
+      // 2. MUDANÇA AQUI: Usa 'rm' com recursive: true
+      // Isso apaga a pasta e TUDO que tem dentro dela
+      await rm(filePath, { recursive: true, force: true });
     } else {
       // 3. Se for arquivo, remove com unlink
       await unlink(filePath);
@@ -31,13 +30,7 @@ export default defineEventHandler(async (event) => {
     return { success: true };
 
   } catch (err: any) {
-    // Tratamento específico para pasta não vazia
-    if (err.code === 'ENOTEMPTY' || err.code === 'EEXIST') {
-      throw createError({ 
-        statusCode: 400, 
-        message: 'A pasta não está vazia. Exclua o conteúdo primeiro.' 
-      });
-    }
+    // Removi o bloco do 'ENOTEMPTY' pois agora ele força a exclusão
 
     // Tratamento para arquivo não encontrado
     if (err.code === 'ENOENT') {

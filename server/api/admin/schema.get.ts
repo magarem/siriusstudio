@@ -11,14 +11,14 @@ export default defineEventHandler(async (event) => {
     return { types: {}, mapping: {} }
   }
 
-  // 1. Constrói o caminho até o schema.json
-  // Ex: /Users/seu-usuario/projeto/sites/novagokula/content/schema.json
+  // 1. Constrói o caminho até o _schema.json
+  // Ex: /Users/seu-usuario/projeto/sites/novagokula/content/_schema.json
   // Se o folder vier como "content/pousadas", ele busca lá dentro.
   
  const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
   console.log('APPS_ROOT definido como:', APPS_ROOT);
 
-  const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), 'schema.json')
+  const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), '_schema.json')
 
 console.log('schemaPath:', schemaPath);
   try {

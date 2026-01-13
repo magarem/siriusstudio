@@ -1,12 +1,12 @@
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import matter from 'gray-matter'; 
-import yaml from 'js-yaml'; // <--- 1. IMPORTAÇÃO ADICIONADA
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { resolve, join } from "node:path";
+import matter from "gray-matter";
+import yaml from "js-yaml"; // <--- 1. IMPORTAÇÃO ADICIONADA
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const query = getQuery(event);
-  
+
   const site = query.site ? String(query.site) : null;
   const folder = query.folder ? String(query.folder) : null;
   const file = query.file ? String(query.file) : null;
@@ -18,10 +18,12 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
-  console.log('APPS_ROOT definido como:', APPS_ROOT);
-  
-  const targetDir = join(APPS_ROOT, 'storage', site, folder);
+  const APPS_ROOT = config.storagePath
+    ? resolve(config.storagePath)
+    : process.cwd();
+  console.log("APPS_ROOT definido como:", APPS_ROOT);
+
+  const targetDir = join(APPS_ROOT, "storage", site, folder);
 
   if (!existsSync(targetDir)) {
     return [];
@@ -31,12 +33,12 @@ export default defineEventHandler(async (event) => {
     // CASO A: Leitura de um arquivo específico (Modo Edição/Detalhe)
     if (file) {
       const filePath = join(targetDir, file);
-      if (!existsSync(filePath)) throw new Error('Arquivo não encontrado');
-      
-      const content = readFileSync(filePath, 'utf-8');
+      if (!existsSync(filePath)) throw new Error("Arquivo não encontrado");
+
+      const content = readFileSync(filePath, "utf-8");
       return {
         name: file,
-        content: content
+        content: content,
       };
     }
 
@@ -46,23 +48,24 @@ export default defineEventHandler(async (event) => {
 
     // 2. Processar metadados (Frontmatter) de cada item
     let processedFiles = rawItems
-      .filter(item => !item.name.startsWith('.') && item.name !== 'index.md') // Filtros iniciais
-      .map(item => {
+      .filter((item) => !item.name.startsWith(".") /*&& item.name !== "_index.md"*/) // Filtros iniciais
+      .map((item) => {
         const isDirectory = item.isDirectory();
         let metadata = {};
 
         // Se for Markdown, extrai dados do frontmatter
-        if (!isDirectory && item.name.endsWith('.md')) {
+        if (!isDirectory && item.name.endsWith(".md")) {
           try {
             const filePath = join(targetDir, item.name);
-            const fileRaw = readFileSync(filePath, 'utf-8');
+            const fileRaw = readFileSync(filePath, "utf-8");
             const { data } = matter(fileRaw);
-            
+
             metadata = {
-              title: data.title || item.name.replace('.md', ''),
-              topimages: data.topimages || (data.topimage ? [data.topimage] : []),
+              title: data.title || item.name.replace(".md", ""),
+              topimages:
+                data.topimages || (data.topimage ? [data.topimage] : []),
               images: data.images || (data.image ? [data.image] : []),
-              description: data.description || ''
+              description: data.description || "",
             };
           } catch (e) {
             console.error(`Erro ao ler metadados de ${item.name}`);
@@ -72,25 +75,25 @@ export default defineEventHandler(async (event) => {
         return {
           name: item.name,
           isDirectory,
-          data: metadata
+          data: metadata,
         };
       });
 
     // 3. Ler o arquivo _order.yml para descobrir a ordem manual
-    const orderFilePath = join(targetDir, '_order.yml');
+    const orderFilePath = join(targetDir, "_order.yml");
     let orderMap = new Map();
 
     if (existsSync(orderFilePath)) {
       try {
-        const fileContent = readFileSync(orderFilePath, 'utf-8');
+        const fileContent = readFileSync(orderFilePath, "utf-8");
         const loaded = yaml.load(fileContent);
-        
+
         if (Array.isArray(loaded)) {
           // Cria um mapa { 'nome_do_arquivo': index } para acesso rápido
           orderMap = new Map(loaded.map((name, index) => [name, index]));
         }
       } catch (e) {
-        console.warn('Erro ao ler _order.yml, usando ordenação padrão.', e);
+        console.warn("Erro ao ler _order.yml, usando ordenação padrão.", e);
       }
     }
 
@@ -114,12 +117,14 @@ export default defineEventHandler(async (event) => {
     });
 
     // 5. Filtrar o próprio arquivo de ordem da lista final
-    return processedFiles.filter(f => f.name !== '_order.yml');
-
+    // 5. Filtrar arquivos de sistema da lista final
+    return processedFiles.filter(
+      (f) => f.name !== "_order.yml" && f.name !== "_schema.json"
+    );
   } catch (error: any) {
     throw createError({
       statusCode: 500,
-      statusMessage: 'Erro ao acessar o storage: ' + error.message,
+      statusMessage: "Erro ao acessar o storage: " + error.message,
     });
   }
 });

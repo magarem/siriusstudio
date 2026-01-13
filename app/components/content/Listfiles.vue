@@ -21,11 +21,11 @@ const filteredFiles = computed(() => {
   if (!files.value || !Array.isArray(files.value)) return [];
   
   // --- ALTERAÇÃO AQUI ---
-  // Adicionamos: && f.name !== 'schema.json'
+  // Adicionamos: && f.name !== '_schema.json'
   return files.value.filter(f => 
     !f.isDirectory && 
-    f.name !== 'index.md' && 
-    f.name !== 'schema.json'
+    f.name !== '_index.md' && 
+    f.name !== '_schema.json'
   );
 });
 

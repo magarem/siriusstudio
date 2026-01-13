@@ -43,8 +43,8 @@ export default defineEventHandler(async (event) => {
     
     // --- NOVO: LÓGICA DE COPIAR O SCHEMA ---
     try {
-      const sourceSchema = path.join(parentPath, 'schema.json');
-      const destSchema = path.join(targetPath, 'schema.json');
+      const sourceSchema = path.join(parentPath, '_schema.json');
+      const destSchema = path.join(targetPath, '_schema.json');
 
       // Tenta copiar. Se o arquivo origem não existir, o fs lança erro e cai no catch abaixo.
       console.log("tentando copiar::", sourceSchema, destSchema);
@@ -53,7 +53,7 @@ export default defineEventHandler(async (event) => {
     } catch (copyError) {
       // Ignora erro se o schema não existir na pasta pai. 
       // A criação da pasta é mais importante que a cópia do schema.
-      // console.log('ℹ️ Nenhum schema.json encontrado na pasta pai para copiar.');
+      // console.log('ℹ️ Nenhum _schema.json encontrado na pasta pai para copiar.');
     }
     // ----------------------------------------
 

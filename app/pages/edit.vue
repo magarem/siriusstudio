@@ -16,16 +16,24 @@ const toast = useToast();
 const route = useRoute();
 const siteContext = useCookie('cms_site_context');
 
-
-console.log("siteCopntext:", siteContext.value)
-// --- ESTADOS GERAIS ---
+// --- ESTADOS DE NAVEGAÇÃO E CONTEXTO ---
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
+
+// 'currentFile': O arquivo aberto no momento (ex: '_index.md')
+const currentFile = ref(route.query.file || '');
+
+// 'currentFolder': Onde o usuário está navegando na SIDEBAR
+const currentFolder = ref(route.query.folder || 'content');
+
+// 'editorCtxFolder': A pasta onde o ARQUIVO ABERTO está localizado.
+// Isso permite navegar na sidebar sem perder a referência do arquivo aberto.
+const editorCtxFolder = ref(route.query.folder || 'content');
+
+// --- ESTADOS DE EDIÇÃO ---
+const form = ref({ frontmatter: {}, content: '' });
 const loadingSave = ref(false);
 const loadingPublish = ref(false);
-const currentFile = ref(route.query.file || '');
-const currentFolder = ref(route.query.folder || 'content');
-const form = ref({ frontmatter: {}, content: '' });
 
 // --- ESTADOS DO MODO RAW ---
 const showRawMode = ref(false); 
@@ -39,32 +47,61 @@ const imageTarget = ref(null);
 const newFileForm = ref({ name: '', type: 'default' });
 const newFolderName = ref('');
 
-// --- DATA FETCHING (LISTA DE ARQUIVOS) ---
+// =============================================================================
+// DATA FETCHING
+// =============================================================================
+
+// 1. LISTA DE ARQUIVOS (Sidebar) - Vigia 'currentFolder'
 const { data: files, refresh: refreshFiles } = await useFetch('/api/admin/storage', {
   query: { site: siteContext, folder: currentFolder },
   watch: [currentFolder]
 });
 
-// --- COMPUTED: ORDENAÇÃO DA LISTA ---
-// [CORREÇÃO]: Agora confiamos na ordem que vem do Backend (que lê o _order.yml).
-// Não reordenamos alfabeticamente aqui para não quebrar o Drag & Drop.
-const sortedFiles = computed(() => {
-  return files.value || [];
-});
+// Computed para garantir array
+const sortedFiles = computed(() => files.value || []);
 
-// --- DATA FETCHING (CONTEÚDO DO ARQUIVO) ---
-const { data: fileData } = await useAsyncData('file-content', 
-  () => currentFile.value ? $fetch('/api/admin/storage', { params: { site: siteContext.value, folder: currentFolder.value, file: currentFile.value } }) : null,
-  { watch: [currentFile] }
+// 2. CONTEÚDO DO ARQUIVO (Editor) - Vigia 'currentFile' E 'editorCtxFolder'
+const { data: fileData, error: fileError } = await useAsyncData('file-content', 
+  () => {
+    if (!currentFile.value) return Promise.resolve(null);
+    return $fetch('/api/admin/storage', { 
+      params: { 
+        site: siteContext.value, 
+        folder: editorCtxFolder.value, // <--- Usa o contexto do EDITOR
+        file: currentFile.value 
+      } 
+    });
+  },
+  { 
+    watch: [currentFile, editorCtxFolder] 
+  }
 );
 
-// --- DATA FETCHING (SCHEMA) ---
-const { data: schemaData } = await useFetch('/api/admin/schema', {
-  query: { site: siteContext, folder: currentFolder, filename: computed(() => currentFile.value ? currentFile.value.split('/').pop() : '') },
-  watch: [currentFolder, currentFile]
+// Se houver erro ao carregar arquivo (ex: mudou URL manualmente e não existe), volta pro Dashboard
+watch(fileError, (err) => {
+  if (err) {
+    currentFile.value = '';
+    const url = new URL(window.location);
+    url.searchParams.delete('file');
+    window.history.replaceState({}, '', url);
+  }
 });
 
-// --- COMPUTEDS DO MODELO ---
+// 3. SCHEMA (Campos do Editor) - Vigia 'editorCtxFolder'
+const { data: schemaData } = await useFetch('/api/admin/schema', {
+  query: { 
+    site: siteContext, 
+    folder: editorCtxFolder, // <--- Usa o contexto do EDITOR
+    filename: computed(() => currentFile.value ? currentFile.value.split('/').pop() : '') 
+  },
+  watch: [editorCtxFolder, currentFile]
+});
+
+// =============================================================================
+// LÓGICA DO MODELO / PARSER
+// =============================================================================
+
+// Define quais campos mostrar baseado no Schema
 const currentModel = computed(() => {
   if (!schemaData.value) return { fields: [] };
   const fmSchema = form.value.frontmatter?.schema;
@@ -81,7 +118,7 @@ const availableTypes = computed(() => {
   }));
 });
 
-// --- HELPERS DE PARSE E LIMPEZA ---
+// Limpa dados para salvar (remove meta-dados de UI)
 const getCleanData = () => {
   const cleanData = JSON.parse(JSON.stringify(form.value.frontmatter));
   const modelFields = currentModel.value.fields || [];
@@ -102,6 +139,7 @@ const getCleanData = () => {
   return cleanData;
 };
 
+// Parser: Markdown String -> Objeto JS
 const parseMD = (full) => {
   if (!full) {
     form.value.frontmatter = {};
@@ -137,7 +175,7 @@ const parseMD = (full) => {
   }
 };
 
-// --- WATCHERS ---
+// Watcher: Quando chega conteúdo novo do Backend
 watch(fileData, (newData) => { 
   if (newData?.content) {
     parseMD(newData.content);
@@ -145,7 +183,7 @@ watch(fileData, (newData) => {
   }
 }, { immediate: true });
 
-// Correção Automática (Strings -> Objetos para UI)
+// Watcher: Correção Automática (Strings -> Objetos para UI do Repeater)
 watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
   if (showRawMode.value) return; 
   if (!newModel?.fields || !fm) return;
@@ -170,44 +208,85 @@ watch([currentModel, () => form.value.frontmatter], ([newModel, fm]) => {
   });
 }, { deep: true });
 
-// --- AÇÕES DE NAVEGAÇÃO ---
+// =============================================================================
+// NAVEGAÇÃO
+// =============================================================================
+
 const navigate = {
-  enterFolder: (f) => currentFolder.value = `${currentFolder.value}/${f}`,
+  // 1. Entrar na pasta (Sidebar): NÃO limpa o arquivo atual
+  enterFolder: (f) => {
+    currentFolder.value = `${currentFolder.value}/${f}`;
+  },
+
+  // 2. Voltar (Sidebar): NÃO limpa o arquivo atual
   goBack: () => {
     const parts = currentFolder.value.split('/');
-    if (parts.length > 1) { parts.pop(); currentFolder.value = parts.join('/'); }
+    if (parts.length > 1) { 
+      parts.pop(); 
+      currentFolder.value = parts.join('/'); 
+    }
   },
+
+  // 3. Selecionar Arquivo: Sincroniza o contexto do editor
   selectFile: (f) => {
     currentFile.value = f;
-    window.history.pushState({}, '', `?file=${f}&folder=${currentFolder.value}`);
+    editorCtxFolder.value = currentFolder.value; // <--- O Editor agora "mora" nesta pasta
+    
+    // Atualiza URL com a pasta do ARQUIVO
+    window.history.pushState({}, '', `?file=${f}&folder=${editorCtxFolder.value}`);
+    
     showSidebar.value = false;
     showRawMode.value = false;
   },
-  changeRoot: (r) => currentFolder.value = r,
-  // --- NOVA FUNÇÃO ---
+
+  // 4. Mudar Raiz (Abas Superiores da Sidebar):
+  changeRoot: (r) => {
+    currentFolder.value = r;
+    // Opcional: Se quiser fechar o arquivo ao mudar de aba radicalmente:
+    // currentFile.value = ''; 
+  },
+  
+  // 5. Ir para Dashboard
   toDashboard: () => {
-    currentFile.value = ''; // Limpa o arquivo atual -> Mostra Dashboard
-    // Limpa o parâmetro 'file' da URL para ficar limpo no refresh
+    currentFile.value = '';
     const url = new URL(window.location);
     url.searchParams.delete('file');
     window.history.pushState({}, '', url);
   }
 };
 
-// --- CREATE & IMAGES ---
+// =============================================================================
+// AÇÕES (CRIAR, SALVAR, DELETAR, MEDIA)
+// =============================================================================
+
 const createActions = {
   openFile: () => { newFileForm.value = { name: '', type: 'default' }; showCreateModal.value = true; },
   openFolder: () => { newFolderName.value = ''; showFolderModal.value = true; },
+  
   handleFile: async () => {
+    // Cria no 'currentFolder' (onde o usuário está vendo)
     let name = newFileForm.value.name.trim().toLowerCase().replace(/\s+/g, '-');
     if (!name.endsWith('.md')) name += '.md';
+    
     const content = `---\n${yaml.dump({ schema: newFileForm.value.type, title: newFileForm.value.name, date: new Date().toISOString().split('T')[0] })}---\n\n# ${newFileForm.value.name}`;
-    await $fetch('/api/admin/storage', { method: 'POST', body: { site: siteContext.value, folder: currentFolder.value, file: name, content } });
-    showCreateModal.value = false; await refreshFiles(); navigate.selectFile(name);
+    
+    await $fetch('/api/admin/storage', { 
+      method: 'POST', 
+      body: { site: siteContext.value, folder: currentFolder.value, file: name, content } 
+    });
+    
+    showCreateModal.value = false; 
+    await refreshFiles(); 
+    navigate.selectFile(name); // Abre o arquivo recém criado
   },
+  
   handleFolder: async () => {
-    await $fetch('/api/admin/mkdir', { method: 'POST', body: { site: siteContext.value, folder: currentFolder.value, name: newFolderName.value } });
-    showFolderModal.value = false; await refreshFiles();
+    await $fetch('/api/admin/mkdir', { 
+      method: 'POST', 
+      body: { site: siteContext.value, folder: currentFolder.value, name: newFolderName.value } 
+    });
+    showFolderModal.value = false; 
+    await refreshFiles();
   }
 };
 
@@ -231,7 +310,6 @@ const imageActions = {
   }
 };
 
-// --- RAW MODE TOGGLE ---
 const toggleRawMode = () => {
   if (!showRawMode.value) {
     const cleanData = getCleanData();
@@ -244,7 +322,6 @@ const toggleRawMode = () => {
   showRawMode.value = !showRawMode.value;
 };
 
-// --- SALVAR & PUBLICAR ---
 const saveFile = async () => {
   if (!currentFile.value) return;
   loadingSave.value = true;
@@ -269,7 +346,7 @@ const saveFile = async () => {
       method: 'POST', 
       body: { 
         site: siteContext.value, 
-        folder: currentFolder.value, 
+        folder: editorCtxFolder.value, // <--- SALVA NO CONTEXTO DO EDITOR
         file: currentFile.value, 
         content: finalContent 
       } 
@@ -299,7 +376,6 @@ const handlePublish = async () => {
 
 const logout = () => { siteContext.value = null; navigateTo('/login'); };
 
-// Atalhos
 const handleKeydown = (e) => {
   if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
     e.preventDefault(); 
@@ -307,27 +383,27 @@ const handleKeydown = (e) => {
   }
 };
 
-// --- AÇÃO DE EXCLUIR ---
+// Deletar da Sidebar
 const handleDeleteFile = async (item) => {
   try {
     await $fetch('/api/admin/storage', { 
       method: 'DELETE', 
       body: { 
         site: siteContext.value, 
-        folder: currentFolder.value, 
+        folder: currentFolder.value, // <--- Deleta da pasta visível na sidebar
         file: item.name 
       } 
     });
     
     toast.add({ severity: 'success', summary: 'Excluído', detail: 'Item removido com sucesso.', life: 3000 });
     
-    // Se o arquivo excluído for o que está aberto no editor, limpamos a tela
-    if (currentFile.value === item.name) {
-      currentFile.value = '';
-      window.history.pushState({}, '', `?folder=${currentFolder.value}`);
+    // Se o arquivo excluído for o que está aberto no editor (mesmo nome e mesma pasta)
+    if (currentFile.value === item.name && editorCtxFolder.value === currentFolder.value) {
+      currentFile.value = ''; // Fecha o editor
+      navigate.toDashboard();
     }
 
-    await refreshFiles(); // Atualiza a lista
+    await refreshFiles(); 
   } catch (e) {
     console.error(e);
     toast.add({ severity: 'error', summary: 'Erro', detail: 'Não foi possível excluir o item.', life: 3000 });
@@ -359,7 +435,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
     <AdminTopbar 
         :site-context="siteContext"
-        :current-folder="currentFolder"
+        :current-folder="editorCtxFolder" 
         :current-file="currentFile"
         :loading-save="loadingSave"
         :loading-publish="loadingPublish" 
@@ -376,6 +452,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
+      
       <div v-if="currentFile">
         
         <div v-if="showRawMode" class="h-[calc(100vh-120px)] animate-fade-in">
@@ -406,7 +483,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
           <div :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'" class="transition-all duration-300">
             <AdminMarkdownEditor 
               v-model:content="form.content"
-              :current-folder="currentFolder"
+              :current-folder="editorCtxFolder" 
               :current-file="currentFile"
               @open-image="imageActions.open()"
             />
@@ -418,7 +495,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
      <div v-else class="h-[calc(100vh-120px)] w-full">
          <DashboardHome 
-           :site-context="displaySiteName"
+           :site-context="siteContext"
            :current-folder="currentFolder"
            :files="sortedFiles"
            @navigate="(path) => {
