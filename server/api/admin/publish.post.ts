@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   // 1. Resolve caminhos
   const currentDir = process.cwd();
-  const siteDir = path.resolve(currentDir, '../sites', site);
+  const siteDir = path.resolve(currentDir, '..', '..', 'sites', site);
 
   if (!fs.existsSync(siteDir)) {
     throw createError({ statusCode: 404, message: `Diretório não encontrado: ${siteDir}` });
