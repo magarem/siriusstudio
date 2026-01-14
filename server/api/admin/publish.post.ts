@@ -16,6 +16,7 @@ const runCommand = (command: string, cwd?: string) => {
 };
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig();
   const body = await readBody(event);
   const site = body.site; // Ex: 'indiasagrada'
 
@@ -24,9 +25,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // 1. Resolve caminhos
-  const currentDir = process.cwd();
-  const siteDir = path.resolve(currentDir, '..', '..', 'sites', site);
-
+  const siteDir = path.join(config.storagePath, 'sites', site);
   if (!fs.existsSync(siteDir)) {
     throw createError({ statusCode: 404, message: `Diretório não encontrado: ${siteDir}` });
   }
