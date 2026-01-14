@@ -1,48 +1,57 @@
-import { parseMarkdown } from '#imports'
+// composables/useSmartContent.ts
 
+// Define os estados possíveis da requisição para controle de UI
 type SmartContentStatus =
   | 'loading'
-  | 'collection'
-  | 'disk'
+  | 'collection' // Veio do Cache/Banco (Rápido)
+  | 'disk'       // Veio do Arquivo Real (Lento/Fresco)
   | 'error'
 
+/**
+ * NORMALIZADOR DE CONTEÚDO
+ * Unifica a estrutura de dados vinda do Nuxt Content (Collection/DB) 
+ * e do Sistema de Arquivos (Disk/API) para um formato padrão.
+ * * Saída Padrão:
+ * {
+ * title: "...",
+ * body: { ... },
+ * path: "...",
+ * meta: { images: [], topimages: [], category: "...", etc }
+ * }
+ */
 function normalizeContent(raw: any) {
   if (!raw) return null;
 
-  // 1. Extraímos o frontmatter original. 
-  // O Nuxt Content (Collection) coloca campos extras na raiz.
-  // O parseMarkdown (Disk) coloca em .data.
-  // Vamos unificar tudo em um objeto de "origem" de metadados.
+  // No parseMarkdown (Disk), os dados frontmatter ficam dentro de 'data'.
+  // No queryCollection (Prod), eles podem estar na raiz ou misturados.
   const rawData = raw.data || {};
   const source = { ...raw, ...rawData };
 
-  // 2. Chaves que DEVEM ficar na raiz (Padrão Nuxt)
+  // Chaves que o Nuxt Content usa na raiz e queremos manter lá
   const protectedKeys = [
     'body', 'bodyHtml', 'excerpt', 
     '_id', '_path', '_file', '_draft', '_type', '_extension', 
-    'title', 'description'
+    'title', 'description', 'path', 'id', 'seo'
   ];
 
   const normalized: any = {
-    meta: {}
+    meta: {} // Campos personalizados vão para cá
   };
 
-  // 3. Varredura Total
+  // Separa o joio do trigo
   Object.keys(source).forEach(key => {
-    // Ignora chaves internas de processamento
+    // Ignora as chaves originais de processamento para não duplicar
     if (key === 'data' || key === 'meta') return;
 
     if (protectedKeys.includes(key)) {
-      // Vai para a raiz
       normalized[key] = source[key];
     } else {
-      // TUDO o resto vai para o meta (incluindo cargaHoraria, programacao, etc.)
+      // Campos customizados (topimages, icon, tags, etc)
       normalized.meta[key] = source[key];
     }
   });
 
-  // 4. Caso especial: se o 'raw' original já tinha um .meta (comum na collection v3)
-  // vamos mesclar para não perder nada
+  // Se já existia um objeto meta vindo da fonte, mescla para não perder nada
   if (raw.meta && typeof raw.meta === 'object') {
     normalized.meta = { ...normalized.meta, ...raw.meta };
   }
@@ -51,66 +60,113 @@ function normalizeContent(raw: any) {
 }
 
 export async function useSmartContent(path: string) {
-  const route = useRoute()
-  const isPreview = computed(() => 'preview' in route.query)
+  const config = useRuntimeConfig()
+  const siteName = config.public.siteName
+  
+  // 1. INTEGRAÇÃO COM MODO PREVIEW
+  // O composable usePreview (auto-importado) verifica o Cookie.
+  // Também checamos a config global 'liveContent' para casos de SaaS puro.
+  const { isEnabled } = usePreview()
+  
+  const isDiskMode = computed(() => 
+    isEnabled.value === true || config.public.liveContent === true
+  )
 
   const data = ref<any>(null)
   const status = ref<SmartContentStatus>('loading')
 
-  const config = useRuntimeConfig()
-  const siteName = config.public.siteName
-
   /**
-   * Fonte 1 — Collection
+   * ----------------------------------------------------------------
+   * ESTRATÉGIA A: COLLECTION (PRODUÇÃO / ISR)
+   * Usa o banco de dados otimizado do Nuxt Content v3.
+   * É muito rápido, mas requer build ou re-geração de cache.
+   * ----------------------------------------------------------------
    */
   const fetchFromCollection = async () => {
     try {
-      const { data: result } = await useAsyncData(
-        `content:${path}`,
-        () => queryCollection('content').path(path).first()
-      )
+      // queryCollection busca pelo campo 'path' no banco SQLite interno
+      const result = await queryCollection('content').path(path).first()
 
-      if (result.value) {
-        data.value = normalizeContent(result.value)
+      if (result) {
+        data.value = normalizeContent(result)
         status.value = 'collection'
+      } else {
+        // Se não achou na collection, define erro (não tenta disco aqui para não misturar lógicas)
+        status.value = 'error'
       }
     } catch (e) {
-      console.error('❌ Erro ao ler da collection:', e)
+      console.error('❌ [SmartContent] Erro na Collection:', e)
       status.value = 'error'
     }
   }
 
   /**
-   * Fonte 2 — Disco (preview)
+   * ----------------------------------------------------------------
+   * ESTRATÉGIA B: DISK (PREVIEW / LIVE MODE)
+   * Lê o arquivo físico (.md) via API em tempo real.
+   * Inclui lógica de fallback (Tenta arquivo -> Falha -> Tenta Index da pasta).
+   * ----------------------------------------------------------------
    */
   const fetchFromDisk = async () => {
     try {
-      const file = path.replace(/^\//, '') + '.md'
-
-      const result: any = await $fetch('/api/admin/storage', {
+      // Limpeza do path: "/eventos/" vira "eventos"
+      const cleanPath = path.replace(/^\//, '').replace(/\/$/, '')
+      
+      // TENTATIVA 1: Busca pelo arquivo exato (ex: "sobre" -> "sobre.md")
+      let fileToFetch = `${cleanPath}.md`
+      
+      // Adiciona _v=Date.now() para burlar qualquer cache do navegador/proxy (Cache Busting)
+      let result: any = await $fetch('/api/admin/storage', {
         params: {
           site: siteName,
           folder: 'content',
-          file,
-          _v: Date.now()
+          file: fileToFetch,
+          _v: Date.now() 
         }
-      })
+      }).catch(() => null)
+
+      // TENTATIVA 2: Fallback para Index (ex: "eventos" -> "eventos/index.md")
+      // Se a primeira falhou, assume que é uma pasta e tenta pegar o index.
+      if (!result?.content) {
+        // Garante as barras corretas para não ficar "eventos//index.md"
+        fileToFetch = `${cleanPath}/index.md`.replace(/\/+/g, '/')
+        
+        result = await $fetch('/api/admin/storage', {
+          params: {
+            site: siteName,
+            folder: 'content',
+            file: fileToFetch,
+            _v: Date.now()
+          }
+        }).catch(() => null)
+      }
 
       if (result?.content) {
+        // O conteúdo vem como string do disco. 
+        // parseMarkdown converte essa string em AST (JSON que o renderizador entende)
         const parsed = await parseMarkdown(result.content)
         data.value = normalizeContent(parsed)
         status.value = 'disk'
+      } else {
+        console.warn(`⚠️ [Preview] Arquivo não encontrado no disco: ${cleanPath}`)
+        status.value = 'error'
       }
     } catch (e) {
-      console.error('❌ Erro ao ler do disco:', e)
+      console.error('❌ [SmartContent] Erro crítico no disco:', e)
       status.value = 'error'
     }
   }
 
   /**
-   * Orquestrador
+   * ORQUESTRADOR
+   * Decide qual fonte de dados usar baseado no estado do Preview.
    */
-  if (isPreview.value) {
+  
+  // Reinicia estado
+  status.value = 'loading'
+  data.value = null
+
+  if (isDiskMode.value) {
     await fetchFromDisk()
   } else {
     await fetchFromCollection()
@@ -118,7 +174,7 @@ export async function useSmartContent(path: string) {
 
   return {
     data,
-    isPreview,
-    status
+    status,
+    isDiskMode // Retorna para quem quiser saber a origem (ex: mostrar badge "Live")
   }
 }

@@ -1,9 +1,8 @@
 <script setup>
-// Buscar arquivos da pasta templos dentro da collection 'content'
+// Content v3 usa queryCollection em vez de queryContent
 const { data: templos } = await useAsyncData('templos', () => 
-  queryCollection('content')
-    .where('_path', '$contains', '/templos/')
-    .order('title', 'ASC')
+  queryCollection('templos')
+    .order('title', 'ASC') // ordenar alfabeticamente
     .all()
 )
 </script>

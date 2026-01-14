@@ -29,6 +29,8 @@ export default defineEventHandler(async (event) => {
     return [];
   }
 
+  console.log("targetDir:", targetDir)
+  
   try {
     // CASO A: Leitura de um arquivo específico (Modo Edição/Detalhe)
     if (file) {

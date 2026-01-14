@@ -10,34 +10,120 @@ const props = defineProps({
 const config = useRuntimeConfig();
 const siteName = config.public.siteName;
 
-// 1. O backend já devolve a lista ORDENADA pelo _order.yml
-const { data: files, pending } = await useFetch('/api/admin/storage', {
-  query: { site: siteName, folder: props.section },
-  key: `list-${props.section}`
-});
+// 1. INTEGRAÇÃO COM O PREVIEW (Cookie)
+// O composable usePreview detecta se o cookie está ativo.
+const { isEnabled } = usePreview();
 
-// 2. O .filter() mantem a ordem original do array
-const filteredFiles = computed(() => {
-  if (!files.value || !Array.isArray(files.value)) return [];
-  
-  // --- ALTERAÇÃO AQUI ---
-  // Adicionamos: && f.name !== '_schema.json'
-  return files.value.filter(f => 
-    !f.isDirectory && 
-    f.name !== '_index.md' && 
-    f.name !== '_schema.json'
-  );
-});
+// Define se vamos ler do disco (Tempo Real) ou do Banco (Cache/Build)
+const isDiskMode = computed(() => 
+  isEnabled.value === true || config.public.liveContent === true
+);
 
-const getLink = (fileName) => {
-  const cleanPath = props.section.replace(/^content\/?/, '');
-  const cleanFile = fileName.replace(/\.[^/.]+$/, "");
-  return `/${cleanPath}/${cleanFile}`.replace(/\/+/g, '/');
+/**
+ * NORMALIZADOR DE DADOS
+ * Padroniza a saída para que o template não quebre, independente da fonte.
+ */
+const normalizeItem = (item, source) => {
+  if (source === 'disk') {
+    // --- MODO DISCO (API RAW) ---
+    const cleanPath = props.section.replace(/^content\/?/, '');
+    const cleanFile = item.name.replace(/\.[^/.]+$/, "");
+    
+    // Gera URL e remove "/index" do final se existir
+    const finalPath = `/${cleanPath}/${cleanFile}`
+      .replace(/\/+/g, '/')
+      .replace(/\/index$/, ''); 
+
+    return {
+      title: item.data?.title || item.name.replace('.md', ''),
+      description: item.data?.description,
+      // Tenta pegar imagem de capa ou topimages
+      image: item.data?.images?.[0] || item.data?.topimages?.[0] || null,
+      path: finalPath,
+      key: item.name
+    };
+  } else {
+    // --- MODO COLLECTION (NUXT CONTENT V3) ---
+    const img = item.images?.[0] || item.meta?.images?.[0] || item.topimages?.[0] || item.meta?.topimages?.[0] || null;
+    
+    return {
+      title: item.title,
+      description: item.description,
+      image: img,
+      path: item.path,
+      key: item.id || item.path
+    };
+  }
 };
 
-const getFirstImage = (file) => {
-  return file.data?.images?.[0] || file.data?.topimages?.[0] || null;
-};
+/**
+ * DATA FETCHING HÍBRIDO
+ */
+const { data: items, status } = await useAsyncData(
+  `list-${props.section}-${isDiskMode.value ? 'live' : 'prod'}`, 
+  async () => {
+    
+    // ---------------------------------------------------------
+    // A. MODO DISCO (Live/Preview)
+    // Lê arquivos direto da pasta física via API
+    // ---------------------------------------------------------
+    if (isDiskMode.value) {
+      try {
+        const rawFiles = await $fetch('/api/admin/storage', {
+          query: { site: siteName, folder: props.section }
+        });
+
+        if (!Array.isArray(rawFiles)) return [];
+
+        return rawFiles
+          .filter(f => 
+            !f.isDirectory && 
+            f.name !== 'index.md' &&   // Ignora o index da própria pasta
+            !f.name.startsWith('_') && // Ignora arquivos meta (_order.yml, _schema.json)
+            !f.name.startsWith('.')    // Ignora arquivos de sistema (.DS_Store)
+          )
+          .map(f => normalizeItem(f, 'disk'))
+          .slice(0, props.limit);
+
+      } catch (e) {
+        console.error('Listfiles Disk Error:', e);
+        return [];
+      }
+    }
+
+    // ---------------------------------------------------------
+    // B. MODO PRODUÇÃO (Collection V3)
+    // Lê do banco de dados otimizado (SQLite/JSON)
+    // ---------------------------------------------------------
+    else {
+      // Normaliza o caminho de busca: "content/eventos" -> "/eventos"
+      let targetPath = props.section.replace(/^content\/?/, '');
+      if (!targetPath.startsWith('/')) targetPath = '/' + targetPath;
+      if (targetPath.endsWith('/')) targetPath = targetPath.slice(0, -1);
+
+      const contentFiles = await queryCollection('content')
+        .where('path', 'LIKE', `${targetPath}/%`) // Pega tudo dentro da pasta
+        .where('path', '<>', targetPath) // Exclui o próprio index da pasta
+        .limit(props.limit)
+        .all(); 
+
+      // Filtro Manual Pós-Query:
+      // Garante que arquivos começando com "_" (meta) não apareçam
+      return contentFiles
+        .filter(f => {
+          const segments = f.path.split('/');
+          const slug = segments[segments.length - 1];
+          return !slug.startsWith('_') && slug !== 'index';
+        })
+        .map(f => normalizeItem(f, 'collection'));
+    }
+  },
+  {
+    watch: [() => props.section, isDiskMode]
+  }
+);
+
+const pending = computed(() => status.value === 'pending');
 </script>
 
 <template>
@@ -50,49 +136,51 @@ const getFirstImage = (file) => {
       <i class="pi pi-spin pi-spinner text-2xl"></i>
     </div>
 
+    <div v-else-if="!items || items.length === 0" class="w-full py-8 text-center text-gray-500">
+      Nenhum item encontrado.
+    </div>
+
     <div v-else>
+      
       <div v-if="view === 'grid'" class="custom-grid">
         <NuxtLink 
-          v-for="file in filteredFiles.slice(0, limit)" 
-          :key="file.name"
-          :to="getLink(file.name)"
+          v-for="item in items" 
+          :key="item.key"
+          :to="item.path"
           class="custom-card grid-card"
         >
           <div class="card-image-wrapper">
-            <img v-if="getFirstImage(file)" :src="getFirstImage(file)" loading="lazy" />
+            <img v-if="item.image" :src="item.image" loading="lazy" :alt="item.title" />
             <div v-else class="placeholder"><i class="pi pi-image text-4xl opacity-20"></i></div>
           </div>
           <div class="card-content">
-            <h4>{{ file.data?.title || file.name.replace('.md', '') }}</h4>
+            <h4>{{ item.title }}</h4>
           </div>
         </NuxtLink>
       </div>
 
       <div v-else-if="view === 'list'" class="custom-list">
         <NuxtLink 
-          v-for="file in filteredFiles.slice(0, limit)" 
-          :key="file.name"
-          :to="getLink(file.name)"
+          v-for="item in items" 
+          :key="item.key"
+          :to="item.path"
           class="custom-card list-card"
         >
           <div class="list-image-wrapper">
-            <img v-if="getFirstImage(file)" :src="getFirstImage(file)" loading="lazy" />
+            <img v-if="item.image" :src="item.image" loading="lazy" :alt="item.title" />
             <div v-else class="placeholder"><i class="pi pi-image text-4xl opacity-20"></i></div>
           </div>
           
           <div class="list-content">
-            <h4>{{ file.data?.title || file.name.replace('.md', '') }}</h4>
-            
-            <p v-if="file.data?.description" class="excerpt">
-              {{ file.data.description }}
+            <h4>{{ item.title }}</h4>
+            <p v-if="item.description" class="excerpt">
+              {{ item.description }}
             </p>
-            
             <span class="read-more">Ler mais →</span>
           </div>
         </NuxtLink>
       </div>
     </div>
-
   </div>
 </template>
 
@@ -160,14 +248,14 @@ const getFirstImage = (file) => {
 .custom-list {
   display: flex;
   flex-direction: column;
-  gap: 30px; /* Reduzi um pouco o gap */
+  gap: 30px;
   width: 100%;
   margin-top: 20px;
 }
 
 .list-card {
   flex-direction: row;
-  height: 220px; /* Altura fixa um pouco menor */
+  height: 220px;
 }
 
 .list-image-wrapper {
@@ -223,7 +311,7 @@ img {
 }
 
 .custom-card:hover img {
-  transform: scale(1.05); /* Efeito de zoom suave na imagem */
+  transform: scale(1.05);
 }
 
 .placeholder {

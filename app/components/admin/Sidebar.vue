@@ -1,12 +1,13 @@
 <script setup>
-import { ref, watch, computed } from 'vue'; // Adicionei 'computed'
+import { ref, watch, computed } from 'vue';
 import { VueDraggable } from 'vue-draggable-plus';
 
 const props = defineProps({
   visible: Boolean,
   files: Array,
   currentFolder: String,
-  currentFile: String
+  currentFile: String,
+  siteContext: String
 });
 
 const emit = defineEmits([
@@ -14,10 +15,24 @@ const emit = defineEmits([
   'create-file', 'create-folder', 'refresh', 'delete' 
 ]);
 
+// Opções para o SelectBox (Dropdown)
 const roots = ['content', 'pages', 'components', 'data', 'layouts'];
+const rootOptions = roots.map(r => ({ label: r.toUpperCase(), value: r }));
+
+// Computed para controlar o Dropdown baseado na pasta atual
+const selectedRoot = computed({
+  get: () => {
+    // Pega a primeira parte do caminho (ex: 'content/blog' -> 'content')
+    return props.currentFolder.split('/')[0];
+  },
+  set: (val) => {
+    emit('change-root', val);
+  }
+});
+
 const removeExtension = (filename) => filename.replace(/\.[^/.]+$/, "");
 
-// --- DRAG & DROP ---
+// --- DRAG & DROP (Mantido igual) ---
 const localFiles = ref([]);
 watch(() => props.files, (newVal) => { localFiles.value = [...(newVal || [])]; }, { immediate: true });
 
@@ -32,7 +47,7 @@ const onDragEnd = async () => {
   }
 };
 
-// --- RENOMEAR ---
+// --- RENOMEAR (Mantido igual) ---
 const renameDialogVisible = ref(false);
 const renameLoading = ref(false);
 const targetFile = ref(null);
@@ -59,7 +74,6 @@ const confirmRename = async () => {
       body: { folder: props.currentFolder, oldFile: oldName, newName: newFileName.value }
     });
 
-    // Atualiza ordem localmente para evitar pulo
     const currentOrder = localFiles.value.map(f => f.name);
     const index = currentOrder.indexOf(oldName);
     if (index !== -1) {
@@ -79,7 +93,7 @@ const confirmRename = async () => {
   }
 };
 
-// --- EXCLUIR ---
+// --- EXCLUIR (Mantido igual) ---
 const deleteDialogVisible = ref(false);
 const itemToDelete = ref(null);
 
@@ -96,15 +110,13 @@ const handleDelete = () => {
   }
 };
 
-// --- MOVER (NOVO) ---
+// --- MOVER (Mantido igual) ---
 const moveDialogVisible = ref(false);
 const itemToMove = ref(null);
 const moveLoading = ref(false);
 
-// Filtra apenas as pastas visíveis na lista atual para exibir no modal
 const availableSubFolders = computed(() => {
   if (!localFiles.value) return [];
-  // Retorna itens que são diretórios E não são o próprio item que estamos movendo
   return localFiles.value.filter(f => f.isDirectory && f.name !== itemToMove.value?.name);
 });
 
@@ -120,15 +132,13 @@ const handleMove = async (destination) => {
   const fileName = itemToMove.value.name;
   let newPathName = '';
 
-  // Lógica de destino
   if (destination === '..') {
-    newPathName = `../${fileName}`; // Move para pasta pai
+    newPathName = `../${fileName}`;
   } else {
-    newPathName = `${destination}/${fileName}`; // Move para subpasta
+    newPathName = `${destination}/${fileName}`;
   }
 
   try {
-    // Usamos o endpoint rename para mover (mudando o path)
     await $fetch('/api/admin/rename', {
       method: 'POST',
       body: {
@@ -139,7 +149,7 @@ const handleMove = async (destination) => {
     });
 
     moveDialogVisible.value = false;
-    emit('refresh'); // Recarrega a lista pois o arquivo sumiu desta pasta
+    emit('refresh');
   } catch (error) {
     console.error(error);
     alert('Erro ao mover item.');
@@ -157,27 +167,54 @@ const handleMove = async (destination) => {
     class="w-80 bg-[#141b18] border-r border-white/5"
   >
     <template #header>
-      <div class="flex items-center gap-2">
-        <i class="pi pi-folder-open text-[#6f942e]"></i>
-        <span class="text-xs font-black uppercase tracking-widest text-slate-400">Navegação</span>
+      <div class="flex flex-col w-full pr-4">
+        <div class="flex items-center gap-2 mb-1">
+           <i class="pi pi-star-fill text-[#6f942e] text-sm"></i>
+           <span class="font-black text-slate-100 tracking-tighter text-base">SIRIUS STUDIO</span>
+        </div>
+        <div class="flex items-center gap-2 pl-6 opacity-80">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-[#6f942e] truncate">
+                {{ siteContext || 'Sem contexto' }}
+            </span>
+        </div>
       </div>
     </template>
     
     <div class="flex flex-col h-full w-full">
       
-      <div class="p-3 border-b border-white/5 bg-[#141b18] shrink-0 z-10">
-        <div class="flex gap-2 mb-4">
-           <Button label="ARQUIVO" icon="pi pi-file-plus" class="flex-1 bg-[#6f942e] border-none text-black font-black text-[10px] tracking-widest" @click="emit('create-file')" />
-           <Button label="PASTA" icon="pi pi-folder-plus" class="flex-1 bg-white/10 border-none text-slate-300 hover:bg-white/20 font-black text-[10px] tracking-widest" @click="emit('create-folder')" />
+      <div class="p-3 border-b border-white/5 bg-[#141b18] shrink-0 z-10 flex flex-col gap-3">
+        
+        <div class="flex items-center gap-2">
+            <Dropdown 
+                v-model="selectedRoot" 
+                :options="rootOptions" 
+                optionLabel="label" 
+                optionValue="value"
+                class="w-full custom-dropdown !h-9 flex items-center"
+            />
+
+            <Button 
+                icon="pi pi-file-plus" 
+                class="!w-9 !h-9 !p-0 bg-[#6f942e] border-none text-black shrink-0" 
+                v-tooltip.bottom="'Novo Arquivo'"
+                @click="emit('create-file')" 
+            />
+            
+            <Button 
+                icon="pi pi-folder-plus" 
+                class="!w-9 !h-9 !p-0 bg-white/10 border-none text-slate-300 hover:bg-white/20 shrink-0" 
+                v-tooltip.bottom="'Nova Pasta'"
+                @click="emit('create-folder')" 
+            />
         </div>
 
-        <div class="bg-black/20 p-2 rounded-sm border border-white/5 flex flex-wrap gap-1">
-          <button v-for="root in roots" :key="root"
-                  @click="emit('change-root', root)"
-                  :class="['text-[9px] px-2 py-1 rounded uppercase font-bold transition-all', currentFolder.startsWith(root) ? 'bg-[#6f942e] text-black' : 'bg-white/5 text-slate-500 hover:text-white']">
-            {{ root }}
-          </button>
+        <div class="bg-black/40 border border-white/5 rounded px-2 py-1.5 flex items-center gap-2 overflow-hidden" :title="currentFolder">
+            <i class="pi pi-folder-open text-[#6f942e] text-[10px] shrink-0"></i>
+            <span class="text-[10px] font-mono text-slate-300 truncate select-all">
+                /{{ currentFolder }}
+            </span>
         </div>
+
       </div>
 
       <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
@@ -281,3 +318,25 @@ const handleMove = async (destination) => {
 
   </Drawer>
 </template>
+
+<style scoped>
+/* Estilização específica para o Dropdown ficar integrado ao tema Dark */
+:deep(.custom-dropdown) {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+:deep(.custom-dropdown .p-dropdown-label) {
+    color: #e2e8f0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.5rem;
+}
+:deep(.custom-dropdown:hover) {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+:deep(.custom-dropdown.p-focus) {
+    border-color: #6f942e;
+    box-shadow: 0 0 0 1px #6f942e;
+}
+</style>
