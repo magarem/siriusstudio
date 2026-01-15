@@ -26,6 +26,8 @@ export default defineEventHandler(async (event) => {
 
   // 1. Resolve caminhos
   const siteDir = path.join(config.storagePath, 'sites', site);
+
+  console.log("siteDir:", siteDir)
   if (!fs.existsSync(siteDir)) {
     throw createError({ statusCode: 404, message: `Diretório não encontrado: ${siteDir}` });
   }
