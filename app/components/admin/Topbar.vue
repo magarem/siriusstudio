@@ -133,42 +133,37 @@ const previewLink = computed(() => {
           <span class="hidden lg:inline ml-2 font-medium text-xs uppercase tracking-wide">Mídia</span>
         </Button>
 
-        <Button 
+      <Button 
           :loading="loadingSave" 
           @click="emit('save')" 
           :disabled="!currentFile" 
           class="bg-[#6f942e] border-none text-black hover:bg-[#5a7a25] transition-all !px-4" 
-        >
-            <i class="pi pi-save" v-if="!loadingSave"></i>
-            <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">SALVAR</span>
-        </Button>
+      >
+          <i class="pi pi-save" v-if="!loadingSave"></i>
+          <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">SALVAR</span>
+      </Button>
 
-        <a 
-          :href="previewLink" 
-          target="_blank"
-          class="no-underline"
-          :title="`Visualizar: ${previewLink}`"
-        >
-            <Button 
-                outlined 
-                :disabled="!currentFile && !siteUrl"
-                class="!border-white/20 !text-slate-200 hover:!bg-white/5 hover:!text-white hover:!border-[#6f942e] transition-colors !px-3"
-            >
-                <i class="pi pi-external-link"></i>
-                <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">PREVIEW</span>
-            </Button>
-        </a>
-
-        <Button 
+      <Button 
           outlined 
-          :loading="loadingPublish"
-          @click="emit('publish')" 
-          class="!border-white/20 !text-slate-200 hover:!bg-purple-500/10 hover:!text-purple-300 hover:!border-purple-500/50 transition-colors !px-3" 
-          v-tooltip.bottom="'Atualizar Produção'"
-        >
-            <i class="pi pi-cloud-upload" v-if="!loadingPublish"></i>
-            <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">PUBLICAR</span>
-        </Button>
+          @click="emit('preview')"
+          :disabled="!currentFile && !siteUrl"
+          class="!border-white/20 !text-slate-200 hover:!bg-white/5 hover:!text-white hover:!border-[#6f942e] transition-colors !px-3"
+          v-tooltip.bottom="'Live Preview'"
+      >
+          <i class="pi pi-external-link"></i>
+          <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">PREVIEW</span>
+      </Button>
+
+      <Button 
+        outlined 
+        :loading="loadingPublish"
+        @click="emit('publish')" 
+        class="!border-white/20 !text-slate-200 hover:!bg-purple-500/10 hover:!text-purple-300 hover:!border-purple-500/50 transition-colors !px-3" 
+        v-tooltip.bottom="'Atualizar Site Público'"
+      >
+          <i class="pi pi-cloud-upload" v-if="!loadingPublish"></i>
+          <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">PUBLICAR</span>
+      </Button>
 
         <div class="w-px h-6 bg-white/10 mx-2"></div>
 

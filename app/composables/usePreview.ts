@@ -1,34 +1,63 @@
 // composables/usePreview.ts
+
 export const usePreview = () => {
-  // Cria/Lê o cookie 'preview_mode'
-  const previewCookie = useCookie('preview_mode', {
-    maxAge: 60 * 60 * 24, // 24 horas
-    path: '/'             // Vale para todo o site (Admin e Público)
-  })
+  // 1. Pega a URL atual (Funciona no Server e no Client)
+  const url = useRequestURL(); 
+  
+  // 2. O ESTADO (Computed)
+  // O preview está ativo se o hostname começar com "preview."
+  // Também mantivemos suporte a query param ?preview=true como fallback
+  const isEnabled = computed(() => {
+    return url.hostname.startsWith('preview.') || url.searchParams.get('preview') === 'true';
+  });
 
-  const isEnabled = computed(() => !!previewCookie.value)
-
-  // ATIVAR (Novo)
+  // 3. ATIVAR (Redireciona para o subdomínio)
   const enable = () => {
-    if (!previewCookie.value) {
-      previewCookie.value = 'true'
-      // Opcional: Log para debug
-      console.log('🔌 Sirius Mode: Preview ativado automaticamente.')
-    }
-  }
-
-  // DESATIVAR
-  const disable = () => {
-    previewCookie.value = null
-    
+    // Só roda no navegador
     if (import.meta.client) {
-      window.location.reload()
+      const currentHost = window.location.hostname;
+
+      // Se já estiver no preview, não faz nada
+      if (currentHost.startsWith('preview.')) return;
+
+      // Monta a nova URL (mantém porta, path e query)
+      // Remove 'www.' para evitar 'preview.www.'
+      const cleanHost = currentHost.replace(/^www\./, '');
+      const newHost = `preview.${cleanHost}`;
+      
+      const protocol = window.location.protocol;
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const path = window.location.pathname;
+      const search = window.location.search;
+
+      // Redirecionamento total (Reload)
+      window.location.href = `${protocol}//${newHost}${port}${path}${search}`;
     }
-  }
+  };
+
+  // 4. DESATIVAR (Remove o subdomínio)
+  const disable = () => {
+    if (import.meta.client) {
+      const currentHost = window.location.hostname;
+
+      // Se não estiver no preview, não faz nada
+      if (!currentHost.startsWith('preview.')) return;
+
+      // Remove o prefixo "preview."
+      const newHost = currentHost.replace(/^preview\./, '');
+      
+      const protocol = window.location.protocol;
+      const port = window.location.port ? `:${window.location.port}` : '';
+      const path = window.location.pathname;
+      const search = window.location.search;
+
+      window.location.href = `${protocol}//${newHost}${port}${path}${search}`;
+    }
+  };
 
   return {
     isEnabled,
-    enable,  // <--- Exportando a nova função
+    enable, 
     disable
-  }
+  };
 }

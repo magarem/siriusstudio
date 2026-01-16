@@ -57,6 +57,7 @@ console.log("query:", {
     folder: "", // Busca na raiz
     file: "_config.json",
   })
+
 const { data: configFileData } = await useFetch("/api/admin/storage", {
   query: {
     site: siteContext.value,
@@ -67,7 +68,9 @@ const { data: configFileData } = await useFetch("/api/admin/storage", {
   key: `site-config-${siteContext.value}`,
 });
 
-console.log("configFileData:", configFileData.value)
+const configFileData_obj = JSON.parse(configFileData.value.content)
+
+console.log("configFileData:", JSON.parse(configFileData.value.content).port)
 
 // Computada para extrair a URL do JSON
 const userSiteUrl = computed(() => {
@@ -138,23 +141,139 @@ const getPreviewPath = () => {
   return path.startsWith("/") ? path : `/${path}`;
 };
 
-const handlePreview = () => {
-  // Validação robusta
+// const handlePreview = () => {
+//   // Validação robusta
+//   if (!userSiteUrl.value) {
+//     toast.add({
+//       severity: "warn",
+//       summary: "Configuração Ausente",
+//       detail: 'Crie um arquivo "_config.json" na raiz com a chave "url".',
+//       life: 5000,
+//     });
+//     return;
+//   }
+
+//   const path = getPreviewPath();
+//   const fullUrl = `${userSiteUrl.value}${path}`;
+
+//   window.open(fullUrl, "_blank");
+// };
+
+// --- ESTADO DO PREVIEW ---
+const previewWindow = ref(null); // <--- Adicione isso
+
+const handlePreview_ = () => {
   if (!userSiteUrl.value) {
-    toast.add({
-      severity: "warn",
-      summary: "Configuração Ausente",
-      detail: 'Crie um arquivo "_config.json" na raiz com a chave "url".',
-      life: 5000,
-    });
+    toast.add({ severity: "warn", summary: "Configuração Ausente", detail: 'Crie um arquivo "_config.json".' });
     return;
   }
 
   const path = getPreviewPath();
-  const fullUrl = `${userSiteUrl.value}${path}`;
+  
+  // [IMPORTANTE] Adicionamos ?preview=true para ativar o listener no front
+  const fullUrl = `${userSiteUrl.value}${path}?preview=true`;
 
-  window.open(fullUrl, "_blank");
+  // [IMPORTANTE] Usamos um nome "sirius_preview" para reaproveitar a mesma aba
+  previewWindow.value = window.open(fullUrl, "sirius_preview");
+
+  // Força um envio inicial após 1 segundo (tempo de carregar a aba)
+  setTimeout(() => sendPreviewUpdate(), 1500);
 };
+
+
+function toPreviewUrl(inputUrl) {
+  try {
+    // Cria um objeto URL para manipular as partes com segurança
+    const url = new URL(inputUrl);
+
+    // Se já tiver "preview.", não faz nada para evitar duplicidade
+    if (url.hostname.startsWith('preview.')) {
+      return inputUrl;
+    }
+
+    // Se tiver "www.", substitui por "preview." (opcional, mas fica mais limpo)
+    // Ex: www.site.com -> preview.site.com
+    if (url.hostname.startsWith('www.')) {
+      url.hostname = url.hostname.replace('www.', 'preview.');
+    } else {
+      // Caso contrário, apenas adiciona o prefixo
+      url.hostname = `preview.${url.hostname}`;
+    }
+
+    // Retorna a URL remontada (mantém porta, protocolo e path)
+    return url.toString();
+
+  } catch (error) {
+    console.error('URL inválida fornecida:', inputUrl);
+    return inputUrl;
+  }
+}
+
+// edit.vue
+
+const getPreviewLink = () => {
+  // Pega a URL base atual do navegador onde o Sirius está rodando
+  // OU pegue de uma env se o site estiver em outro lugar
+  const currentBase = configFileData_obj.url; // ex: http://localhost:3001
+  
+  const path = form.value.path || ''; // ex: /pasta/subpasta
+  const fullUrl = `${currentBase}${path}`;
+
+  return toPreviewUrl(fullUrl);
+};
+
+// Uso no botão
+const handlePreview = () => {
+  const url = getPreviewLink();
+  // alert(url.split(":")[0]+":"+configFileData_obj.port)
+  // alert(configFileData_obj)
+  window.open(url, '_blank');
+}
+
+
+
+
+// --- LÓGICA DE LIVE UPDATE (POST MESSAGE) ---
+let debounceTimer = null;
+
+const sendPreviewUpdate = () => {
+  // Se a janela não existe ou foi fechada, não faz nada
+  if (!previewWindow.value || previewWindow.value.closed) return;
+
+  // Monta o pacote de dados igual definimos no [...slug].vue
+  const payload = {
+    type: 'SIRIUS_PREVIEW_UPDATE',
+    data: {
+      title: form.value.frontmatter.title,
+      description: form.value.frontmatter.description,
+      // Envia o Markdown cru para ser convertido lá no front
+      body: showRawMode.value ? rawContent.value : form.value.content, 
+      frontmatter: form.value.frontmatter
+    }
+  };
+
+  // Envia para a janela do preview
+  previewWindow.value.postMessage(payload, '*');
+};
+
+// Observa qualquer mudança no formulário (Título, Body, Frontmatter)
+watch(form, () => {
+  // Debounce: Só envia se parar de digitar por 50ms (evita travar o browser)
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(sendPreviewUpdate, 50);
+}, { deep: true });
+
+// Observa também o modo RAW se estiver ativo
+watch(rawContent, () => {
+  if (showRawMode.value) {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+        // Parse rápido para atualizar frontmatter no preview também
+        try { parseMD(rawContent.value); } catch(e){}
+        sendPreviewUpdate();
+    }, 50);
+  }
+});
 
 watch(fileError, (err) => {
   if (err) {
@@ -408,6 +527,7 @@ const imageActions = {
       else if (t.mode === "push") t.list.push(url);
     }
     showImageModal.value = false;
+    sendPreviewUpdate();
   },
 };
 
@@ -468,37 +588,40 @@ const saveFile = async () => {
     loadingSave.value = false;
   }
 };
+const isPublishing = ref(false);
 
+// Função que faz o "Deploy"
 const handlePublish = async () => {
-  if (
-    !confirm(
-      `Deseja rodar o build para o site "${siteContext.value}"?\nIsso pode levar alguns minutos.`
-    )
-  )
-    return;
-  loadingPublish.value = true;
+  if (isPublishing.value) return;
+
+  isPublishing.value = true;
+  toast.add({ severity: 'info', summary: 'Publicando...', detail: 'Gerando arquivos do site.', life: 2000 });
+
   try {
-    const res = await $fetch("/api/admin/publish", {
-      method: "POST",
-      body: { site: siteContext.value },
+    // PASSO 1: Salvar o Rascunho (Garante que o compile pegue a versão mais nova)
+    // Assumo que você já tenha uma função 'saveFile' ou similar no seu componente.
+    // Se não tiver, chame a lógica de salvar aqui.
+    // await saveFile(); 
+
+    // PASSO 2: Compilar TUDO (Gera os JSONs de produção)
+    const result = await $fetch('/api/admin/compile-all', {
+      method: 'POST',
+      body: { 
+        site: siteContext.value // Variável que tem o nome 'novagokula'
+      }
     });
-    toast.add({
-      severity: "success",
-      summary: "Publicado!",
-      detail: "Build iniciado.",
-      life: 5000,
-    });
-    console.log("Build Logs:", res.logs);
+
+    if (result.success) {
+      toast.add({ severity: 'success', summary: 'Sucesso!', detail: 'Site atualizado e arquivos gerados.', life: 3000 });
+    } else {
+      throw new Error(result.message);
+    }
+
   } catch (error) {
     console.error(error);
-    toast.add({
-      severity: "error",
-      summary: "Erro no Build",
-      detail: "Verifique o console.",
-      life: 5000,
-    });
+    toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao publicar site.' });
   } finally {
-    loadingPublish.value = false;
+    isPublishing.value = false;
   }
 };
 

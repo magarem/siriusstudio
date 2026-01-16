@@ -53,7 +53,7 @@ export const useContentManager = (folder: string, isPreview: boolean) => {
       if (!sectionData.value) return items.value
 
       let order: string[] = []
-      // Tenta pegar de sectionData.layout_order ou sectionData.meta.layout_order
+      // Tenta pegar de sectionData.layout_order ou sectionData.meta?.layout_order
       const rawOrder = sectionData.value?.layout_order || sectionData.value?.meta?.layout_order
 
       if (Array.isArray(rawOrder)) {
