@@ -13,10 +13,10 @@ export default defineEventHandler(async (event) => {
   }
 
   // --- 1. DEFINIÇÃO DE CAMINHOS ---
-  const APPS_ROOT = resolve(process.cwd(), '..'); 
+  const APPS_ROOT = resolve('/home/maga/dev/apps/'); 
   
   // Origem (MD)
-  const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); // Ou 'drafts' se mudou a arquitetura
+  const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
   
   // Destino (JSON)
   const DEST_ROOT = join(APPS_ROOT, 'sites', site, 'server', 'data');
