@@ -21,6 +21,7 @@ console.log(`🔧 Configurando ambiente para: ${siteName}`);
 const links = [
   // Storage Links
   { dest: 'content', src: `storage/${siteName}/content` },
+  { dest: 'public/images', src: `storage/${siteName}/images` },
   { dest: 'app/layouts', src: `storage/${siteName}/layouts` },
   { dest: 'app/pages', src: `storage/${siteName}/pages` },
   { dest: 'server/data', src: `storage/${siteName}/data` },
