@@ -5,26 +5,19 @@ import { fileURLToPath } from 'node:url';
 // --- 1. Configuração Inicial ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// O script roda em apps/siriusstudio/scripts, então subimos 2 níveis para chegar em 'apps'
 const APPS_ROOT = path.resolve(__dirname, '..', '..');
 
 const siteName = process.argv[2];
 
 if (!siteName) {
   console.error('❌ Erro: Informe o nome do site.');
-  console.error('👉 Exemplo: npm run newsite meunovo.site');
   process.exit(1);
 }
 
 const SITE_ROOT = path.join(APPS_ROOT, 'sites', siteName);
 
 console.log(`🔧 Configurando ambiente para: ${siteName}`);
-console.log(`📂 Raiz dos Apps: ${APPS_ROOT}`);
 
-// --- 2. Definição dos Mapeamentos ---
-// Estrutura: { dest: 'caminho/no/site', src: 'caminho/origem' }
-// Nota: A ordem importa! Links pais devem ser criados antes de links filhos.
 const links = [
   // Storage Links
   { dest: 'content', src: `storage/${siteName}/content` },
@@ -38,20 +31,18 @@ const links = [
   { dest: 'server/routes', src: 'siriusstudio/server/routes' },
   { dest: 'server/utils', src: 'siriusstudio/server/utils' },
 
-  // --- CASOS ESPECIAIS (Aninhados) ---
-  // 1. Linkar a pasta de componentes do usuário (Storage)
+  // --- COMPONENTES (A Ordem Importa) ---
+  // 1. Linka a pasta geral para o Storage
   { dest: 'app/components', src: `storage/${siteName}/components` },
   
-  // 2. Injetar componentes do Sirius DENTRO da pasta de componentes do usuário
-  // Como 'app/components' agora aponta para o storage, isso vai criar um link 
-  // simbólico dentro de apps/storage/[site]/components/content apontando para sirius
+  // 2. Linka o conteúdo do Sirius DENTRO da pasta do Storage (via link aninhado)
   { dest: 'app/components/content', src: 'siriusstudio/app/components/content' },
 ];
 
 async function run() {
   try {
-    // Garante que a pasta do site existe
-    // await fs.mkdir(SITE_ROOT, { recursive: true });
+    // Garante que a raiz do site existe
+    await fs.mkdir(SITE_ROOT, { recursive: true });
 
     for (const link of links) {
       const destPath = path.join(SITE_ROOT, link.dest);
@@ -59,34 +50,35 @@ async function run() {
 
       // 1. Garante que a pasta pai do destino existe
       const destParent = path.dirname(destPath);
-      //await fs.mkdir(destParent, { recursive: true });
+      await fs.mkdir(destParent, { recursive: true });
 
-      // 2. Remove se já existir (arquivo, pasta ou link)
+      // 2. Remove se já existir
       try {
         await fs.rm(destPath, { recursive: true, force: true });
-      } catch (e) {
-        // Ignora erro se não existir
-      }
+      } catch (e) {}
 
-      // 3. Verifica se a ORIGEM existe (opcional, mas bom para debug)
+      // 3. Verifica/Cria a ORIGEM
       try {
         await fs.access(srcPath);
       } catch {
-        console.warn(`⚠️  Aviso: A origem não existe ainda: ${link.src}`);
-        // Criamos a pasta de origem para evitar link quebrado, 
-        // exceto se for código do sirius (que deveria existir)
         if (link.src.startsWith('storage')) {
             await fs.mkdir(srcPath, { recursive: true });
-            console.log(`   ↳ Pasta de storage criada automaticamente.`);
+            console.log(`   ↳ Storage criado: ${link.src}`);
+        } else {
+            console.warn(`⚠️  Aviso: Origem do Core não encontrada: ${link.src}`);
         }
       }
 
-      // 4. Cria o Link Simbólico
-      // Calculamos o caminho relativo para o link ser portável
-      const relativeSrc = path.relative(destParent, srcPath);
+      // --- CORREÇÃO DO CÁLCULO RELATIVO ---
+      // Resolvemos o caminho REAL da pasta pai.
+      // Se 'app/components' for um link para 'storage/...', isso retorna o caminho do storage.
+      const realDestParent = await fs.realpath(destParent);
+      
+      // Calculamos a distância entre o LOCAL FÍSICO REAL e a ORIGEM
+      const relativeSrc = path.relative(realDestParent, srcPath);
       
       await fs.symlink(relativeSrc, destPath, 'dir');
-      console.log(`✅ Link criado: ${link.dest} -> ${link.src}`);
+      console.log(`✅ Link criado: ${link.dest} -> ${relativeSrc}`);
     }
 
     console.log('\n🚀 Ambiente configurado com sucesso!');
