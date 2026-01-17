@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   // Ajuste esta string para o caminho REAL no seu Mac:
   const BASE_PATH = config.storagePath + '/storage';
   
-  const dbPath = join(BASE_PATH, domain, 'data', 'database.sqlite');
+  const dbPath = join(BASE_PATH, domain, 'db', 'database.sqlite');
 
   console.log('Tentando abrir banco em:', dbPath);
 

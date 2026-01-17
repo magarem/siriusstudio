@@ -12,8 +12,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'O parâmetro "site" é obrigatório.' });
   }
 
+  // --- 0. CONFIGURAÇÃO DO AMBIENTE (NOVO) ---
+  const config = useRuntimeConfig();
+  const envPath = config.storagePath as string;
+
   // --- 1. DEFINIÇÃO DE CAMINHOS ---
-  const APPS_ROOT = resolve('/home/maga/dev/apps/'); 
+  const APPS_ROOT = resolve(envPath); 
   
   // Origem (MD)
   const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
@@ -36,12 +40,19 @@ export default defineEventHandler(async (event) => {
     // Remove os arquivos antigos para evitar "fantasmas" (arquivos deletados no CMS que sobram no site)
     console.log('🧹 Iniciando limpeza de diretórios...');
     
-    await Promise.all([
-      // Limpa a pasta de dados (JSONs)
-      fs.rm(DEST_ROOT, { recursive: true, force: true }),
-      // Limpa o cache de renderização do servidor
-    //   fs.rm(CACHE_ROOT, { recursive: true, force: true })
-    ]);
+    // await Promise.all([
+    //   // Limpa a pasta de dados (JSONs)
+    //   fs.rm(DEST_ROOT, { recursive: true, force: true }),
+    //   // Limpa o cache de renderização do servidor
+    // //   fs.rm(CACHE_ROOT, { recursive: true, force: true })
+    // ]);
+
+    const files = await fs.readdir(DEST_ROOT);
+    await Promise.all(
+        files.map(file => 
+          fs.rm(join(DEST_ROOT, file), { recursive: true, force: true })
+        )
+      );
     
     console.log('✨ Diretórios limpos com sucesso!');
     stats.cleaned = true;
