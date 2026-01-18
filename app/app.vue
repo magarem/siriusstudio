@@ -1,8 +1,6 @@
 <template>
   <div>
-    <Toast />
-    <ConfirmDialog />
-    
+    <ConfirmDialog /> 
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
@@ -12,7 +10,7 @@
 <script setup>
 import 'primeicons/primeicons.css'
 // Teste rápido para ver se o PrimeVue está vivo
-const toast = useToast()
+// const toast = useToast()
 
 onMounted(() => {
   console.log('SiriusStudio iniciado com sucesso!')

@@ -6,7 +6,7 @@ const domain = process.argv[2];
 
 // Configuração: mude o domínio conforme necessário
 const APPS_ROOT = resolve(process.cwd(), '..');
-const storagePath = join(APPS_ROOT, 'storage', domain, 'data');
+const storagePath = join(APPS_ROOT, 'storage', domain, 'db');
 
 console.log(`🚀 storagePath: ${storagePath}...`);
 // 1. Garante que a pasta 'data' existe dentro do storage do site

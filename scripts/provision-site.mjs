@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process'; // <--- Módulo para rodar o seed
 
 // --- 1. Configuração Inicial ---
 const __filename = fileURLToPath(import.meta.url);
@@ -32,11 +33,8 @@ const links = [
   { dest: 'server/routes', src: 'siriusstudio/server/routes' },
   { dest: 'server/utils', src: 'siriusstudio/server/utils' },
 
-  // --- COMPONENTES (A Ordem Importa) ---
-  // 1. Linka a pasta geral para o Storage
+  // --- COMPONENTES ---
   { dest: 'app/components', src: `storage/${siteName}/components` },
-  
-  // 2. Linka o conteúdo do Sirius DENTRO da pasta do Storage (via link aninhado)
   { dest: 'app/components/content', src: 'siriusstudio/app/components/content' },
 ];
 
@@ -45,41 +43,53 @@ async function run() {
     // Garante que a raiz do site existe
     await fs.mkdir(SITE_ROOT, { recursive: true });
 
+    // --- ETAPA 1: CRIAÇÃO DE LINKS E PASTAS ---
     for (const link of links) {
       const destPath = path.join(SITE_ROOT, link.dest);
       const srcPath = path.join(APPS_ROOT, link.src);
 
-      // 1. Garante que a pasta pai do destino existe
+      // Garante pasta pai do destino
       const destParent = path.dirname(destPath);
       await fs.mkdir(destParent, { recursive: true });
 
-      // 2. Remove se já existir
+      // Remove existente
       try {
         await fs.rm(destPath, { recursive: true, force: true });
       } catch (e) {}
 
-      // 3. Verifica/Cria a ORIGEM
+      // Verifica/Cria Origem
       try {
         await fs.access(srcPath);
       } catch {
         if (link.src.startsWith('storage')) {
             await fs.mkdir(srcPath, { recursive: true });
-            console.log(`   ↳ Storage criado: ${link.src}`);
+            console.log(`   ↳ Pasta criada no Storage: ${link.src}`);
         } else {
-            console.warn(`⚠️  Aviso: Origem do Core não encontrada: ${link.src}`);
+            console.warn(`⚠️  Aviso: Pasta do Core não encontrada: ${link.src}`);
         }
       }
 
-      // --- CORREÇÃO DO CÁLCULO RELATIVO ---
-      // Resolvemos o caminho REAL da pasta pai.
-      // Se 'app/components' for um link para 'storage/...', isso retorna o caminho do storage.
+      // Linkagem com caminho relativo real
       const realDestParent = await fs.realpath(destParent);
-      
-      // Calculamos a distância entre o LOCAL FÍSICO REAL e a ORIGEM
       const relativeSrc = path.relative(realDestParent, srcPath);
       
       await fs.symlink(relativeSrc, destPath, 'dir');
       console.log(`✅ Link criado: ${link.dest} -> ${relativeSrc}`);
+    }
+
+    // --- ETAPA 2: CONFIGURAÇÃO DO BANCO DE DADOS (SEED) ---
+    console.log('\n🌱 Inicializando banco de dados...');
+    
+    const seedScriptPath = path.join(__dirname, 'seed-db.mjs');
+    
+    try {
+        // Executa: node scripts/seed-db.mjs [siteName]
+        // stdio: 'inherit' faz com que os logs do seed apareçam aqui no console
+        execSync(`node "${seedScriptPath}" "${siteName}"`, { stdio: 'inherit' });
+        console.log('✅ Banco de dados configurado com sucesso.');
+    } catch (err) {
+        console.error('❌ Erro ao rodar o seed do banco de dados.');
+        // Não damos throw aqui para não invalidar os links já criados, mas avisamos o erro
     }
 
     console.log('\n🚀 Ambiente configurado com sucesso!');
