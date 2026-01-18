@@ -1,5 +1,8 @@
+// server/api/list.ts
 import { promises as fs } from 'node:fs';
-import { resolve, join, extname } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs'; // Importações síncronas para checagens rápidas
+import { resolve, join } from 'node:path';
+import yaml from 'js-yaml'; // <--- IMPORTANTE: Instalar js-yaml se não tiver tipos
 
 const DATA_ROOT = resolve(process.cwd(), 'server/data');
 
@@ -9,7 +12,7 @@ export default defineEventHandler(async (event) => {
 
   if (!section) return [];
 
-  // Remove prefixo "content/" se vier (ex: "content/eventos" -> "eventos")
+  // Remove prefixo "content/"
   section = section.replace(/^content\/?/, '').replace(/^\//, '');
 
   const dirPath = join(DATA_ROOT, section);
@@ -18,44 +21,81 @@ export default defineEventHandler(async (event) => {
     // 1. Lê a pasta
     const files = await fs.readdir(dirPath, { withFileTypes: true });
 
-    // 2. Filtra apenas arquivos .json (ignorando index.json da própria pasta)
+    // 2. Filtra apenas arquivos .json
     const jsonFiles = files.filter(dirent => 
       !dirent.isDirectory() && 
       dirent.name.endsWith('.json') && 
       dirent.name !== 'index.json'
     );
 
-    // 3. Lê o conteúdo de cada um para pegar Título e Imagem
+    // --- NOVA LÓGICA DE ORDENAÇÃO (INÍCIO) ---
+    const orderFilePath = join(dirPath, '_order.yml');
+    let orderMap = new Map<string, number>();
+
+    if (existsSync(orderFilePath)) {
+      try {
+        const fileContent = readFileSync(orderFilePath, 'utf-8');
+        const loaded = yaml.load(fileContent) as string[];
+
+        if (Array.isArray(loaded)) {
+          // Cria mapa: { 'nome-do-arquivo-sem-extensao': index }
+          // Ex: se o YAML tem 'meu-post.md', salvamos a chave 'meu-post'
+          orderMap = new Map(loaded.map((name, index) => {
+            const cleanName = name.replace(/\.[^/.]+$/, ""); // Remove .md ou .json
+            return [cleanName, index];
+          }));
+        }
+      } catch (e) {
+        console.warn(`Erro ao ler _order.yml em ${section}`, e);
+      }
+    }
+    // --- NOVA LÓGICA DE ORDENAÇÃO (FIM) ---
+
+    // 3. Lê o conteúdo
     const items = await Promise.all(jsonFiles.map(async (dirent) => {
       try {
         const content = await fs.readFile(join(dirPath, dirent.name), 'utf-8');
         const json = JSON.parse(content);
         
-        // Pega metadados (Frontmatter está em 'data' ou 'meta')
         const meta = { ...(json.data || {}), ...(json.meta || {}) };
         
-        // Caminho web (ex: /eventos/festival-indiano)
-        const slug = dirent.name.replace('.json', '');
-        const webPath = `/${section}/${slug}`.replace(/\/+/g, '/');
+        // Nome base do arquivo sem extensão (ex: 'festival-indiano')
+        const fileNameNoExt = dirent.name.replace('.json', ''); 
+        const webPath = `/${section}/${fileNameNoExt}`.replace(/\/+/g, '/');
 
         return {
-          title: meta.title || json.title || slug,
+          title: meta.title || json.title || fileNameNoExt,
           description: meta.description || '',
-          // Normaliza imagem (pega a primeira disponível)
           image: meta.images?.[0] || meta.topimages?.[0] || null,
           path: webPath,
-          key: webPath
+          key: webPath,
+          _fileName: fileNameNoExt // Guardamos o nome puro para usar na ordenação
         };
       } catch (e) {
         return null;
       }
     }));
 
-    // Retorna filtrando nulos e limitando quantidade (se quiser, pode passar limit na query)
-    return items.filter(Boolean);
+    const validItems = items.filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    // 4. Aplica a Ordenação Final
+    validItems.sort((a, b) => {
+      // Busca a posição no mapa usando o nome do arquivo (sem extensão)
+      const indexA = orderMap.has(a._fileName) ? orderMap.get(a._fileName)! : 9999;
+      const indexB = orderMap.has(b._fileName) ? orderMap.get(b._fileName)! : 9999;
+
+      // Se um deles tiver ordem definida no YAML, respeita
+      if (indexA !== 9999 || indexB !== 9999) {
+        return indexA - indexB;
+      }
+
+      // Fallback: Ordem alfabética pelo título ou nome do arquivo
+      return a.title.localeCompare(b.title);
+    });
+
+    return validItems;
 
   } catch (error) {
-    // Se a pasta não existir ou estiver vazia
     return [];
   }
 });

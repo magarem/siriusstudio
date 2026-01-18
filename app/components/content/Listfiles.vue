@@ -5,14 +5,11 @@ const props = defineProps({
   icon: { type: String, default: 'pi pi-images' },
   view: { type: String, default: 'grid' }, 
   limit: { type: Number, default: 1000 },
-  // Parâmetros de visualização como objeto
   viewparams: { 
     type: [Object, String], 
     default: () => ({})
-  },
-  // Ordenação (opcional)
-  sortBy: { type: String, default: 'title' }, // 'title', 'date', etc
-  sortOrder: { type: String, default: 'asc' } // 'asc' ou 'desc'
+  }
+  // Removi as props de sortBy e sortOrder pois não vamos mais usar
 });
 
 const config = useRuntimeConfig();
@@ -24,86 +21,50 @@ const isDiskMode = computed(() =>
   isEnabled.value === true || config.public.liveContent === true
 );
 
-// Parse viewparams (suporta string JSON ou objeto)
+// Parse viewparams
 const parsedViewParams = computed(() => {
   if (typeof props.viewparams === 'string') {
     try {
       return JSON.parse(props.viewparams);
-    } catch {
-      return {};
-    }
+    } catch { return {}; }
   }
   return props.viewparams || {};
 });
 
 // Configurações com valores padrão
 const viewConfig = computed(() => ({
-  // Grid configs
   columns: parsedViewParams.value.columns || 4,
   gap: parsedViewParams.value.gap || '1rem',
-  
-  // Card configs
-  card_showtitle: parsedViewParams.value.card_showtitle !== false, // default true
+  card_showtitle: parsedViewParams.value.card_showtitle !== false,
   card_width: parsedViewParams.value.card_width || 'auto',
   card_padding: parsedViewParams.value.card_padding || '12px',
   card_border_radius: parsedViewParams.value.card_border_radius || '12px',
-  
-  // Image configs
   card_img_aspectratio: parsedViewParams.value.card_img_aspectratio || '4 / 5',
   card_img_object_fit: parsedViewParams.value.card_img_object_fit || 'cover',
-  
-  // List view configs
   list_card_height: parsedViewParams.value.list_card_height || '200px',
   list_img_aspectratio: parsedViewParams.value.list_img_aspectratio || '1 / 1',
-  
-  // Typography
   title_size: parsedViewParams.value.title_size || '16px',
   title_weight: parsedViewParams.value.title_weight || '600',
   title_color: parsedViewParams.value.title_color || '#4a3728',
 }));
 
 /**
- * Função auxiliar para ordenar items
- */
-function sortItems(items) {
-  if (!items || !Array.isArray(items)) return [];
-  
-  const sorted = [...items].sort((a, b) => {
-    let aVal = a[props.sortBy];
-    let bVal = b[props.sortBy];
-    
-    // Ordenação por data (se existir)
-    if (props.sortBy === 'date') {
-      aVal = new Date(aVal || 0).getTime();
-      bVal = new Date(bVal || 0).getTime();
-    }
-    
-    if (props.sortOrder === 'desc') {
-      return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-    } else {
-      return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-    }
-  });
-  
-  return sorted;
-}
-
-/**
  * DATA FETCHING
  */
-const { data: rawItems, status } = await useAsyncData(
-  `list-${props.section}-${props.limit}`, // Inclui limit na key para invalidar cache
+const { data: rawItems, status, refresh } = await useAsyncData(
+  `list-${props.section}-${props.limit}`,
   async () => {
-    
-    // A. MODO PREVIEW
+    // A. MODO PREVIEW / DISK (Usa a API que respeita _order.yml)
     if (isDiskMode.value) {
       try {
         const rawFiles = await $fetch('/api/admin/storage', {
           query: { site: siteName, folder: props.section }
         });
+        
         if (!Array.isArray(rawFiles)) return [];
 
-        const mapped = rawFiles
+        // O map preserva a ordem do array original
+        return rawFiles
           .filter(f => !f.isDirectory && f.name !== 'index.md' && !f.name.startsWith('_'))
           .map(f => {
              const cleanPath = props.section.replace(/^content\/?/, '');
@@ -114,15 +75,11 @@ const { data: rawItems, status } = await useAsyncData(
                image: f.data?.images?.[0] || f.data?.topimages?.[0] || null,
                date: f.data?.date || f.data?.publishDate || null,
                path: `/${cleanPath}/${cleanFile}`.replace(/\/+/g, '/'),
-               key: f.name
+               key: f.name // Use um ID único se possível, mas nome serve
              };
           });
-        
-        // Retorna TODOS os items, aplicaremos limit depois
-        return mapped;
-        
       } catch (e) { 
-        console.error('Erro ao buscar items no modo preview:', e);
+        console.error('Preview fetch error:', e);
         return []; 
       }
     }
@@ -133,32 +90,32 @@ const { data: rawItems, status } = await useAsyncData(
         const result = await $fetch('/api/list', {
           query: { section: props.section }
         });
-        
-        // Retorna TODOS os items, aplicaremos limit depois
         return Array.isArray(result) ? result : [];
-        
       } catch (e) {
-        console.error('Erro ao buscar items no modo produção:', e);
+        console.error('Prod fetch error:', e);
         return [];
       }
     }
   },
   {
-    watch: [() => props.section, isDiskMode]
+    // Força atualização se mudar a seção ou o modo
+    watch: [() => props.section, isDiskMode],
+    // Opcional: transforme o payload para garantir que não haja "cache" de ordenação antiga
+    transform: (data) => data
   }
 );
 
-// Computed que aplica ordenação E limit corretamente
+// Computed corrigido para garantir a ordem da API
 const items = computed(() => {
   if (!rawItems.value || !Array.isArray(rawItems.value)) return [];
   
-  // 1. Ordena
-  const sorted = sortItems(rawItems.value);
+  // CORREÇÃO AQUI:
+  // Usamos [...array] para criar uma cópia nova e limpa.
+  // Isso impede que proxies ou ordenações residuais afetem a exibição.
+  const originalOrderList = [...rawItems.value];
   
-  // 2. Aplica limit DEPOIS da ordenação
-  const limited = sorted.slice(0, props.limit);
-  
-  console.log(`Listfiles: ${props.section} - Total: ${sorted.length}, Limit: ${props.limit}, Showing: ${limited.length}`);
+  // Aplica apenas o limite, mantendo a ordem exata que veio do rawItems
+  const limited = originalOrderList.slice(0, props.limit);
   
   return limited;
 });
