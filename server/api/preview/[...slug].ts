@@ -2,18 +2,13 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
-import { getCookie, setCookie } from 'h3'
 
 export default defineEventHandler(async (event) => {
-  const siteCookie = getCookie(event, 'cms_site_context')
-  // 1. Descobre o Slug
+
   let slug = getRouterParam(event, 'slug') || 'index';
   slug = slug.replace(/\/+$/, ''); // Remove barra final
 
-  // 2. Aponta para a pasta de Rascunhos (DRAFTS) no Storage
-  // Caminho relativo: site está em /apps/sites/novagokula -> sobe 2 niveis -> entra em storage
-  // Ajuste 'novagokula' se quiser deixar dinâmico via env, mas hardcoded funciona agora.
-  const STORAGE_DIR = resolve(process.cwd(), `../../storage/${siteCookie}/content`);
+  const STORAGE_DIR = resolve(process.cwd(), 'content');
 
   console.log(`🔍 Preview solicitando: ${slug} em ${STORAGE_DIR}`);
 

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export default defineEventHandler(async (event) => {
-  const { fileName } = getQuery(event) // Ex: 'acomodacoes/quarto-luxo.md'
+  const { fileName } = getQuery(event) 
 
   if (!fileName) {
     throw createError({ statusCode: 400, statusMessage: 'Nome do arquivo é obrigatório' })

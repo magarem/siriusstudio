@@ -3,6 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // Aponta para a pasta onde o Sirius salvou os JSONs
+
+console.log("process.cwd():::>", process.cwd())
 const DATA_DIR = path.resolve(process.cwd(), 'server/data');
 
 export default defineEventHandler(async (event) => {
@@ -25,6 +27,7 @@ export default defineEventHandler(async (event) => {
     try {
       // Tenta ler o arquivo
       const content = await fs.readFile(p, 'utf-8');
+      console.log("content::::?:>>>", content)
       return JSON.parse(content);
     } catch (e) {
       // Ignora erro e tenta o próximo path

@@ -1,32 +1,38 @@
 <script setup>
-import { computed, ref } from 'vue';
-
 const props = defineProps({
   title: { type: String, default: '' },
   section: { type: String, required: true },
   icon: { type: String, default: 'pi pi-images' },
   view: { type: String, default: 'grid' }, 
   limit: { type: Number, default: 1000 },
-  viewparams: { type: [Object, String], default: () => ({}) }
+  viewparams: { 
+    type: [Object, String], 
+    default: () => ({})
+  }
+  // Removi as props de sortBy e sortOrder pois não vamos mais usar
 });
 
 const config = useRuntimeConfig();
 const siteName = config.public.siteName;
+
+// Integração Preview
 const { isEnabled } = usePreview();
 
-// Computed para detectar modo Preview
 const isDiskMode = computed(() => 
   isEnabled.value === true || config.public.liveContent === true
 );
 
-// --- CONFIGURAÇÃO VISUAL (Mantida igual) ---
+// Parse viewparams
 const parsedViewParams = computed(() => {
   if (typeof props.viewparams === 'string') {
-    try { return JSON.parse(props.viewparams); } catch { return {}; }
+    try {
+      return JSON.parse(props.viewparams);
+    } catch { return {}; }
   }
   return props.viewparams || {};
 });
 
+// Configurações com valores padrão
 const viewConfig = computed(() => ({
   columns: parsedViewParams.value.columns || 4,
   gap: parsedViewParams.value.gap || '1rem',
@@ -43,48 +49,80 @@ const viewConfig = computed(() => ({
   title_color: parsedViewParams.value.title_color || '#4a3728',
 }));
 
-// --- DATA FETCHING PADRONIZADO (useFetch) ---
+/**
+ * DATA FETCHING
+ */
+const { data: rawItems, status, refresh } = await useAsyncData(
+  `list-${props.section}-${props.limit}`,
+  async () => {
+    // A. MODO PREVIEW / DISK (Usa a API que respeita _order.yml)
+    if (isDiskMode.value) {
+      try {
+        console.log("storage!")
+        const rawFiles = await $fetch('/api/admin/storage', {
+          query: { site: siteName, folder: props.section }
+        });
+        
+        if (!Array.isArray(rawFiles)) return [];
 
-// 1. Timestamp reativo para forçar atualização manual no botão
-const timestamp = ref(Date.now());
+        // O map preserva a ordem do array original
+        return rawFiles
+          .filter(f => !f.isDirectory && f.name !== 'index.md' && !f.name.startsWith('_'))
+          .map(f => {
+             const cleanPath = props.section.replace(/^content\/?/, '');
+             const cleanFile = f.name.replace(/\.[^/.]+$/, "");
+             return {
+               title: f.data?.title || f.name.replace('.md', ''),
+               description: f.data?.description,
+               image: f.data?.images?.[0] || f.data?.topimages?.[0] || null,
+               date: f.data?.date || f.data?.publishDate || null,
+               path: `/${cleanPath}/${cleanFile}`.replace(/\/+/g, '/'),
+               key: f.name // Use um ID único se possível, mas nome serve
+             };
+          });
+      } catch (e) { 
+        console.error('Preview fetch error:', e);
+        return []; 
+      }
+    }
 
-// 2. Parâmetros da Query (Reativos)
-const queryParams = computed(() => ({
-  site: siteName,
-  section: props.section,
-  mode: isDiskMode.value ? 'preview' : 'production',
-  t: timestamp.value, // Atualiza quando chamamos forceRefresh
-  nocache: 1
-}));
-
-// 3. O Hook useFetch substitui toda a lógica manual do Axios
-const { data: items, status, refresh, error } = await useFetch('/api/admin/superList', {
-  // Padrão solicitado:
-  lazy: true,
-  server: false, // Roda apenas no cliente (ignora cache de build/SSR)
-
-  query: queryParams,
-  
-  // Transform: Aplica o limite e garante que seja array antes de chegar no template
-  transform: (response) => {
-    const list = Array.isArray(response) ? response : [];
-    return list.slice(0, props.limit);
+    // B. MODO PRODUÇÃO
+    else {
+      try {
+        const result = await $fetch('/api/list', {
+          query: { section: props.section }
+        });
+        return Array.isArray(result) ? result : [];
+      } catch (e) {
+        console.error('Prod fetch error:', e);
+        return [];
+      }
+    }
   },
+  {
+    // Força atualização se mudar a seção ou o modo
+    watch: [() => props.section, isDiskMode],
+    // Opcional: transforme o payload para garantir que não haja "cache" de ordenação antiga
+    transform: (data) => data
+  }
+);
+
+// Computed corrigido para garantir a ordem da API
+const items = computed(() => {
+  if (!rawItems.value || !Array.isArray(rawItems.value)) return [];
   
-  // Valor padrão enquanto carrega
-  default: () => [],
+  // CORREÇÃO AQUI:
+  // Usamos [...array] para criar uma cópia nova e limpa.
+  // Isso impede que proxies ou ordenações residuais afetem a exibição.
+  const originalOrderList = [...rawItems.value];
   
-  // Assiste mudanças nas props para recarregar automático
-  watch: [() => props.section, isDiskMode] 
+  // Aplica apenas o limite, mantendo a ordem exata que veio do rawItems
+  const limited = originalOrderList.slice(0, props.limit);
+  
+  return limited;
 });
 
-// Helper para o botão "Forçar Atualização"
-const forceRefresh = () => {
-  timestamp.value = Date.now(); // Muda o timestamp
-  refresh(); // Dispara o fetch novamente
-};
-
-const loading = computed(() => status.value === 'pending');
+const pending = computed(() => status.value === 'pending');
 </script>
 
 <template>
@@ -93,70 +131,84 @@ const loading = computed(() => status.value === 'pending');
       <i :class="icon"></i> {{ title }}
     </h3>
 
-    <div v-if="loading && items.length === 0" class="w-full h-20 flex items-center justify-center text-gray-400">
+    <div v-if="pending" class="w-full h-20 flex items-center justify-center text-gray-400">
       <i class="pi pi-spin pi-spinner text-2xl"></i>
     </div>
 
-    <div v-else-if="!loading && items.length === 0" class="w-full py-8 text-center text-gray-500 border border-dashed border-gray-300 rounded">
-      <p>Nenhum item em: <strong>{{ section }}</strong></p>
-      <p class="text-xs mt-1 opacity-70">Verifique se a pasta existe em <code>server/data/{{ section.replace('content/', '') }}</code></p>
-      <button @click="forceRefresh" class="mt-2 text-xs underline text-blue-600 hover:text-blue-800">
-        Forçar Atualização
-      </button>
+    <div v-else-if="!items || items.length === 0" class="w-full py-8 text-center text-gray-500">
+      Nenhum item encontrado na seção: {{ section }}
     </div>
 
-    <div v-else class="fade-in">
+    <div v-else>
+      <!-- Debug info (remova em produção) -->
+      <!-- <div class="text-xs text-gray-400 mb-2">
+        Mostrando {{ items.length }} de {{ rawItems?.length || 0 }} items
+      </div> -->
       
-      <div v-if="view === 'grid'" class="custom-grid">
+      <!-- GRID VIEW -->
+      <div 
+        v-if="view === 'grid'" 
+        class="custom-grid"
+      >
         <NuxtLink 
           v-for="item in items" 
-          :key="item.path"
+          :key="item.key"
           :to="item.path"
           class="custom-card grid-card"
         >
           <div class="card-image-wrapper">
-            <img v-if="item.image" :src="item.image" loading="lazy" :alt="item.title" />
-            <div v-else class="placeholder"><i class="pi pi-image text-4xl opacity-20"></i></div>
+            <img 
+              v-if="item.image" 
+              :src="item.image" 
+              loading="lazy" 
+              :alt="item.title" 
+            />
+            <div v-else class="placeholder">
+              <i class="pi pi-image text-4xl opacity-20"></i>
+            </div>
           </div>
+          
           <div v-if="viewConfig.card_showtitle" class="card-content">
             <h2>{{ item.title }}</h2>
           </div>
         </NuxtLink>
       </div>
 
+      <!-- LIST VIEW -->
       <div v-else-if="view === 'list'" class="custom-list">
         <NuxtLink 
           v-for="item in items" 
-          :key="item.path"
+          :key="item.key"
           :to="item.path"
           class="custom-card list-card"
         >
           <div class="list-image-wrapper">
-            <img v-if="item.image" :src="item.image" loading="lazy" :alt="item.title" />
-            <div v-else class="placeholder"><i class="pi pi-image text-4xl opacity-20"></i></div>
+            <img 
+              v-if="item.image" 
+              :src="item.image" 
+              loading="lazy" 
+              :alt="item.title" 
+            />
+            <div v-else class="placeholder">
+              <i class="pi pi-image text-4xl opacity-20"></i>
+            </div>
           </div>
+          
           <div class="list-content">
             <h4>{{ item.title }}</h4>
-            <p v-if="item.description" class="excerpt">{{ item.description }}</p>
+            <p v-if="item.description" class="excerpt">
+              {{ item.description }}
+            </p>
             <span class="read-more">Ler mais →</span>
           </div>
         </NuxtLink>
       </div>
     </div>
+
   </div>
 </template>
 
 <style scoped>
-/* Adicione uma animação suave para quando os dados atualizarem */
-.fade-in {
-  animation: fadeIn 0.3s ease-in-out;
-}
-@keyframes fadeIn {
-  from { opacity: 0.5; }
-  to { opacity: 1; }
-}
-
-/* ... Mantenha o restante do seu CSS igual ... */
 .list-title {
   font-size: 1.5rem;
   font-weight: bold;

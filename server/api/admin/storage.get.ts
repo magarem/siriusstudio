@@ -24,12 +24,13 @@ export default defineEventHandler(async (event) => {
   console.log("APPS_ROOT definido como:", APPS_ROOT);
 
   const targetDir = join(APPS_ROOT, "storage", site, folder);
-
+  // const targetDir = join(process.cwd(), "content", folder);
+ console.log("targetDir:", targetDir)
   if (!existsSync(targetDir)) {
     return [];
   }
 
-  console.log("targetDir:", targetDir)
+ 
   
   try {
     // CASO A: Leitura de um arquivo específico (Modo Edição/Detalhe)

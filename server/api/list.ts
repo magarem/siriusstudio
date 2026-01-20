@@ -1,8 +1,8 @@
 // server/api/list.ts
 import { promises as fs } from 'node:fs';
-import { existsSync, readFileSync } from 'node:fs'; // Importações síncronas para checagens rápidas
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import yaml from 'js-yaml'; // <--- IMPORTANTE: Instalar js-yaml se não tiver tipos
+import yaml from 'js-yaml';
 
 const DATA_ROOT = resolve(process.cwd(), 'server/data');
 
@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
 
   if (!section) return [];
 
-  // Remove prefixo "content/"
+  // Remove prefixo "content/" e barras iniciais
   section = section.replace(/^content\/?/, '').replace(/^\//, '');
 
   const dirPath = join(DATA_ROOT, section);
@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
       dirent.name !== 'index.json'
     );
 
-    // --- NOVA LÓGICA DE ORDENAÇÃO (INÍCIO) ---
+    // --- LÓGICA DE ORDENAÇÃO: PREPARAÇÃO ---
     const orderFilePath = join(dirPath, '_order.yml');
     let orderMap = new Map<string, number>();
 
@@ -38,10 +38,10 @@ export default defineEventHandler(async (event) => {
         const loaded = yaml.load(fileContent) as string[];
 
         if (Array.isArray(loaded)) {
-          // Cria mapa: { 'nome-do-arquivo-sem-extensao': index }
-          // Ex: se o YAML tem 'meu-post.md', salvamos a chave 'meu-post'
+          // Cria mapa: { 'nome-do-arquivo': index }
+          // Removemos extensões (.md, .json) para garantir o match
           orderMap = new Map(loaded.map((name, index) => {
-            const cleanName = name.replace(/\.[^/.]+$/, ""); // Remove .md ou .json
+            const cleanName = name.replace(/\.[^/.]+$/, ""); 
             return [cleanName, index];
           }));
         }
@@ -49,9 +49,8 @@ export default defineEventHandler(async (event) => {
         console.warn(`Erro ao ler _order.yml em ${section}`, e);
       }
     }
-    // --- NOVA LÓGICA DE ORDENAÇÃO (FIM) ---
 
-    // 3. Lê o conteúdo
+    // 3. Lê o conteúdo dos arquivos
     const items = await Promise.all(jsonFiles.map(async (dirent) => {
       try {
         const content = await fs.readFile(join(dirPath, dirent.name), 'utf-8');
@@ -59,7 +58,7 @@ export default defineEventHandler(async (event) => {
         
         const meta = { ...(json.data || {}), ...(json.meta || {}) };
         
-        // Nome base do arquivo sem extensão (ex: 'festival-indiano')
+        // Nome base do arquivo sem extensão
         const fileNameNoExt = dirent.name.replace('.json', ''); 
         const webPath = `/${section}/${fileNameNoExt}`.replace(/\/+/g, '/');
 
@@ -69,33 +68,39 @@ export default defineEventHandler(async (event) => {
           image: meta.images?.[0] || meta.topimages?.[0] || null,
           path: webPath,
           key: webPath,
-          _fileName: fileNameNoExt // Guardamos o nome puro para usar na ordenação
+          // Propriedade temporária para ordenação
+          _fileName: fileNameNoExt 
         };
       } catch (e) {
         return null;
       }
     }));
 
+    // Filtra nulos
     const validItems = items.filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-    // 4. Aplica a Ordenação Final
+    // 4. APLICA A ORDENAÇÃO FINAL
     validItems.sort((a, b) => {
-      // Busca a posição no mapa usando o nome do arquivo (sem extensão)
+      // Tenta pegar o índice no mapa. Se não existir, define como 9999 (fim da fila)
       const indexA = orderMap.has(a._fileName) ? orderMap.get(a._fileName)! : 9999;
       const indexB = orderMap.has(b._fileName) ? orderMap.get(b._fileName)! : 9999;
 
-      // Se um deles tiver ordem definida no YAML, respeita
-      if (indexA !== 9999 || indexB !== 9999) {
+      // 1º Critério: Ordem definida no YAML
+      if (indexA !== indexB) {
         return indexA - indexB;
       }
 
-      // Fallback: Ordem alfabética pelo título ou nome do arquivo
-      return a.title.localeCompare(b.title);
+      // 2º Critério (Empate ou itens fora do YAML): Ordem alfabética pelo Título
+      const titleA = (a.title || "").toLowerCase();
+      const titleB = (b.title || "").toLowerCase();
+      return titleA.localeCompare(titleB);
     });
 
-    return validItems;
+    // 5. Limpeza Final (Remove a propriedade auxiliar _fileName antes de enviar)
+    return validItems.map(({ _fileName, ...rest }) => rest);
 
   } catch (error) {
+    console.error("Erro no list.ts:", error);
     return [];
   }
 });
