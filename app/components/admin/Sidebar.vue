@@ -23,6 +23,7 @@ const rootOptions = roots.map(r => ({ label: r.toUpperCase(), value: r }));
 const selectedRoot = computed({
   get: () => {
     // Pega a primeira parte do caminho (ex: 'content/blog' -> 'content')
+    if (!props.currentFolder) return 'content';
     return props.currentFolder.split('/')[0];
   },
   set: (val) => {
@@ -32,7 +33,7 @@ const selectedRoot = computed({
 
 const removeExtension = (filename) => filename.replace(/\.[^/.]+$/, "");
 
-// --- DRAG & DROP (Mantido igual) ---
+// --- DRAG & DROP ---
 const localFiles = ref([]);
 watch(() => props.files, (newVal) => { localFiles.value = [...(newVal || [])]; }, { immediate: true });
 
@@ -47,7 +48,7 @@ const onDragEnd = async () => {
   }
 };
 
-// --- RENOMEAR (Mantido igual) ---
+// --- RENOMEAR ---
 const renameDialogVisible = ref(false);
 const renameLoading = ref(false);
 const targetFile = ref(null);
@@ -74,6 +75,7 @@ const confirmRename = async () => {
       body: { folder: props.currentFolder, oldFile: oldName, newName: newFileName.value }
     });
 
+    // Reordenação manual após rename para manter a UX
     const currentOrder = localFiles.value.map(f => f.name);
     const index = currentOrder.indexOf(oldName);
     if (index !== -1) {
@@ -93,7 +95,7 @@ const confirmRename = async () => {
   }
 };
 
-// --- EXCLUIR (Mantido igual) ---
+// --- EXCLUIR ---
 const deleteDialogVisible = ref(false);
 const itemToDelete = ref(null);
 
@@ -110,7 +112,7 @@ const handleDelete = () => {
   }
 };
 
-// --- MOVER (Mantido igual) ---
+// --- MOVER ---
 const moveDialogVisible = ref(false);
 const itemToMove = ref(null);
 const moveLoading = ref(false);
@@ -208,20 +210,27 @@ const handleMove = async (destination) => {
             />
         </div>
 
-        <div class="bg-black/40 border border-white/5 rounded px-2 py-1.5 flex items-center gap-2 overflow-hidden" :title="currentFolder">
-            <i class="pi pi-folder-open text-[#6f942e] text-[10px] shrink-0"></i>
-            <span class="text-[10px] font-mono text-slate-300 truncate select-all">
-                /{{ currentFolder }}
-            </span>
+        <div class="flex items-center gap-2">
+            <Button 
+                icon="pi pi-arrow-up"
+                class="!w-8 !h-8 !p-0 shrink-0"
+                :class="currentFolder.includes('/') ? 'bg-white/10 text-slate-300 hover:bg-white/20' : 'opacity-30 cursor-not-allowed bg-transparent border border-white/5 text-slate-600'"
+                :disabled="!currentFolder.includes('/')"
+                v-tooltip.bottom="'Voltar nível'"
+                @click="emit('back')"
+            />
+
+            <div class="flex-1 bg-black/40 border border-white/5 rounded px-2 py-1.5 flex items-center gap-2 overflow-hidden h-8" :title="currentFolder">
+                <i class="pi pi-folder-open text-[#6f942e] text-[10px] shrink-0"></i>
+                <span class="text-[10px] font-mono text-slate-300 truncate select-all leading-none mt-0.5">
+                    /{{ currentFolder }}
+                </span>
+            </div>
         </div>
 
       </div>
 
       <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
-        <div v-if="currentFolder.includes('/')" @click="emit('back')" class="flex items-center gap-3 p-3 rounded-sm cursor-pointer hover:bg-[#6f942e]/10 text-[#6f942e] border border-dashed border-[#6f942e]/20 mb-2">
-          <i class="pi pi-arrow-up text-xs"></i><span class="text-xs font-bold uppercase tracking-widest">.. / Voltar</span>
-        </div>
-        
         <VueDraggable 
           v-model="localFiles"
           :animation="150"
