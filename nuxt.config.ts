@@ -20,7 +20,14 @@ export default defineNuxtConfig({
   primevue: {
     options: {
       ripple: true,
-      theme: { preset: Aura },
+      theme: {
+        preset: Aura,
+        options: {
+            prefix: 'p',
+            darkModeSelector: 'system',
+            cssLayer: false
+        }
+      }
     },
     autoImport: true,
   },

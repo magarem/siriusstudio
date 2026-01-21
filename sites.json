@@ -1,0 +1,23 @@
+[
+  {
+    "id": "novagokula",
+    "domain": "siriusstudio.site",
+    "path": "/novagokula",
+    "port": 3001,
+    "active": true
+  },
+  {
+    "id": "paravyomayoga",
+    "domain": "siriusstudio.site",
+    "path": "/paravyomayoga",
+    "port": 3002,
+    "active": true
+  },
+  {
+    "id": "advocacia-silva",
+    "domain": "siriusstudio.site",
+    "path": "/advocacia",
+    "port": 3003,
+    "active": false
+  }
+]
