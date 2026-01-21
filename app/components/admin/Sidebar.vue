@@ -22,7 +22,6 @@ const rootOptions = roots.map(r => ({ label: r.toUpperCase(), value: r }));
 // Computed para controlar o Dropdown baseado na pasta atual
 const selectedRoot = computed({
   get: () => {
-    // Pega a primeira parte do caminho (ex: 'content/blog' -> 'content')
     if (!props.currentFolder) return 'content';
     return props.currentFolder.split('/')[0];
   },
@@ -75,7 +74,6 @@ const confirmRename = async () => {
       body: { folder: props.currentFolder, oldFile: oldName, newName: newFileName.value }
     });
 
-    // Reordenação manual após rename para manter a UX
     const currentOrder = localFiles.value.map(f => f.name);
     const index = currentOrder.indexOf(oldName);
     if (index !== -1) {
@@ -231,6 +229,7 @@ const handleMove = async (destination) => {
       </div>
 
       <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+        
         <VueDraggable 
           v-model="localFiles"
           :animation="150"

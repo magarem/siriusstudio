@@ -24,6 +24,64 @@ const showMetaSidebar = ref(true);
 // [ALTERADO] 'currentFile': Agora armazena o CAMINHO COMPLETO (ex: content/blog/post.md)
 const currentFile = ref(route.query.file || "");
 
+
+
+// --- ESTADOS DE LAYOUT (RESIZABLE) ---
+const sidebarWidth = ref(350); // Largura inicial em pixels
+const isResizing = ref(false);
+const isMobile = ref(false); // [NOVO]
+
+// Detecta mudança de tela para ajustar layout
+const checkMobile = () => {
+  isMobile.value = window.innerWidth < 1024; // 1024px é o breakpoint 'lg' do Tailwind
+}
+onMounted(() => {
+  checkMobile();
+  window.addEventListener('resize', checkMobile);
+  window.addEventListener('keydown', handleKeydown); // Mantém seu listener antigo
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile);
+  window.removeEventListener('keydown', handleKeydown);
+});
+
+const startResize = (e) => {
+  isResizing.value = true;
+  const startX = e.clientX;
+  const startWidth = sidebarWidth.value;
+
+  const doDrag = (evt) => {
+    // Calcula a nova largura baseada no movimento do mouse
+    // Delta = (Posição Atual) - (Posição Inicial)
+    const newWidth = startWidth + (evt.clientX - startX);
+
+    // Limites (Min: 200px, Max: 600px)
+    if (newWidth > 200 && newWidth < 800) {
+      sidebarWidth.value = newWidth;
+    }
+  };
+
+  const stopDrag = () => {
+    isResizing.value = false;
+    document.removeEventListener('mousemove', doDrag);
+    document.removeEventListener('mouseup', stopDrag);
+    // Reativa a seleção de texto no body (opcional, mas boa prática)
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  };
+
+  // Adiciona listeners no DOCUMENTO inteiro (para não perder o foco se arrastar rápido)
+  document.addEventListener('mousemove', doDrag);
+  document.addEventListener('mouseup', stopDrag);
+  
+  // Evita selecionar texto enquanto arrasta
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'col-resize';
+};
+
+
+
 // [ALTERADO] Helper para extrair pasta do arquivo atual
 const getFolderFromFile = (fullPath) => {
   if (!fullPath) return "content";
@@ -879,36 +937,50 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
           ></textarea>
         </div>
 
-        <div
+       <div
           v-else
-          class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 transition-all duration-300 animate-fade-in pt-3"
+          class="flex flex-row h-full overflow-hidden animate-fade-in pt-3"
         >
+          
           <aside
             v-show="showMetaSidebar"
-            class="lg:col-span-4 overflow-y-auto pr-2 custom-scrollbar"
+            class="shrink-0 flex flex-col pr-1"
+            :style="{ width: sidebarWidth + 'px' }"
           >
-            <AdminMetaEditor
-              :fields="currentModel.fields"
-              :frontmatter="form.frontmatter"
-              :site-context="siteContext"
-              @open-image="imageActions.open"
-            />
+            <div class="h-full overflow-y-auto custom-scrollbar pr-2">
+                <AdminMetaEditor
+                  :fields="currentModel.fields"
+                  :frontmatter="form.frontmatter"
+                  :site-context="siteContext"
+                  @open-image="imageActions.open"
+                />
+            </div>
           </aside>
 
-          <div
-            :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'"
-            class="transition-all duration-300 h-full"
+          <div 
+            v-show="showMetaSidebar"
+            class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] active:bg-[#6f942e] transition-colors duration-150 flex flex-col justify-center items-center group select-none z-10 mr-2"
+            :class="isResizing ? 'bg-[#6f942e]' : 'bg-transparent'"
+            @mousedown.prevent="startResize"
           >
+             <div class="w-[1px] h-full bg-white/10 group-hover:bg-[#6f942e]/50 transition-colors"></div>
+          </div>
+
+          <div class="flex-1 h-full min-w-0 overflow-hidden">
             <AdminMarkdownEditor
               v-model:content="form.content"
               :current-folder="editorCtxFolder"
               :current-file="currentFile"
-              :is-raw-mode="showRawMode"
+              :is-raw="showRawMode"
               @toggle-raw="toggleRawMode"
               @open-image="imageActions.open()"
             />
           </div>
+
         </div>
+     
+     
+     
       </div>
 
       <div v-else class="h-[calc(100vh-120px)] w-full">
