@@ -773,7 +773,7 @@ const handleDeleteFile = async (item) => {
       severity: "success",
       summary: "Excluído",
       detail: "Item removido com sucesso.",
-      life: 3000,
+      life: 1000,
     });
 
     if (currentFileNameOnly.value === fileName) {
@@ -830,7 +830,7 @@ const handleMoveAction = async (newPath) => {
         }
     })
     
-    toast.add({ severity: 'success', summary: 'Movido com sucesso', detail: `Agora em: ${newPath}` })
+    toast.add({ severity: 'success', summary: 'Movido com sucesso', detail: `Agora em: ${newPath}`, life: 1000 })
     
     // 2. Calcula a nova pasta baseada no caminho destino
     // Ex: "content/blog/post.md" -> "content/blog"
@@ -1071,10 +1071,11 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
       v-model:visible="showImageModal"
       modal
       header="MEDIA"
+      :showHeader="false" 
       :style="{ width: '85vw' }"
       class="bg-[#141b18]"
     >
-      <ImageExplorer @select="imageActions.handleSelect" />
+      <ImageExplorer @select="imageActions.handleSelect" @close="showImageModal = false" />
     </Dialog>
   </div>
 </template>

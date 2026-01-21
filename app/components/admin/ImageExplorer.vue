@@ -1,13 +1,13 @@
 <template>
-  <div class="image-explorer-component flex flex-col gap-6">
+  <div class="image-explorer-component flex flex-col gap-0 bg-[#0a0c0b] text-slate-200 h-full w-full">
     <Toast :baseZIndex="10000" position="top-right" :life="1000" />
     
-    <section class="flex flex-wrap items-center justify-between gap-4 bg-[#141b18] p-4 rounded-2xl border border-white/5">
+    <header class="h-14 shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-[#141b18]">
       
-      <div class="flex items-center gap-3 overflow-hidden">
-        <Button v-if="folder !== 'images'" icon="pi pi-arrow-left" text rounded @click="goBack" class="text-[#6f942e] shrink-0" />
+      <div class="flex items-center gap-3 overflow-hidden flex-1 mr-4">
+        <Button v-if="folder !== 'images'" icon="pi pi-arrow-left" text rounded @click="goBack" class="text-[#6f942e] shrink-0 !w-8 !h-8" v-tooltip.bottom="'Voltar'" />
         
-        <div class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+        <div class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 leading-none">
           <i class="pi pi-home text-slate-500 hover:text-white cursor-pointer transition-colors" @click="navigateTo('images')"></i>
           <span class="text-slate-600 font-bold">/</span>
           <div v-for="(crumb, index) in breadcrumbs" :key="crumb.path" class="flex items-center gap-2 whitespace-nowrap">
@@ -21,55 +21,57 @@
         </div>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-3 shrink-0">
         
-        <div class="flex items-center bg-black/30 rounded-lg p-1 border border-white/5">
+        <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
            <Button 
-             icon="pi pi-th-large" 
-             text 
-             rounded 
-             size="small"
+             icon="pi pi-th-large" text rounded size="small"
+             class="!w-7 !h-7"
              :class="viewMode === 'grid' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" 
-             @click="viewMode = 'grid'" 
-             v-tooltip.bottom="'Grade'"
+             @click="viewMode = 'grid'" v-tooltip.bottom="'Grade'"
            />
            <Button 
-             icon="pi pi-list" 
-             text 
-             rounded 
-             size="small"
+             icon="pi pi-list" text rounded size="small"
+             class="!w-7 !h-7"
              :class="viewMode === 'list' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" 
-             @click="viewMode = 'list'" 
-             v-tooltip.bottom="'Lista'"
+             @click="viewMode = 'list'" v-tooltip.bottom="'Lista'"
            />
         </div>
 
         <div class="w-px h-6 bg-white/10 mx-1"></div>
 
-        <Button icon="pi pi-folder-plus" label="Pasta" @click="confirmCreateFolder" class="p-button-text text-xs font-bold text-[#6f942e] uppercase tracking-wider" />
+        <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" v-tooltip.bottom="'Nova Pasta'" />
         
-        <FileUpload 
-          mode="basic" 
-          name="demo[]" 
-          :url="uploadUrl" 
-          :key="folder"
-          accept="image/*" 
-          :auto="true" 
-          @upload="onUpload" 
-          chooseLabel="UPLOAD" 
-          class="p-button-sm bg-[#6f942e] border-none font-bold text-xs" 
+        <div class="relative overflow-hidden">
+            <FileUpload 
+              mode="basic" name="demo[]" :url="uploadUrl" :key="folder"
+              accept="image/*" :auto="true" @upload="onUpload" 
+              chooseLabel="UPLOAD" class="p-button-sm custom-upload-btn" 
+            />
+        </div>
+
+        <div class="w-px h-6 bg-white/10 mx-1"></div>
+
+        <Button 
+            icon="pi pi-times" 
+            text 
+            rounded 
+            size="small" 
+            @click="$emit('close')" 
+            class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" 
+            v-tooltip.bottom="'Fechar'"
         />
       </div>
-    </section>
+    </header>
 
-    <section class="h-[60vh] overflow-y-auto custom-scrollbar pr-2 content-start">
+    <section class="h-[60vh] overflow-y-auto custom-scrollbar p-4 content-start relative">
       
       <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div v-for="file in files" :key="file.name" 
-             class="bg-[#1a1d1c] p-3 rounded-2xl border border-white/5 hover:border-[#6f942e] transition-all group relative overflow-hidden h-40 cursor-pointer"
+             class="bg-[#1a1d1c] p-2 rounded-xl border border-white/5 hover:border-[#6f942e] transition-all group relative overflow-hidden h-40 cursor-pointer"
              @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
         >
-          <div class="w-full h-full overflow-hidden rounded-xl bg-[#0a0c0b] flex items-center justify-center relative">
+          <div class="w-full h-full overflow-hidden rounded-lg bg-[#0a0c0b] flex items-center justify-center relative">
             <div v-if="file.isDirectory" class="flex flex-col items-center justify-center w-full h-full hover:bg-white/5 transition-colors">
               <i class="pi pi-folder text-5xl text-amber-500 mb-2"></i>
               <span class="text-[10px] text-amber-500/50 font-bold uppercase tracking-widest truncate w-full text-center px-2">{{ file.name }}</span>
@@ -85,14 +87,13 @@
           
           <div class="absolute inset-0 bg-[#0f1110]/90 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity duration-300 gap-2">
               <div class="flex gap-2">
-                 <Button v-if="!file.isDirectory" icon="pi pi-eye" severity="secondary" rounded size="small" @click.stop="openZoom(file)" />
-                 <Button v-if="!file.isDirectory" icon="pi pi-check" severity="success" rounded size="small" @click.stop="selectImage(file.name)" />
-                 <Button v-if="!file.isDirectory" icon="pi pi-copy" severity="info" rounded size="small" @click.stop="copyImageUrl(file.name)" />
+                 <Button v-if="!file.isDirectory" icon="pi pi-eye" severity="secondary" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openZoom(file)" />
+                 <Button v-if="!file.isDirectory" icon="pi pi-check" severity="success" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="selectImage(file.name)" />
               </div>
               <div class="flex gap-2">
-                 <Button icon="pi pi-pencil" severity="warning" text rounded size="small" @click.stop="openRenameModal(file)" />
-                 <Button icon="pi pi-arrow-right-arrow-left" severity="help" text rounded size="small" @click.stop="openMoveModal(file)" />
-                 <Button icon="pi pi-trash" severity="danger" text rounded size="small" @click.stop="deleteItem(file.name, file.isDirectory)" />
+                 <Button icon="pi pi-pencil" severity="warning" text rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openRenameModal(file)" />
+                 <Button icon="pi pi-arrow-right-arrow-left" severity="help" text rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openMoveModal(file)" />
+                 <Button icon="pi pi-trash" severity="danger" text rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="deleteItem(file.name, file.isDirectory)" />
               </div>
           </div>
         </div>
@@ -100,39 +101,36 @@
 
       <div v-else class="flex flex-col gap-2">
          <div v-for="file in files" :key="file.name" 
-              class="flex items-center justify-between p-3 bg-[#1a1d1c] rounded-xl border border-white/5 hover:border-[#6f942e] hover:bg-white/5 transition-all group cursor-pointer"
+              class="flex items-center justify-between p-2 bg-[#1a1d1c] rounded-xl border border-white/5 hover:border-[#6f942e] hover:bg-white/5 transition-all group cursor-pointer"
               @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
          >
             <div class="flex items-center gap-4 flex-1 min-w-0">
-               <div class="w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center">
-                  <i v-if="file.isDirectory" class="pi pi-folder text-2xl text-amber-500"></i>
+               <div class="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center">
+                  <i v-if="file.isDirectory" class="pi pi-folder text-xl text-amber-500"></i>
                   <img v-else :src="getImageUrl(file.name)" class="w-full h-full object-cover" loading="lazy" />
                </div>
                
                <div class="flex flex-col truncate">
                   <span class="text-sm font-bold text-slate-200 truncate group-hover:text-[#6f942e] transition-colors">{{ file.name }}</span>
-                  <span class="text-[10px] text-slate-500 uppercase tracking-widest">{{ file.isDirectory ? 'Pasta' : 'Imagem' }}</span>
                </div>
             </div>
 
             <div class="flex items-center gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
                <template v-if="!file.isDirectory">
-                  <Button icon="pi pi-eye" severity="secondary" text rounded @click.stop="openZoom(file)" v-tooltip.top="'Ver'" />
-                  <Button icon="pi pi-check" severity="success" text rounded @click.stop="selectImage(file.name)" v-tooltip.top="'Inserir'" />
-                  <Button icon="pi pi-copy" severity="info" text rounded @click.stop="copyImageUrl(file.name)" v-tooltip.top="'Link'" />
+                  <Button icon="pi pi-eye" severity="secondary" text rounded class="!w-8 !h-8" @click.stop="openZoom(file)" />
+                  <Button icon="pi pi-check" severity="success" text rounded class="!w-8 !h-8" @click.stop="selectImage(file.name)" />
                   <div class="w-px h-4 bg-white/20 mx-1"></div>
                </template>
                
-               <Button icon="pi pi-pencil" severity="warning" text rounded @click.stop="openRenameModal(file)" v-tooltip.top="'Renomear'" />
-               <Button icon="pi pi-arrow-right-arrow-left" severity="help" text rounded @click.stop="openMoveModal(file)" v-tooltip.top="'Mover'" />
-               <Button icon="pi pi-trash" severity="danger" text rounded @click.stop="deleteItem(file.name, file.isDirectory)" v-tooltip.top="'Excluir'" />
+               <Button icon="pi pi-pencil" severity="warning" text rounded class="!w-8 !h-8" @click.stop="openRenameModal(file)" />
+               <Button icon="pi pi-trash" severity="danger" text rounded class="!w-8 !h-8" @click.stop="deleteItem(file.name, file.isDirectory)" />
             </div>
          </div>
       </div>
 
-      <div v-if="files && files.length === 0" class="flex flex-col items-center justify-center opacity-50 h-40">
-        <i class="pi pi-folder-open text-4xl mb-2 text-slate-600"></i>
-        <p class="text-xs uppercase tracking-widest text-slate-500">Pasta Vazia</p>
+      <div v-if="files && files.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
+        <i class="pi pi-folder-open text-6xl mb-4 text-slate-600"></i>
+        <p class="text-sm uppercase tracking-widest text-slate-500 font-bold">Pasta Vazia</p>
       </div>
 
     </section>
@@ -147,17 +145,13 @@
       :contentStyle="{ padding: 0, background: 'transparent', height: '100%', width: '100%' }"
     >
       <div class="relative flex flex-col items-center justify-center bg-[#020302] w-full h-full p-4 overflow-hidden select-none" v-if="currentZoomedFile">
-        
-        <Button icon="pi pi-times" text rounded class="!absolute top-4 right-4 text-white/60 hover:text-white z-50 !w-14 !h-14 !text-2xl" @click="showZoom = false" v-tooltip.left="'Fechar (Esc)'" />
-
+        <Button icon="pi pi-times" text rounded class="!absolute top-4 right-4 text-white/60 hover:text-white z-50 !w-14 !h-14 !text-2xl" @click="showZoom = false" />
         <div class="flex items-center justify-between w-full gap-4 h-full relative">
           <div class="h-full flex items-center px-4 absolute left-0 z-10 cursor-pointer group" @click="prevImage">
              <Button icon="pi pi-chevron-left" text rounded class="text-white/40 group-hover:text-[#6f942e] !w-16 !h-16 !text-4xl transition-all scale-90 group-hover:scale-105" />
           </div>
-
           <div class="relative flex-1 flex flex-col items-center justify-center h-full w-full px-16">
             <img :src="getImageUrl(currentZoomedFile.name)" class="max-h-[85vh] max-w-full object-contain animate-fade-in" />
-            
             <div class="absolute bottom-4 flex flex-col items-center gap-3 bg-[#020302]/80 p-3 rounded-xl backdrop-blur-sm">
                <div class="text-slate-400 font-mono text-xs flex items-center gap-2">
                   <i class="pi pi-image text-[#6f942e]"></i>
@@ -169,14 +163,9 @@
                </div>
             </div>
           </div>
-
           <div class="h-full flex items-center px-4 absolute right-0 z-10 cursor-pointer group" @click="nextImage">
             <Button icon="pi pi-chevron-right" text rounded class="text-white/40 group-hover:text-[#6f942e] !w-16 !h-16 !text-4xl transition-all scale-90 group-hover:scale-105" />
           </div>
-        </div>
-
-        <div class="absolute top-6 left-6 text-xs font-bold text-slate-500 uppercase tracking-widest bg-black/50 px-3 py-1 rounded-full">
-           {{ zoomedFileIndex + 1 }} / {{ imageFiles.length }}
         </div>
       </div>
     </Dialog>
@@ -192,24 +181,12 @@
     <Dialog v-model:visible="showMove" modal header="Mover Para" :style="{ width: '350px' }" class="bg-[#141b18]">
       <div class="flex flex-col gap-4 pt-2">
          <p class="text-xs text-slate-400">Movendo: <span class="text-white font-bold">{{ itemToMove?.name }}</span></p>
-         
          <div class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar">
-            <div v-if="folder !== 'images'" 
-                 @click="handleMove('..')"
-                 class="p-3 bg-white/5 hover:bg-[#6f942e]/20 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
-                <i class="pi pi-level-up text-[#6f942e]"></i>
-                <span class="text-sm font-bold text-slate-300">.. (Pasta Anterior)</span>
+            <div v-if="folder !== 'images'" @click="handleMove('..')" class="p-3 bg-white/5 hover:bg-[#6f942e]/20 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
+                <i class="pi pi-level-up text-[#6f942e]"></i><span class="text-sm font-bold text-slate-300">.. (Pasta Anterior)</span>
             </div>
-
-            <div v-for="dir in subDirectories" :key="dir.name"
-                 @click="handleMove(dir.name)"
-                 class="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
-                <i class="pi pi-folder text-amber-500"></i>
-                <span class="text-sm text-slate-300">{{ dir.name }}</span>
-            </div>
-
-            <div v-if="subDirectories.length === 0 && folder === 'images'" class="text-center text-xs text-slate-600 py-4">
-              Nenhuma subpasta disponível.
+            <div v-for="dir in subDirectories" :key="dir.name" @click="handleMove(dir.name)" class="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
+                <i class="pi pi-folder text-amber-500"></i><span class="text-sm text-slate-300">{{ dir.name }}</span>
             </div>
          </div>
       </div>
@@ -223,10 +200,10 @@ import { useToast } from "primevue/usetoast";
 import { onMounted, onUnmounted } from 'vue';
 
 const toast = useToast();
-const emit = defineEmits(['select']);
+// [IMPORTANTE] Evento close para o botão X
+const emit = defineEmits(['select', 'close']);
 
 const siteContext = useCookie('cms_site_context');
-// [NOVO] Cookie para lembrar o modo de visualização (Padrão: grid)
 const viewMode = useCookie('cms_media_view_mode', { default: () => 'grid' });
 
 const folder = ref('images'); 
@@ -406,17 +383,37 @@ const openMoveModal = (file) => {
 
 const handleMove = async (destinationSubFolder) => {
   const fileName = itemToMove.value.name;
-  let newPathName = '';
+  
+  // 1. Define o caminho completo ATUAL (ex: images/viagem/foto.jpg)
+  const oldPathFull = `${folder.value}/${fileName}`;
+  
+  let newPathFull = '';
+
   if (destinationSubFolder === '..') {
-    newPathName = `../${fileName}`;
+    // Lógica para VOLTAR um nível (Parent Dir)
+    // Pega 'images/viagem', remove 'viagem', sobra 'images'
+    const parts = folder.value.split('/');
+    parts.pop(); 
+    const parentPath = parts.join('/');
+    
+    // Novo caminho: images/foto.jpg
+    newPathFull = parentPath ? `${parentPath}/${fileName}` : fileName;
   } else {
-    newPathName = `${destinationSubFolder}/${fileName}`;
+    // Lógica para ENTRAR na pasta (Sub Dir)
+    // Novo caminho: images/viagem/nova-pasta/foto.jpg
+    newPathFull = `${folder.value}/${destinationSubFolder}/${fileName}`;
   }
+
   try {
+    // Chamada ajustada para a nova API
     await $fetch('/api/admin/rename', {
       method: 'POST',
-      body: { folder: folder.value, oldFile: fileName, newName: newPathName }
+      body: { 
+        oldname: oldPathFull, 
+        newname: newPathFull 
+      }
     });
+    
     showMove.value = false;
     toast.add({ severity: 'success', summary: 'Movido com sucesso!', life: 3000 });
     refresh();
@@ -433,14 +430,25 @@ const handleMove = async (destinationSubFolder) => {
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(111, 148, 46, 0.2); border-radius: 10px; }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(111, 148, 46, 0.5); }
 
-:deep(.p-fileupload-choose) {
+/* Customização do Botão de Upload do PrimeVue */
+:deep(.custom-upload-btn .p-fileupload-choose) {
   background: #6f942e !important;
-  border-radius: 8px;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  border-color: #6f942e !important;
+  color: #000 !important;
+  font-weight: 800 !important;
+  font-size: 10px !important;
+  padding: 8px 16px !important;
+  border-radius: 4px !important;
+  height: 32px !important;
+  display: flex;
+  align-items: center;
 }
 
+:deep(.custom-upload-btn .p-fileupload-choose:hover) {
+    background: #5a7a23 !important;
+}
+
+/* Modais sem estilo padrão */
 :deep(.p-dialog) {
   box-shadow: none !important;
   border: none !important;
