@@ -1,53 +1,66 @@
 // server/api/admin/rename.post.ts
 import fs from 'node:fs'
 import path from 'node:path'
-import { getCookie, setCookie } from 'h3'
+import { getCookie } from 'h3'
 
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig()
   const body = await readBody(event)
   const siteCookie = getCookie(event, 'cms_site_context')
-  // Espera receber: { folder: 'content/eventos', oldFile: 'festa.md', newName: 'festival' }
   
-  console.log("siteCookie:", siteCookie)
-  const { folder, oldFile, newName } = body
+  // Recebe os caminhos completos relativos à raiz do site
+  // Ex: oldname: "content/sobre/about.md"
+  // Ex: newname: "content/sobre/about-v2.md" (ou "content/nova-pasta/about.md")
+  const { oldname, newname } = body
 
-  if (!folder || !oldFile || !newName) {
-    throw createError({ statusCode: 400, message: 'Dados incompletos.' })
+  if (!siteCookie) {
+    throw createError({ statusCode: 401, message: 'Site não identificado.' })
   }
 
-  // Define o diretório base (ajuste conforme a estrutura do seu projeto)
-  // Geralmente é process.cwd() ou algo configurado no runtimeConfig
-  const baseDir = path.resolve(process.cwd(), '..', 'storage', siteCookie, folder) 
-  console.log('baseDir:', baseDir)
-  const oldPath = path.join(baseDir, oldFile)
-  
-  // Tratamento da extensão: Garante que o novo nome mantenha a extensão original (ex: .md)
-  const ext = path.extname(oldFile)
-  let finalNewName = newName.trim()
-  if (!finalNewName.endsWith(ext)) {
-    finalNewName += ext
+  if (!oldname || !newname) {
+    throw createError({ statusCode: 400, message: 'Parâmetros oldname e newname são obrigatórios.' })
   }
-  
-  // Sanitização básica do nome (remove caracteres perigosos)
-  // finalNewName = finalNewName.replace(/[^a-z0-9\._-]/gi, '-')
 
-  const newPath = path.join(baseDir, finalNewName)
+  // 1. Define a Raiz do Site (Storage)
+  const storageRoot = path.resolve(process.cwd(), '..', 'storage', siteCookie)
 
-  // Verificações de segurança
+  // 2. Resolve os caminhos absolutos no sistema operacional
+  const oldPath = path.join(storageRoot, oldname)
+  const newPath = path.join(storageRoot, newname)
+
+  // 3. SEGURANÇA: Garante que o usuário não está tentando acessar arquivos fora da pasta do site
+  // Isso previne ataques do tipo "../../etc/passwd"
+  if (!oldPath.startsWith(storageRoot) || !newPath.startsWith(storageRoot)) {
+    throw createError({ statusCode: 403, message: 'Acesso negado: Caminho fora do diretório do site.' })
+  }
+
+  // 4. Verificações de existência
   if (!fs.existsSync(oldPath)) {
     throw createError({ statusCode: 404, message: 'Arquivo original não encontrado.' })
   }
+
   if (fs.existsSync(newPath)) {
-    throw createError({ statusCode: 409, message: 'Já existe um arquivo com este nome.' })
+    throw createError({ statusCode: 409, message: 'Já existe um arquivo ou pasta com o nome de destino.' })
   }
 
-  console.log("oldPath, newPath:", oldPath, newPath)
+  console.log(`🔄 Renomeando/Movendo:\nDE: ${oldPath}\nPARA: ${newPath}`)
+
   try {
+    // 5. Garante que a pasta de destino exista (caso seja uma operação de Mover para pasta nova)
+    const newDir = path.dirname(newPath)
+    if (!fs.existsSync(newDir)) {
+      fs.mkdirSync(newDir, { recursive: true })
+    }
+
+    // 6. Executa a renomeação
     fs.renameSync(oldPath, newPath)
-    return { success: true, oldFile, newFile: finalNewName }
+
+    return { 
+      success: true, 
+      oldname, 
+      newname 
+    }
   } catch (error) {
     console.error('❌ ERRO AO RENOMEAR:', error);
-    throw createError({ statusCode: 500, message: 'Erro ao renomear arquivo: ' + error.message })
+    throw createError({ statusCode: 500, message: 'Erro de sistema ao renomear arquivo: ' + error.message })
   }
 })

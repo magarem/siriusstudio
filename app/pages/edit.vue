@@ -9,6 +9,7 @@ import AdminMetaEditor from "~/components/admin/MetaEditor.vue";
 import AdminMarkdownEditor from "~/components/admin/MarkdownEditor.vue";
 import ImageExplorer from "~/components/admin/ImageExplorer.vue";
 import DashboardHome from "~/components/admin/DashboardHome.vue";
+import FileToolbar from "~/components/admin/FileToolbar.vue";
 
 definePageMeta({ layout: "" });
 
@@ -20,14 +21,34 @@ const siteContext = useCookie("cms_site_context");
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
 
-// 'currentFile': O arquivo aberto no momento (ex: '_index.md')
+// [ALTERADO] 'currentFile': Agora armazena o CAMINHO COMPLETO (ex: content/blog/post.md)
 const currentFile = ref(route.query.file || "");
 
-// 'currentFolder': Onde o usuário está navegando na SIDEBAR
-const currentFolder = ref(route.query.folder || "content");
+// [ALTERADO] Helper para extrair pasta do arquivo atual
+const getFolderFromFile = (fullPath) => {
+  if (!fullPath) return "content";
+  const lastSlash = fullPath.lastIndexOf("/");
+  return lastSlash !== -1 ? fullPath.substring(0, lastSlash) : "content";
+};
 
-// 'editorCtxFolder': A pasta onde o ARQUIVO ABERTO está localizado.
-const editorCtxFolder = ref(route.query.folder || "content");
+// [ALTERADO] 'currentFolder': Inicializa baseado no arquivo ou fallback
+const currentFolder = ref(
+  currentFile.value
+    ? getFolderFromFile(currentFile.value)
+    : route.query.folder || "content",
+);
+
+// [ALTERADO] 'editorCtxFolder': Agora é COMPUTADO para garantir consistência
+const editorCtxFolder = computed(() => {
+  if (!currentFile.value) return currentFolder.value;
+  return getFolderFromFile(currentFile.value);
+});
+
+// [ALTERADO] Helper para pegar só o nome do arquivo para APIs
+const currentFileNameOnly = computed(() => {
+  if (!currentFile.value) return "";
+  return currentFile.value.split("/").pop();
+});
 
 // --- ESTADOS DE EDIÇÃO ---
 const form = ref({ frontmatter: {}, content: "" });
@@ -51,38 +72,23 @@ const newFolderName = ref("");
 // =============================================================================
 
 // --- CONFIGURAÇÃO DO SITE (VIA _config.json) ---
-// Busca o arquivo _config.json na raiz do site atual
-console.log("query:", {
-    site: siteContext.value,
-    folder: "", // Busca na raiz
-    file: "_config.json",
-  })
-
 const { data: configFileData } = await useFetch("/api/admin/storage", {
   query: {
     site: siteContext.value,
-    folder: ".", // Busca na raiz
+    folder: ".",
     file: "_config.json",
   },
-  // Chave única para não conflitar com outros fetches
   key: `site-config-${siteContext.value}`,
 });
 
-const configFileData_obj = JSON.parse(configFileData.value.content)
+const configFileData_obj = configFileData.value
+  ? JSON.parse(configFileData.value.content)
+  : {};
 
-console.log("configFileData:", JSON.parse(configFileData.value.content).port)
-
-// Computada para extrair a URL do JSON
 const userSiteUrl = computed(() => {
   try {
-    if (!configFileData.value || !configFileData.value.content) {
-      return "";
-    }
-
-    // Faz o parse do conteúdo do arquivo (que vem como string)
+    if (!configFileData.value || !configFileData.value.content) return "";
     const config = JSON.parse(configFileData.value.content);
-
-    // Retorna a URL limpa (sem barra no final)
     const url = config.url || "";
     return url.endsWith("/") ? url.slice(0, -1) : url;
   } catch (e) {
@@ -97,10 +103,20 @@ const { data: files, refresh: refreshFiles } = await useFetch(
   {
     query: { site: siteContext, folder: currentFolder },
     watch: [currentFolder],
-  }
+  },
 );
 
 const sortedFiles = computed(() => files.value || []);
+
+// [NOVO] 4. LISTA DE PASTAS (Para o Modal de Mover)
+// Busca todas as pastas do sistema para montar a árvore
+const { data: allFolders, refresh: refreshFolders } = await useFetch(
+  "/api/admin/folders",
+  {
+    query: { site: siteContext },
+    key: `folders-${siteContext.value}`,
+  },
+);
 
 // 2. CONTEÚDO DO ARQUIVO (Editor)
 const { data: fileData, error: fileError } = await useAsyncData(
@@ -110,30 +126,49 @@ const { data: fileData, error: fileError } = await useAsyncData(
     return $fetch("/api/admin/storage", {
       params: {
         site: siteContext.value,
+        // [ALTERADO] Divide o caminho completo para a API
         folder: editorCtxFolder.value,
-        file: currentFile.value,
+        file: currentFileNameOnly.value,
       },
     });
   },
   {
-    watch: [currentFile, editorCtxFolder],
-  }
+    watch: [currentFile], // Monitora apenas o arquivo completo
+  },
 );
+
+// [ALTERADO] Função para lidar com a digitação manual do caminho (Toolbar)
+const handleManualNavigation = (fullPath) => {
+  const cleanPath = fullPath.replace(/^\//, ""); // Remove barra inicial
+
+  // Atualiza a pasta da sidebar para onde o arquivo está
+  const newFolder = getFolderFromFile(cleanPath);
+  currentFolder.value = newFolder;
+
+  // Atualiza o arquivo atual e URL
+  currentFile.value = cleanPath;
+  window.history.pushState({}, "", `?file=${cleanPath}`);
+
+  toast.add({
+    severity: "info",
+    summary: "Navegando...",
+    detail: `Indo para ${cleanPath}`,
+    life: 1000,
+  });
+};
 
 // --- LÓGICA DE PREVIEW ---
 const getPreviewPath = () => {
   if (!currentFile.value) return "/";
 
-  // 1. Frontmatter
   if (form.value.frontmatter?.slug)
     return `/${form.value.frontmatter.slug.replace(/^\//, "")}`;
   if (form.value.frontmatter?.permalink)
     return `/${form.value.frontmatter.permalink.replace(/^\//, "")}`;
 
-  // 2. Fallback: Caminho do arquivo
+  // Fallback: Caminho do arquivo (remove content/ e extensão)
   let path = currentFile.value.replace(/\.md$/, "");
 
-  // Limpezas
   if (path.endsWith("/_index") || path === "_index")
     path = path.replace("_index", "");
   if (path.startsWith("content/")) path = path.replace("content/", "");
@@ -141,136 +176,147 @@ const getPreviewPath = () => {
   return path.startsWith("/") ? path : `/${path}`;
 };
 
-// const handlePreview = () => {
-//   // Validação robusta
-//   if (!userSiteUrl.value) {
-//     toast.add({
-//       severity: "warn",
-//       summary: "Configuração Ausente",
-//       detail: 'Crie um arquivo "_config.json" na raiz com a chave "url".',
-//       life: 5000,
-//     });
-//     return;
-//   }
-
-//   const path = getPreviewPath();
-//   const fullUrl = `${userSiteUrl.value}${path}`;
-
-//   window.open(fullUrl, "_blank");
-// };
-
 // --- ESTADO DO PREVIEW ---
-const previewWindow = ref(null); // <--- Adicione isso
+const previewWindow = ref(null);
 
 const handlePreview_ = () => {
-  if (!userSiteUrl.value) {
-    toast.add({ severity: "warn", summary: "Configuração Ausente", detail: 'Crie um arquivo "_config.json".' });
-    return;
-  }
-
-  const path = getPreviewPath();
-  
-  // [IMPORTANTE] Adicionamos ?preview=true para ativar o listener no front
-  const fullUrl = `${userSiteUrl.value}${path}?preview=true`;
-
-  // [IMPORTANTE] Usamos um nome "sirius_preview" para reaproveitar a mesma aba
-  previewWindow.value = window.open(fullUrl, "sirius_preview");
-
-  // Força um envio inicial após 1 segundo (tempo de carregar a aba)
-  setTimeout(() => sendPreviewUpdate(), 1500);
+  /* ... lógica antiga comentada ... */
 };
-
 
 function toPreviewUrl(inputUrl) {
   try {
-    // Cria um objeto URL para manipular as partes com segurança
     const url = new URL(inputUrl);
+    if (url.hostname.startsWith("preview.")) return inputUrl;
 
-    // Se já tiver "preview.", não faz nada para evitar duplicidade
-    if (url.hostname.startsWith('preview.')) {
-      return inputUrl;
-    }
-
-    // Se tiver "www.", substitui por "preview." (opcional, mas fica mais limpo)
-    // Ex: www.site.com -> preview.site.com
-    if (url.hostname.startsWith('www.')) {
-      url.hostname = url.hostname.replace('www.', 'preview.');
+    if (url.hostname.startsWith("www.")) {
+      url.hostname = url.hostname.replace("www.", "preview.");
     } else {
-      // Caso contrário, apenas adiciona o prefixo
       url.hostname = `preview.${url.hostname}`;
     }
-
-    // Retorna a URL remontada (mantém porta, protocolo e path)
     return url.toString();
-
   } catch (error) {
-    console.error('URL inválida fornecida:', inputUrl);
+    console.error("URL inválida fornecida:", inputUrl);
     return inputUrl;
   }
 }
 
-// edit.vue
-
 const getPreviewLink = () => {
-  // Pega a URL base atual do navegador onde o Sirius está rodando
-  // OU pegue de uma env se o site estiver em outro lugar
-  const currentBase = configFileData_obj.url; // ex: http://localhost:3001
-  
-  const path = form.value.path || ''; // ex: /pasta/subpasta
+  const currentBase = configFileData_obj.url;
+  const path = form.value.path || "";
   const fullUrl = `${currentBase}${path}`;
-
   return toPreviewUrl(fullUrl);
 };
 
-// Uso no botão
+// Substitua a antiga const handlePreview_ ou handlePreview por esta:
+
 const handlePreview = () => {
-  const url = getPreviewLink();
-  // alert(url.split(":")[0]+":"+configFileData_obj.port)
-  // alert(configFileData_obj)
-  window.open(url, '_blank');
-}
+  // 1. Validação de Segurança: O site tem URL configurada?
+  if (!configFileData_obj?.url) {
+    toast.add({
+      severity: "warn",
+      summary: "Configuração Ausente",
+      detail: 'Defina a chave "url" no arquivo _config.json na raiz do site.',
+      life: 5000,
+    });
+    return;
+  }
 
+  // 2. Lógica de Resolução do Caminho (Path)
+  let path = "/";
 
+  if (form.value.frontmatter?.slug) {
+    // Prioridade 1: O usuário definiu um slug manual
+    path = form.value.frontmatter.slug;
+  } else if (form.value.frontmatter?.permalink) {
+    // Prioridade 2: Permalink manual
+    path = form.value.frontmatter.permalink;
+  } else {
+    // Prioridade 3: Automático baseado no nome do arquivo
+    // Ex: content/portfolio/projeto-x.md
+    let cleanPath = currentFile.value || "";
 
+    // Remove a extensão .md
+    cleanPath = cleanPath.replace(/\.md$/, "");
 
-// --- LÓGICA DE LIVE UPDATE (POST MESSAGE) ---
+    // Remove o prefixo 'content/' se existir (padrão do Nuxt Content)
+    if (cleanPath.startsWith("content/")) {
+      cleanPath = cleanPath.substring(8);
+    }
+
+    // Trata arquivos de índice (_index vira a raiz da pasta)
+    if (cleanPath.endsWith("/_index") || cleanPath === "_index") {
+      cleanPath = cleanPath.replace("_index", "");
+    }
+
+    // Garante que comece com / e não tenha barra dupla no final (a menos que seja raiz)
+    path = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
+    if (path.length > 1 && path.endsWith("/")) {
+      path = path.slice(0, -1);
+    }
+  }
+
+  // 3. Montagem da URL Base
+  // Garante que a URL base não tenha barra no final para não duplicar com o path
+  const baseUrl = configFileData_obj.url.endsWith("/")
+    ? configFileData_obj.url.slice(0, -1)
+    : configFileData_obj.url;
+
+  const fullProductionUrl = `${baseUrl}${path}`;
+
+  // 4. Conversão para URL de Preview
+  // Usa sua função auxiliar que troca 'www' por 'preview' ou adiciona o subdomínio
+  let finalUrl = toPreviewUrl(fullProductionUrl);
+
+  // Adiciona query string para o Nuxt entender que deve ouvir eventos de preview
+  // Se já tiver query string, usa &, senão usa ?
+  finalUrl += finalUrl.includes("?") ? "&preview=true" : "?preview=true";
+
+  console.log("Abrindo Preview em:", finalUrl);
+
+  // 5. Abertura da Janela
+  // 'sirius_preview' garante que sempre recarregue a MESMA aba em vez de abrir várias
+  previewWindow.value = window.open(finalUrl, "sirius_preview");
+
+  // 6. Sincronização Inicial
+  // Espera 1.5s para garantir que o Nuxt carregou na nova aba e envia os dados atuais
+  setTimeout(() => sendPreviewUpdate(), 1500);
+};
+
+// --- LÓGICA DE LIVE UPDATE ---
 let debounceTimer = null;
 
 const sendPreviewUpdate = () => {
-  // Se a janela não existe ou foi fechada, não faz nada
   if (!previewWindow.value || previewWindow.value.closed) return;
 
-  // Monta o pacote de dados igual definimos no [...slug].vue
   const payload = {
-    type: 'SIRIUS_PREVIEW_UPDATE',
+    type: "SIRIUS_PREVIEW_UPDATE",
     data: {
       title: form.value.frontmatter.title,
       description: form.value.frontmatter.description,
-      // Envia o Markdown cru para ser convertido lá no front
-      body: showRawMode.value ? rawContent.value : form.value.content, 
-      frontmatter: form.value.frontmatter
-    }
+      body: showRawMode.value ? rawContent.value : form.value.content,
+      frontmatter: form.value.frontmatter,
+    },
   };
-
-  // Envia para a janela do preview
-  previewWindow.value.postMessage(payload, '*');
+  previewWindow.value.postMessage(payload, "*");
 };
 
-// Observa qualquer mudança no formulário (Título, Body, Frontmatter)
-watch(form, () => {
-  // Debounce: Só envia se parar de digitar por 50ms (evita travar o browser)
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(sendPreviewUpdate, 50);
-}, { deep: true });
+watch(
+  form,
+  () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(sendPreviewUpdate, 50);
+  },
+  { deep: true },
+);
 
-// Observa também o modo RAW se estiver ativo
 watch(rawContent, () => {
   if (showRawMode.value) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
-        // Parse rápido para atualizar frontmatter no preview também
-        try { parseMD(rawContent.value); } catch(e){}
-        sendPreviewUpdate();
+      try {
+        parseMD(rawContent.value);
+      } catch (e) {}
+      sendPreviewUpdate();
     }, 50);
   }
 });
@@ -289,9 +335,7 @@ const { data: schemaData } = await useFetch("/api/admin/schema", {
   query: {
     site: siteContext,
     folder: editorCtxFolder,
-    filename: computed(() =>
-      currentFile.value ? currentFile.value.split("/").pop() : ""
-    ),
+    filename: currentFileNameOnly, // Usa o computed só do nome
   },
   watch: [editorCtxFolder, currentFile],
 });
@@ -303,8 +347,7 @@ const { data: schemaData } = await useFetch("/api/admin/schema", {
 const currentModel = computed(() => {
   if (!schemaData.value) return { fields: [] };
   const fmSchema = form.value.frontmatter?.schema;
-  const filename = currentFile.value.split("/").pop();
-  const mapSchema = schemaData.value.mapping?.[filename];
+  const mapSchema = schemaData.value.mapping?.[currentFileNameOnly.value];
   const typeKey = fmSchema || mapSchema || "default";
   return schemaData.value.types?.[typeKey] || { fields: [] };
 });
@@ -387,7 +430,7 @@ watch(
       rawContent.value = newData.content;
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 watch(
@@ -422,7 +465,7 @@ watch(
       }
     });
   },
-  { deep: true }
+  { deep: true },
 );
 
 // =============================================================================
@@ -440,14 +483,19 @@ const navigate = {
       currentFolder.value = parts.join("/");
     }
   },
-  selectFile: (f) => {
-    currentFile.value = f;
-    editorCtxFolder.value = currentFolder.value;
-    window.history.pushState(
-      {},
-      "",
-      `?file=${f}&folder=${editorCtxFolder.value}`
-    );
+  // [ALTERADO] Select File agora monta o path completo
+  selectFile: (fileNameOrPath) => {
+    // Se o input não tiver barras, assumimos que veio da sidebar e juntamos com a pasta atual
+    // Se já tiver barra, assumimos que é um path completo (ex: navegação manual)
+    const fullPath = fileNameOrPath.includes("/")
+      ? fileNameOrPath
+      : `${currentFolder.value}/${fileNameOrPath}`;
+
+    currentFile.value = fullPath;
+
+    // Atualiza a URL apenas com ?file=caminho/completo.md
+    window.history.pushState({}, "", `?file=${fullPath}`);
+
     showSidebar.value = false;
     showRawMode.value = false;
   },
@@ -493,8 +541,9 @@ const createActions = {
 
     showCreateModal.value = false;
     await refreshFiles();
-    navigate.selectFile(name);
+    navigate.selectFile(name); // O selectFile agora lida com a junção
   },
+
   handleFolder: async () => {
     await $fetch("/api/admin/mkdir", {
       method: "POST",
@@ -505,7 +554,12 @@ const createActions = {
       },
     });
     showFolderModal.value = false;
+
+    // Atualiza a sidebar de arquivos
     await refreshFiles();
+
+    // [NOVO] Atualiza a árvore de pastas
+    await refreshFolders();
   },
 };
 
@@ -571,8 +625,9 @@ const saveFile = async () => {
       method: "POST",
       body: {
         site: siteContext.value,
+        // [ALTERADO] Envia pasta e arquivo separados
         folder: editorCtxFolder.value,
-        file: currentFile.value,
+        file: currentFileNameOnly.value,
         content: finalContent,
       },
     });
@@ -590,36 +645,41 @@ const saveFile = async () => {
 };
 const isPublishing = ref(false);
 
-// Função que faz o "Deploy"
 const handlePublish = async () => {
   if (isPublishing.value) return;
-
   isPublishing.value = true;
-  toast.add({ severity: 'info', summary: 'Publicando...', detail: 'Gerando arquivos do site.', life: 2000 });
+  toast.add({
+    severity: "info",
+    summary: "Publicando...",
+    detail: "Gerando arquivos do site.",
+    life: 2000,
+  });
 
   try {
-    // PASSO 1: Salvar o Rascunho (Garante que o compile pegue a versão mais nova)
-    // Assumo que você já tenha uma função 'saveFile' ou similar no seu componente.
-    // Se não tiver, chame a lógica de salvar aqui.
-    // await saveFile(); 
-
-    // PASSO 2: Compilar TUDO (Gera os JSONs de produção)
-    const result = await $fetch('/api/admin/compile-all', {
-      method: 'POST',
-      body: { 
-        site: siteContext.value // Variável que tem o nome 'novagokula'
-      }
+    const result = await $fetch("/api/admin/compile-all", {
+      method: "POST",
+      body: {
+        site: siteContext.value,
+      },
     });
 
     if (result.success) {
-      toast.add({ severity: 'success', summary: 'Sucesso!', detail: 'Site atualizado e arquivos gerados.', life: 3000 });
+      toast.add({
+        severity: "success",
+        summary: "Sucesso!",
+        detail: "Site atualizado e arquivos gerados.",
+        life: 3000,
+      });
     } else {
       throw new Error(result.message);
     }
-
   } catch (error) {
     console.error(error);
-    toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao publicar site.' });
+    toast.add({
+      severity: "error",
+      summary: "Erro",
+      detail: "Falha ao publicar site.",
+    });
   } finally {
     isPublishing.value = false;
   }
@@ -638,13 +698,16 @@ const handleKeydown = (e) => {
 };
 
 const handleDeleteFile = async (item) => {
+  // Se veio do evento de Sidebar, item é objeto. Se Toolbar, é nulo.
+  const fileName = item?.name || currentFileNameOnly.value;
+
   try {
     await $fetch("/api/admin/storage", {
       method: "DELETE",
       body: {
         site: siteContext.value,
         folder: currentFolder.value,
-        file: item.name,
+        file: fileName,
       },
     });
 
@@ -655,10 +718,7 @@ const handleDeleteFile = async (item) => {
       life: 3000,
     });
 
-    if (
-      currentFile.value === item.name &&
-      editorCtxFolder.value === currentFolder.value
-    ) {
+    if (currentFileNameOnly.value === fileName) {
       currentFile.value = "";
       navigate.toDashboard();
     }
@@ -674,6 +734,70 @@ const handleDeleteFile = async (item) => {
     });
   }
 };
+
+// Ações para o Toolbar
+const handleRenameAction = async (newName) => {
+  try {
+    // Exemplo de como deve ser a chamada agora
+    await $fetch("/api/admin/rename", {
+      method: "POST",
+      body: {
+        oldname: `${editorCtxFolder.value}/${currentFileNameOnly.value}`,
+        newname: `${editorCtxFolder.value}/${newName}`,
+      },
+    });
+
+    toast.add({ severity: "success", summary: "Renomeado com sucesso" });
+    await refreshFiles();
+
+    // Atualiza a navegação para o novo nome (mantendo a pasta)
+    navigate.selectFile(`${editorCtxFolder.value}/${newName}`);
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: "Erro ao renomear",
+      detail: e.message,
+    });
+  }
+};
+
+const handleMoveAction = async (newPath) => {
+  try {
+    // 1. Executa a mudança no servidor
+    await $fetch("/api/admin/rename", {
+        method: "POST",
+        body: {
+            oldname: currentFile.value, 
+            newname: newPath 
+        }
+    })
+    
+    toast.add({ severity: 'success', summary: 'Movido com sucesso', detail: `Agora em: ${newPath}` })
+    
+    // 2. Calcula a nova pasta baseada no caminho destino
+    // Ex: "content/blog/post.md" -> "content/blog"
+    const lastSlashIndex = newPath.lastIndexOf('/')
+    const newFolderDest = lastSlashIndex !== -1 ? newPath.substring(0, lastSlashIndex) : 'content'
+
+    // 3. Atualiza o contexto da Sidebar para a nova pasta
+    // Isso fará a sidebar carregar os arquivos do local de destino
+    currentFolder.value = newFolderDest
+    
+    // 4. Atualiza a árvore de pastas (caso tenha criado pasta nova no processo, embora raro no move)
+    await refreshFolders()
+    
+    // 5. Força a atualização da lista de arquivos imediatamente
+    await refreshFiles()
+
+    // 6. Abre o arquivo no novo local
+    // O navigate.selectFile já atualiza a URL e carrega o conteúdo
+    navigate.selectFile(newPath)
+    
+  } catch (e) {
+    console.error(e)
+    toast.add({ severity: 'error', summary: 'Erro ao mover', detail: e.data?.message || e.message })
+  }
+}
 
 onMounted(() => window.addEventListener("keydown", handleKeydown));
 onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
@@ -705,14 +829,10 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
       :site-context="siteContext"
       :site-url="userSiteUrl"
       :current-folder="editorCtxFolder"
-      :current-file="currentFile"
+      :current-file="currentFileNameOnly"
       :loading-save="loadingSave"
       :loading-publish="loadingPublish"
-      :show-meta-sidebar="showMetaSidebar"
-      :is-raw-mode="showRawMode"
       @toggle-sidebar="showSidebar = true"
-      @toggle-meta="showMetaSidebar = !showMetaSidebar"
-      @toggle-raw="toggleRawMode"
       @save="saveFile"
       @publish="handlePublish"
       @preview="handlePreview"
@@ -722,46 +842,46 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
-      <div v-if="currentFile">
-        <div v-if="showRawMode" class="h-[calc(100vh-120px)] animate-fade-in">
+      <div v-if="currentFile" class="flex flex-col h-[calc(100vh-120px)]">
+        <FileToolbar
+          :filename="currentFileNameOnly"
+          :filepath="currentFile"
+          :is-raw="showRawMode"
+          :show-meta="showMetaSidebar"
+          :all-folders="allFolders || []"
+          @rename="handleRenameAction"
+          @move="handleMoveAction"
+          @delete="handleDeleteFile"
+          @toggle-raw="toggleRawMode"
+          @media="imageActions.open()"
+          @navigate-file="handleManualNavigation"
+          @toggle-meta="showMetaSidebar = !showMetaSidebar"
+        />
+
+        <div
+          v-if="showRawMode"
+          class="flex-1 animate-fade-in min-h-0 bg-[#141b18] border-x border-b border-white/5 rounded-b-lg flex flex-col relative"
+        >
           <div
-            class="w-full h-full bg-[#141b18] rounded-[0.5vw] border border-white/5 flex flex-col overflow-hidden shadow-2xl relative"
+            class="absolute top-2 right-4 z-10 opacity-50 hover:opacity-100 transition-opacity pointer-events-none"
           >
-            <div
-              class="px-4 py-2 border-b border-white/5 bg-white/5 flex justify-between items-center"
+            <span
+              class="text-[10px] text-orange-400 bg-orange-900/20 border border-orange-500/20 px-2 py-1 rounded"
             >
-              <div
-                class="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-3"
-              >
-                <span>Editando Código Fonte</span>
-                <span
-                  class="text-orange-500 flex items-center gap-1 text-[9px] border border-orange-500/20 px-2 py-0.5 rounded"
-                >
-                  <i class="pi pi-exclamation-triangle text-[9px]"></i> Cuidado
-                  com indentação YAML
-                </span>
-              </div>
-
-              <Button
-                label="Sair do Modo Raw"
-                icon="pi pi-eye"
-                size="small"
-                class="text-xs py-1 px-3 bg-white/5 hover:bg-white/10 text-white border-white/10"
-                @click="toggleRawMode"
-              />
-            </div>
-
-            <textarea
-              v-model="rawContent"
-              class="flex-1 p-6 bg-transparent text-[#a3d95b] font-mono text-[13px] leading-[1.6] outline-none resize-none custom-scrollbar"
-              spellcheck="false"
-            ></textarea>
+              ⚠️ Cuidado com a indentação YAML
+            </span>
           </div>
+          <textarea
+            v-model="rawContent"
+            class="flex-1 p-6 bg-transparent text-[#a3d95b] font-mono text-[13px] leading-[1.6] outline-none resize-none custom-scrollbar"
+            spellcheck="false"
+            placeholder="Cole seu Markdown aqui..."
+          ></textarea>
         </div>
 
         <div
           v-else
-          class="grid grid-cols-1 lg:grid-cols-12 gap-3 h-[calc(100vh-120px)] transition-all duration-300 animate-fade-in"
+          class="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-1 min-h-0 transition-all duration-300 animate-fade-in pt-3"
         >
           <aside
             v-show="showMetaSidebar"
@@ -777,7 +897,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
 
           <div
             :class="showMetaSidebar ? 'lg:col-span-8' : 'lg:col-span-12'"
-            class="transition-all duration-300"
+            class="transition-all duration-300 h-full"
           >
             <AdminMarkdownEditor
               v-model:content="form.content"

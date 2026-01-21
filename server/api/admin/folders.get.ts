@@ -8,6 +8,7 @@ export default defineEventHandler(async (event) => {
   const APPS_ROOT = resolve(process.cwd(), '..');
   const baseDir = join(APPS_ROOT, 'storage', site as string);
 
+  
   // Função recursiva para varrer pastas
   const getAllDirs = (dirPath: string, base = '') => {
     let results: string[] = [];

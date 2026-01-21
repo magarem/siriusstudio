@@ -102,9 +102,6 @@ const previewLink = computed(() => {
       <div class="flex items-center gap-4 z-10 h-full">
          <div class="flex items-center gap-2 pr-4 border-r border-white/5 h-8">
           <Button icon="pi pi-bars" text @click="emit('toggle-sidebar')" class="!w-8 !h-8 !p-0 text-[#6f942e] hover:bg-[#6f942e]/10" v-tooltip.bottom="'Explorer'" />
-          
-          <Button v-if="!isRawMode" :icon="showMetaSidebar ? 'pi pi-sliders-h' : 'pi pi-sliders-v'" text @click="emit('toggle-meta')" :class="showMetaSidebar ? 'text-[#6f942e] bg-[#6f942e]/10' : 'text-slate-500 hover:text-white'" class="!w-8 !h-8 !p-0 transition-colors" v-tooltip.bottom="'Metadados'" />
-          
           <div 
             class="flex items-center gap-3 select-none pl-2 cursor-pointer hover:opacity-80 transition-opacity"
             @click="emit('go-dashboard')"
