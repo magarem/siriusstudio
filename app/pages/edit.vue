@@ -10,6 +10,7 @@ import AdminMarkdownEditor from "~/components/admin/MarkdownEditor.vue";
 import ImageExplorer from "~/components/admin/ImageExplorer.vue";
 import DashboardHome from "~/components/admin/DashboardHome.vue";
 import FileToolbar from "~/components/admin/FileToolbar.vue";
+import BackupManager from "~/components/admin/BackupManager.vue";
 
 definePageMeta({ layout: "" });
 
@@ -20,11 +21,9 @@ const siteContext = useCookie("cms_site_context");
 // --- ESTADOS DE NAVEGAÇÃO E CONTEXTO ---
 const showSidebar = ref(false);
 const showMetaSidebar = ref(true);
-
+const showBackupModal = ref(false);
 // [ALTERADO] 'currentFile': Agora armazena o CAMINHO COMPLETO (ex: content/blog/post.md)
 const currentFile = ref(route.query.file || "");
-
-
 
 // --- ESTADOS DE LAYOUT (RESIZABLE) ---
 const sidebarWidth = ref(350); // Largura inicial em pixels
@@ -34,16 +33,16 @@ const isMobile = ref(false); // [NOVO]
 // Detecta mudança de tela para ajustar layout
 const checkMobile = () => {
   isMobile.value = window.innerWidth < 1024; // 1024px é o breakpoint 'lg' do Tailwind
-}
+};
 onMounted(() => {
   checkMobile();
-  window.addEventListener('resize', checkMobile);
-  window.addEventListener('keydown', handleKeydown); // Mantém seu listener antigo
+  window.addEventListener("resize", checkMobile);
+  window.addEventListener("keydown", handleKeydown); // Mantém seu listener antigo
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkMobile);
-  window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener("resize", checkMobile);
+  window.removeEventListener("keydown", handleKeydown);
 });
 
 const startResize = (e) => {
@@ -64,23 +63,21 @@ const startResize = (e) => {
 
   const stopDrag = () => {
     isResizing.value = false;
-    document.removeEventListener('mousemove', doDrag);
-    document.removeEventListener('mouseup', stopDrag);
+    document.removeEventListener("mousemove", doDrag);
+    document.removeEventListener("mouseup", stopDrag);
     // Reativa a seleção de texto no body (opcional, mas boa prática)
-    document.body.style.userSelect = '';
-    document.body.style.cursor = '';
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
   };
 
   // Adiciona listeners no DOCUMENTO inteiro (para não perder o foco se arrastar rápido)
-  document.addEventListener('mousemove', doDrag);
-  document.addEventListener('mouseup', stopDrag);
-  
+  document.addEventListener("mousemove", doDrag);
+  document.addEventListener("mouseup", stopDrag);
+
   // Evita selecionar texto enquanto arrasta
-  document.body.style.userSelect = 'none';
-  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = "none";
+  document.body.style.cursor = "col-resize";
 };
-
-
 
 // [ALTERADO] Helper para extrair pasta do arquivo atual
 const getFolderFromFile = (fullPath) => {
@@ -562,9 +559,8 @@ const navigate = {
   },
   toDashboard: () => {
     currentFile.value = "";
-    const url = new URL(window.location);
-    url.searchParams.delete("file");
-    window.history.pushState({}, "", url);
+    // Navega diretamente para /dashboard (raiz do sistema)
+    navigateTo("/");
   },
 };
 
@@ -823,39 +819,48 @@ const handleMoveAction = async (newPath) => {
   try {
     // 1. Executa a mudança no servidor
     await $fetch("/api/admin/rename", {
-        method: "POST",
-        body: {
-            oldname: currentFile.value, 
-            newname: newPath 
-        }
-    })
-    
-    toast.add({ severity: 'success', summary: 'Movido com sucesso', detail: `Agora em: ${newPath}`, life: 1000 })
-    
+      method: "POST",
+      body: {
+        oldname: currentFile.value,
+        newname: newPath,
+      },
+    });
+
+    toast.add({
+      severity: "success",
+      summary: "Movido com sucesso",
+      detail: `Agora em: ${newPath}`,
+      life: 1000,
+    });
+
     // 2. Calcula a nova pasta baseada no caminho destino
     // Ex: "content/blog/post.md" -> "content/blog"
-    const lastSlashIndex = newPath.lastIndexOf('/')
-    const newFolderDest = lastSlashIndex !== -1 ? newPath.substring(0, lastSlashIndex) : 'content'
+    const lastSlashIndex = newPath.lastIndexOf("/");
+    const newFolderDest =
+      lastSlashIndex !== -1 ? newPath.substring(0, lastSlashIndex) : "content";
 
     // 3. Atualiza o contexto da Sidebar para a nova pasta
     // Isso fará a sidebar carregar os arquivos do local de destino
-    currentFolder.value = newFolderDest
-    
+    currentFolder.value = newFolderDest;
+
     // 4. Atualiza a árvore de pastas (caso tenha criado pasta nova no processo, embora raro no move)
-    await refreshFolders()
-    
+    await refreshFolders();
+
     // 5. Força a atualização da lista de arquivos imediatamente
-    await refreshFiles()
+    await refreshFiles();
 
     // 6. Abre o arquivo no novo local
     // O navigate.selectFile já atualiza a URL e carrega o conteúdo
-    navigate.selectFile(newPath)
-    
+    navigate.selectFile(newPath);
   } catch (e) {
-    console.error(e)
-    toast.add({ severity: 'error', summary: 'Erro ao mover', detail: e.data?.message || e.message })
+    console.error(e);
+    toast.add({
+      severity: "error",
+      summary: "Erro ao mover",
+      detail: e.data?.message || e.message,
+    });
   }
-}
+};
 
 onMounted(() => window.addEventListener("keydown", handleKeydown));
 onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
@@ -897,6 +902,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
       @logout="logout"
       @open-media="imageActions.open()"
       @go-dashboard="navigate.toDashboard"
+      @open-backup="showBackupModal = true"
     />
 
     <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
@@ -937,33 +943,34 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
           ></textarea>
         </div>
 
-       <div
+        <div
           v-else
           class="flex flex-row h-full overflow-hidden animate-fade-in pt-3"
         >
-          
           <aside
             v-show="showMetaSidebar"
             class="shrink-0 flex flex-col pr-1"
             :style="{ width: sidebarWidth + 'px' }"
           >
             <div class="h-full overflow-y-auto custom-scrollbar pr-2">
-                <AdminMetaEditor
-                  :fields="currentModel.fields"
-                  :frontmatter="form.frontmatter"
-                  :site-context="siteContext"
-                  @open-image="imageActions.open"
-                />
+              <AdminMetaEditor
+                :fields="currentModel.fields"
+                :frontmatter="form.frontmatter"
+                :site-context="siteContext"
+                @open-image="imageActions.open"
+              />
             </div>
           </aside>
 
-          <div 
+          <div
             v-show="showMetaSidebar"
             class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] active:bg-[#6f942e] transition-colors duration-150 flex flex-col justify-center items-center group select-none z-10 mr-2"
             :class="isResizing ? 'bg-[#6f942e]' : 'bg-transparent'"
             @mousedown.prevent="startResize"
           >
-             <div class="w-[1px] h-full bg-white/10 group-hover:bg-[#6f942e]/50 transition-colors"></div>
+            <div
+              class="w-[1px] h-full bg-white/10 group-hover:bg-[#6f942e]/50 transition-colors"
+            ></div>
           </div>
 
           <div class="flex-1 h-full min-w-0 overflow-hidden">
@@ -976,11 +983,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
               @open-image="imageActions.open()"
             />
           </div>
-
         </div>
-     
-     
-     
       </div>
 
       <div v-else class="h-[calc(100vh-120px)] w-full">
@@ -1000,7 +1003,16 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
         />
       </div>
     </div>
-
+    <Dialog
+      v-model:visible="showBackupModal"
+      modal
+      header="GERENCIADOR DE BACKUPS"
+      :style="{ width: '800px', maxWidth: '95vw' }"
+      class="bg-[#141b18]"
+      :dismissableMask="true"
+    >
+      <BackupManager />
+    </Dialog>
     <Dialog
       v-model:visible="showCreateModal"
       modal
@@ -1071,11 +1083,14 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
       v-model:visible="showImageModal"
       modal
       header="MEDIA"
-      :showHeader="false" 
+      :showHeader="false"
       :style="{ width: '85vw' }"
       class="bg-[#141b18]"
     >
-      <ImageExplorer @select="imageActions.handleSelect" @close="showImageModal = false" />
+      <ImageExplorer
+        @select="imageActions.handleSelect"
+        @close="showImageModal = false"
+      />
     </Dialog>
   </div>
 </template>

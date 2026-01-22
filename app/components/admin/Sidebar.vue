@@ -241,8 +241,8 @@ const handleMove = async (destination) => {
                @click="file.isDirectory ? emit('navigate', file.name) : emit('select', file.name)"
                :class="['group flex items-center justify-between p-3 rounded-sm transition-all border border-transparent pr-2 select-none', currentFile === file.name ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-lg' : 'hover:bg-white/5 text-slate-300']">
             
-            <div class="flex items-center gap-3 overflow-hidden drag-handle cursor-grab active:cursor-grabbing w-full">
-               <i :class="[file.isDirectory ? 'pi pi-folder text-yellow-600 text-lg' : 'pi pi-file text-indigo-400 text-lg']"></i>
+            <div class="flex items-center gap-3 overflow-hidden  w-full">
+               <i class="drag-handle cursor-grab active:cursor-grabbing" :class="[file.isDirectory ? 'pi pi-folder text-yellow-600 text-lg' : 'pi pi-file text-indigo-400 text-lg']"></i>
                <span class="text-sm font-medium truncate">{{ file.isDirectory ? file.name : removeExtension(file.name) }}</span>
             </div>
 
