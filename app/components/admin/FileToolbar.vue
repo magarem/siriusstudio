@@ -55,7 +55,7 @@ const buildTree = (paths) => {
   return root;
 };
 
-// --- MODAIS (Mantidos iguais) ---
+// --- MODAIS ---
 const isMoveVisible = ref(false);
 const newPath = ref("");
 const isRenameVisible = ref(false);
@@ -76,8 +76,31 @@ const openMove = () => {
 
 const onNodeSelect = (node) => { newPath.value = `${node.key}/${props.filename}`; };
 const handleMove = () => { emit("move", newPath.value); isMoveVisible.value = false; };
-const openRename = () => { newName.value = props.filename; isRenameVisible.value = true; };
-const handleRename = () => { if (!newName.value) return; emit("rename", newName.value); isRenameVisible.value = false; };
+
+// --- LÓGICA DE RENOMEAR SEM EXTENSÃO ---
+const openRename = () => {
+  // Remove a extensão .md (ou qualquer outra) apenas visualmente
+  newName.value = props.filename.replace(/\.[^/.]+$/, "");
+  isRenameVisible.value = true;
+};
+
+const handleRename = () => {
+  if (!newName.value) return;
+
+  // Recupera a extensão original
+  const originalExt = props.filename.includes('.') ? '.' + props.filename.split('.').pop() : '';
+  
+  let finalName = newName.value;
+
+  // Se o usuário não digitou a extensão, a gente coloca de volta
+  if (!finalName.endsWith(originalExt) && originalExt) {
+    finalName += originalExt;
+  }
+
+  emit("rename", finalName);
+  isRenameVisible.value = false;
+};
+
 const handleDelete = (event) => {
   confirm.require({
     target: event.currentTarget,
@@ -186,15 +209,26 @@ const handleDelete = (event) => {
     </div>
   </div>
 
-  <Dialog v-model:visible="isRenameVisible" modal header="Renomear Arquivo" :style="{ width: '25rem' }">
-    <div class="flex flex-col gap-4 mb-4">
-      <label class="font-semibold w-24">Novo Nome</label>
-      <InputText v-model="newName" class="w-full" autofocus />
+  <Dialog v-model:visible="isRenameVisible" modal header="Renomear Arquivo" :style="{ width: '30rem' }">
+    <div class="flex flex-col gap-3 pt-2 pb-4">
+      <label class="text-xs font-bold uppercase text-zinc-500 dark:text-zinc-400 ml-1">
+        Novo Nome
+      </label>
+      <InputText 
+        v-model="newName" 
+        class="w-full text-xl p-3 font-semibold bg-zinc-50 dark:bg-[#0a0f0d] text-zinc-800 dark:text-white border border-zinc-200 dark:border-white/10 focus:border-[#6f942e] focus:ring-0 transition-all rounded-md" 
+        autofocus
+        placeholder="Nome do arquivo"
+        @keydown.enter="handleRename"
+      />
+      <small class="text-xs text-zinc-400 ml-1">A extensão original será mantida automaticamente.</small>
     </div>
-    <div class="flex justify-end gap-2">
-      <Button label="Cancelar" text severity="secondary" @click="isRenameVisible = false" />
-      <Button label="Salvar" @click="handleRename" />
-    </div>
+    <template #footer>
+      <div class="flex justify-end gap-2">
+        <Button label="Cancelar" text severity="secondary" @click="isRenameVisible = false" size="small" />
+        <Button label="Salvar Alteração" icon="pi pi-check" @click="handleRename" class="font-bold" />
+      </div>
+    </template>
   </Dialog>
 
   <Dialog v-model:visible="isMoveVisible" modal header="Mover para..." :style="{ width: '30rem' }" class="p-0">

@@ -16,7 +16,8 @@ export default defineEventHandler(async (event) => {
   const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
   const DEST_ROOT = join(APPS_ROOT, 'sites', site, 'server', 'data');
   
-  const stats = { processed: 0, copiedOrders: 0, errors: 0 };
+  // Adicionei 'copiedJson' nas estatísticas
+  const stats = { processed: 0, copiedOrders: 0, copiedJson: 0, errors: 0 };
   
   // --- OBJETO PARA GUARDAR AS VERSÕES (_meta.json) ---
   const versions: Record<string, number> = {};
@@ -51,8 +52,12 @@ export default defineEventHandler(async (event) => {
     }
 
     const allFiles = await getFiles(SOURCE_ROOT);
+    
+    // Filtros de arquivos
     const mdFiles = allFiles.filter(f => f.endsWith('.md'));
     const orderFiles = allFiles.filter(f => f.endsWith('_order.yml'));
+    // Identifica os JSONs (ex: settings.json, ou páginas já prontas)
+    const jsonFiles = allFiles.filter(f => f.endsWith('.json'));
 
     // --- 3. COMPILAÇÃO (MARKDOWN -> JSON) ---
     for (const filePath of mdFiles) {
@@ -64,11 +69,10 @@ export default defineEventHandler(async (event) => {
         const rawContent = await fs.readFile(filePath, 'utf-8');
         const relPath = relative(SOURCE_ROOT, filePath);
         
-        // Normaliza separadores de path (Windows \\ -> /)
+        // Normaliza separadores de path
         const normalizedRelPath = relPath.split(sep).join('/');
 
         // [VERSIONAMENTO] Chave limpa para o manifesto
-        // Ex: "home/banner1" ou "index"
         const keyName = normalizedRelPath
             .replace('.md', '')
             .replace(/\/index$/, '') || 'index';
@@ -80,16 +84,15 @@ export default defineEventHandler(async (event) => {
         parsedAST._id = `content:${site}:${normalizedRelPath}`;
         
         // [PATH FIX] Gera o caminho web correto
-        // Se for "index.md" vira "/", se for "sobre.md" vira "/sobre"
         let webPath = normalizedRelPath.replace('.md', '');
-        if (webPath.endsWith('index')) webPath = webPath.substring(0, webPath.length - 5); // remove 'index'
-        if (webPath.endsWith('/')) webPath = webPath.slice(0, -1); // remove barra final se sobrar
-        if (!webPath.startsWith('/')) webPath = '/' + webPath; // garante barra inicial
-        if (webPath === '') webPath = '/'; // garante raiz
+        if (webPath.endsWith('index')) webPath = webPath.substring(0, webPath.length - 5);
+        if (webPath.endsWith('/')) webPath = webPath.slice(0, -1);
+        if (!webPath.startsWith('/')) webPath = '/' + webPath;
+        if (webPath === '') webPath = '/';
 
         parsedAST._path = webPath;
         
-        // Salva o JSON
+        // Salva o JSON compilado
         const destFile = join(DEST_ROOT, relPath.replace('.md', '.json'));
         await fs.mkdir(dirname(destFile), { recursive: true });
         await fs.writeFile(destFile, JSON.stringify(parsedAST, null, 2));
@@ -101,7 +104,36 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // --- 4. CÓPIA _ORDER.YML ---
+    // --- 4. CÓPIA DE ARQUIVOS JSON PUROS ---
+    // (Nova funcionalidade solicitada)
+    for (const filePath of jsonFiles) {
+      try {
+        const relPath = relative(SOURCE_ROOT, filePath);
+        const destFile = join(DEST_ROOT, relPath);
+        
+        // [VERSIONAMENTO] Também adicionamos JSONs puros ao controle de versão
+        // para o frontend saber quando recarregar o settings.json, por exemplo.
+        const fileStat = await fs.stat(filePath);
+        const normalizedRelPath = relPath.split(sep).join('/');
+        const keyName = normalizedRelPath.replace('.json', ''); // Remove extensão para a chave
+        
+        // Só adiciona se não houver conflito (ex: se page.md gerou page.json, o md tem prioridade no versionamento)
+        if (!versions[keyName]) {
+            versions[keyName] = fileStat.mtime.getTime();
+        }
+
+        // Cria diretório se não existir e COPIA o arquivo sem processar
+        await fs.mkdir(dirname(destFile), { recursive: true });
+        await fs.copyFile(filePath, destFile);
+        
+        stats.copiedJson++;
+      } catch (err) {
+        console.error(`Erro copiando JSON ${filePath}:`, err);
+        stats.errors++;
+      }
+    }
+
+    // --- 5. CÓPIA _ORDER.YML ---
     for (const filePath of orderFiles) {
         try {
             const relPath = relative(SOURCE_ROOT, filePath);
@@ -114,7 +146,7 @@ export default defineEventHandler(async (event) => {
         }
     }
 
-    // --- 5. SALVA O MANIFESTO DE VERSÕES (_meta.json) ---
+    // --- 6. SALVA O MANIFESTO DE VERSÕES (_meta.json) ---
     await fs.writeFile(
       join(DEST_ROOT, '_meta.json'), 
       JSON.stringify(versions, null, 2)

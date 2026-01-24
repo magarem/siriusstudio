@@ -23,8 +23,8 @@ const goToLogin = () => {
           <i class="pi pi-star-fill text-[#6f942e] text-lg"></i>
         </div>
         <div class="flex flex-col">
-          <h1 class="text-xl font-black text-white leading-none tracking-tighter">SIRIUS STUDIO</h1>
-          <span class="text-[9px] uppercase tracking-[0.4em] text-slate-500 font-bold mt-1">Workspace Engine</span>
+          <h1 class="text-xl font-black text-white leading-none tracking-tighter">Sirius Studio</h1>
+          <span class="text-[9px] uppercase tracking-[0.4em] text-slate-500 font-bold mt-1">Gerenciador</span>
         </div>
       </div>
 

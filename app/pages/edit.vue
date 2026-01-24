@@ -105,6 +105,13 @@ const currentFileNameOnly = computed(() => {
   return currentFile.value.split("/").pop();
 });
 
+// Detecta a extensão do arquivo atual
+const fileExtension = computed(() => {
+  if (!currentFile.value) return "md";
+  const parts = currentFile.value.split(".");
+  return parts.length > 1 ? parts.pop().toLowerCase() : "md";
+});
+
 // --- ESTADOS DE EDIÇÃO ---
 const form = ref({ frontmatter: {}, content: "" });
 const loadingSave = ref(false);
@@ -234,10 +241,6 @@ const getPreviewPath = () => {
 // --- ESTADO DO PREVIEW ---
 const previewWindow = ref(null);
 
-const handlePreview_ = () => {
-  /* ... lógica antiga comentada ... */
-};
-
 function toPreviewUrl(inputUrl) {
   try {
     const url = new URL(inputUrl);
@@ -271,7 +274,7 @@ const handlePreview = () => {
       severity: "warn",
       summary: "Configuração Ausente",
       detail: 'Defina a chave "url" no arquivo _config.json na raiz do site.',
-      life: 5000,
+      life: 2000,
     });
     return;
   }
@@ -320,7 +323,8 @@ const handlePreview = () => {
 
   // 4. Conversão para URL de Preview
   // Usa sua função auxiliar que troca 'www' por 'preview' ou adiciona o subdomínio
-  let finalUrl = toPreviewUrl(fullProductionUrl);
+  // let finalUrl = toPreviewUrl(fullProductionUrl);
+  let finalUrl = fullProductionUrl;
 
   // Adiciona query string para o Nuxt entender que deve ouvir eventos de preview
   // Se já tiver query string, usa &, senão usa ?
@@ -442,8 +446,45 @@ const parseMD = (full) => {
   if (!full) {
     form.value.frontmatter = {};
     form.value.content = "";
+    rawContent.value = "";
     return;
   }
+
+  const ext = fileExtension.value;
+
+  // Se for JSON ou YAML, populamos o rawContent imediatamente
+  // Isso garante que se o usuário trocar para modo Raw, o texto está lá
+  if (ext === 'json' || ext === 'yml' || ext === 'yaml') {
+    rawContent.value = full;
+    
+    // Tentamos parsear para o frontmatter também, caso você tenha Schemas definidos
+    try {
+      if (ext === 'json') {
+        form.value.frontmatter = JSON.parse(full);
+      } else {
+        form.value.frontmatter = yaml.load(full) || {};
+      }
+    } catch (e) {
+      console.error("Erro parsing dados:", e);
+      form.value.frontmatter = {};
+    }
+    
+    form.value.content = ""; // Arquivos de dados não têm "body" de markdown
+    
+    // [IMPORTANTE] Força o modo Raw para ver o código se não tiver content
+    showRawMode.value = true;
+    return;
+  }
+
+  // --- LÓGICA MARKDOWN (.md) ---
+  // Se for MD, desligamos o modo raw por padrão (ou mantemos o estado anterior)
+  if (showRawMode.value && ext === 'md') {
+     // Se já estava em raw, mantém raw
+     rawContent.value = full;
+  } else {
+     showRawMode.value = false;
+  }
+
   const normalized = full.replace(/\r\n/g, "\n");
   const fmRegex = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
   const match = normalized.match(fmRegex);
@@ -467,25 +508,25 @@ const parseMD = (full) => {
         form.value.content = normalized;
       }
     }
+    // Atualiza o rawContent para ficar sincronizado
+    rawContent.value = full; 
   } catch (e) {
     console.error("YAML Parse Error:", e);
-    toast.add({
-      severity: "error",
-      summary: "Erro de Sintaxe",
-      detail: "O YAML do cabeçalho está inválido.",
-    });
+    form.value.frontmatter = {};
+    form.value.content = full;
   }
 };
 
 watch(
   fileData,
   (newData) => {
-    if (newData?.content) {
-      parseMD(newData.content);
-      rawContent.value = newData.content;
-    }
+    // Se newData.content for null ou undefined, passamos string vazia,
+    // mas se o arquivo existir e for vazio, passamos string vazia também.
+    // A API deve retornar { content: "..." }
+    const content = newData?.content || "";
+    parseMD(content);
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 watch(
@@ -560,7 +601,7 @@ const navigate = {
   toDashboard: () => {
     currentFile.value = "";
     // Navega diretamente para /dashboard (raiz do sistema)
-    navigateTo("/");
+    navigateTo("/edit");
   },
 };
 
@@ -640,14 +681,28 @@ const imageActions = {
 };
 
 const toggleRawMode = () => {
+  const ext = fileExtension.value;
+
   if (!showRawMode.value) {
+    // INDO PARA O MODO RAW (Gerar texto a partir dos campos)
     const cleanData = getCleanData();
-    const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
-    const contentPart = form.value.content
-      ? `\n\n${form.value.content.trim()}`
-      : "";
-    rawContent.value = `---\n${y.trim()}\n---${contentPart}`;
+    
+    if (ext === 'json') {
+      rawContent.value = JSON.stringify(cleanData, null, 2);
+    } 
+    else if (ext === 'yml' || ext === 'yaml') {
+      rawContent.value = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+    } 
+    else {
+      // Markdown Padrão
+      const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+      const contentPart = form.value.content
+        ? `\n\n${form.value.content.trim()}`
+        : "";
+      rawContent.value = `---\n${y.trim()}\n---${contentPart}`;
+    }
   } else {
+    // VOLTANDO PARA O MODO VISUAL (Parsear texto para campos)
     parseMD(rawContent.value);
   }
   showRawMode.value = !showRawMode.value;
@@ -658,20 +713,42 @@ const saveFile = async () => {
   loadingSave.value = true;
 
   let finalContent = "";
+  const ext = fileExtension.value;
 
+  // --- SALVANDO MODO RAW (TEXTO DIRETO) ---
   if (showRawMode.value) {
     finalContent = rawContent.value;
+
+    // Validação básica de segurança antes de salvar
     try {
-      const parts = rawContent.value.split("---");
-      if (parts.length >= 3) parseMD(rawContent.value);
-    } catch (e) {}
-  } else {
+      if (ext === 'json') JSON.parse(finalContent);
+      if (ext === 'yml' || ext === 'yaml') yaml.load(finalContent);
+    } catch (e) {
+      toast.add({ 
+        severity: "error", 
+        summary: "Erro de Sintaxe", 
+        detail: `O formato ${ext.toUpperCase()} está inválido. Corrija antes de salvar.` 
+      });
+      loadingSave.value = false;
+      return; // Aborta salvamento se o JSON estiver quebrado
+    }
+  } 
+  // --- SALVANDO MODO VISUAL ---
+  else {
     const cleanData = getCleanData();
-    const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
-    const contentPart = form.value.content
-      ? `\n\n${form.value.content.trim()}`
-      : "";
-    finalContent = `---\n${y.trim()}\n---${contentPart}`;
+
+    if (ext === 'json') {
+      finalContent = JSON.stringify(cleanData, null, 2);
+    } 
+    else if (ext === 'yml' || ext === 'yaml') {
+      finalContent = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+    } 
+    else {
+      // Markdown
+      const y = yaml.dump(cleanData, { indent: 2, lineWidth: -1, noRefs: true });
+      const contentPart = form.value.content ? `\n\n${form.value.content.trim()}` : "";
+      finalContent = `---\n${y.trim()}\n---${contentPart}`;
+    }
   }
 
   try {
@@ -679,24 +756,27 @@ const saveFile = async () => {
       method: "POST",
       body: {
         site: siteContext.value,
-        // [ALTERADO] Envia pasta e arquivo separados
         folder: editorCtxFolder.value,
         file: currentFileNameOnly.value,
         content: finalContent,
       },
     });
-    toast.add({
-      severity: "success",
-      summary: "Salvo",
-      detail: "Arquivo atualizado.",
-      life: 2000,
-    });
+    toast.add({ severity: "success", summary: "Salvo", detail: "Arquivo atualizado." });
+    
+    // Se salvamos em modo visual, atualizamos o rawContent para refletir a mudança
+    if (!showRawMode.value) {
+       rawContent.value = finalContent;
+    }
+    
   } catch (e) {
+    console.error(e);
     toast.add({ severity: "error", summary: "Erro ao salvar" });
   } finally {
     loadingSave.value = false;
   }
 };
+
+
 const isPublishing = ref(false);
 
 const handlePublish = async () => {
@@ -790,30 +870,45 @@ const handleDeleteFile = async (item) => {
 };
 
 // Ações para o Toolbar
+// Ações para o Toolbar
 const handleRenameAction = async (newName) => {
   try {
-    // Exemplo de como deve ser a chamada agora
-    await $fetch("/api/admin/rename", {
+    // 1. Faz a requisição ao servidor
+    const response = await $fetch("/api/admin/rename", {
       method: "POST",
       body: {
-        oldname: `${editorCtxFolder.value}/${currentFileNameOnly.value}`,
+        // Usa currentFile.value que já é o path completo (ex: content/blog/post.md)
+        oldname: currentFile.value, 
+        // Monta o novo path sugerido
         newname: `${editorCtxFolder.value}/${newName}`,
       },
     });
 
     toast.add({ severity: "success", summary: "Renomeado com sucesso" });
+    
+    // 2. Atualiza a lista lateral para refletir o novo nome
     await refreshFiles();
 
-    // Atualiza a navegação para o novo nome (mantendo a pasta)
-    navigate.selectFile(`${editorCtxFolder.value}/${newName}`);
+    // 3. NAVEGAÇÃO INTELIGENTE
+    // A API retorna o objeto { success: true, newname: 'caminho/sanitizado.md' }
+    // Usamos esse retorno para garantir que vamos abrir o arquivo exato que foi salvo.
+    if (response && response.newname) {
+      navigate.selectFile(response.newname);
+    } else {
+      // Fallback caso a API não retorne o nome (segurança)
+      navigate.selectFile(`${editorCtxFolder.value}/${newName}`);
+    }
+
   } catch (e) {
+    console.error(e);
     toast.add({
       severity: "error",
       summary: "Erro ao renomear",
-      detail: e.message,
+      detail: e.data?.message || e.message,
     });
   }
 };
+
 
 const handleMoveAction = async (newPath) => {
   try {

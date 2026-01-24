@@ -42,13 +42,10 @@ const goToBackup = () => {
 
 <template>
   <header class="h-16 w-full bg-[#141b18] border-b border-white/5 relative z-50">
-      
       <div class="absolute inset-0 overflow-hidden z-0 pointer-events-none">
           <div class="absolute -top-10 -left-10 w-32 h-32 bg-[#6f942e]/10 rounded-full blur-3xl"></div>
       </div>
-      
       <div class="relative z-10 flex justify-between items-center h-full px-6">
-        
         <div class="flex items-center gap-4">
            <div class="flex items-center gap-2 pr-4 border-r border-white/5 h-8">
             <Button 
@@ -58,14 +55,13 @@ const goToBackup = () => {
                 class="!w-8 !h-8 !p-0 text-[#6f942e] hover:bg-[#6f942e]/10 cursor-pointer" 
                 v-tooltip.bottom="'Explorer'" 
             />
-            
             <div 
               class="flex items-center gap-3 select-none pl-2 cursor-pointer hover:opacity-80 transition-opacity"
               @click="emit('go-dashboard')"
               title="Voltar ao Dashboard"
             >
-              <h1 class="text-sm font-black text-white leading-none tracking-tighter flex items-center gap-2">
-                <i class="pi pi-star-fill text-[#6f942e] text-[10px]"></i> SIRIUS STUDIO
+              <h1 class="text-[20px] font-black text-white leading-none tracking-tighter flex items-center gap-2">
+                <i class="pi pi-star-fill text-[#6f942e] text-[15px]"></i> Sirius Studio
               </h1>
               <div class="h-3 w-px bg-white/20"></div>
               <span class="text-[10px] font-bold uppercase tracking-widest text-[#6f942e] leading-none pt-0.5">
