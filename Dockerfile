@@ -1,46 +1,37 @@
-# --- Etapa 1: Build (Compilação) ---
-# Usamos a imagem completa para ter Python/GCC (necessário para compilar o better-sqlite3)
+# --- Build (Permanece igual) ---
 FROM node:22 AS builder
-
-WORKDIR /app
-
-# Copia arquivos de dependência
+WORKDIR /app/siriusstudio
 COPY package*.json ./
-
-# Instala dependências (npm ci é mais seguro para builds)
 RUN npm ci
-
-# Copia o código do projeto
 COPY . .
-
-# Faz o build do Nuxt (Gera a pasta .output)
 RUN npm run build
 
-# --- Etapa 2: Produção (Execução) ---
-# Usamos a versão SLIM para a imagem ficar leve no servidor
+# --- Produção ---
 FROM node:22-slim
 
+ENV APPS_ROOT=/app
+ENV NUXT_HOST=0.0.0.0
+ENV NUXT_PORT=3000
+
+# 1. Define /app como diretório de trabalho principal
 WORKDIR /app
 
-# Variáveis de ambiente
-ENV NODE_ENV=production
-ENV NUXT_HOST=0.0.0.0
-# AQUI: Mudamos para a porta que seu Nginx espera
-ENV NUXT_PORT=4003 
+# 2. Cria a estrutura e a "Rede de Segurança" (Symlinks)
+# - Cria as pastas reais em /app
+# - Cria um link da raiz /storage para /app/storage (Isso corrige o seu erro!)
+# - Cria um link da raiz /sites para /app/sites (Prevenção)
+RUN mkdir -p /app/storage /app/sites /app/siriusstudio \
+    && ln -s /app/storage /storage \
+    && ln -s /app/sites /sites \
+    && chown -R 1001:1001 /app /storage /sites
 
-# --- A ÚNICA MUDANÇA NECESSÁRIA ---
-# 1. Garante que a pasta interna de dados existe e é sua (1001)
-RUN mkdir -p /app/server/data && chown -R 1001:1001 /app/server/data
+# 3. Copia o código
+COPY --from=builder --chown=1001:1001 /app/siriusstudio/.output /app/siriusstudio/.output
 
-# 2. Copia o código transferindo a posse para você (1001)
-COPY --from=builder --chown=1001:1001 /app/.output ./.output
-
-# 3. Troca para o seu usuário
+# 4. Define o usuário
 USER 1001
-# ----------------------------------
 
-# Expõe a porta para o Docker saber que ela existe
-EXPOSE 4003
+EXPOSE 3000
 
-# Comando para iniciar
-CMD ["node", ".output/server/index.mjs"]
+# 5. Inicia o servidor
+CMD ["node", "siriusstudio/.output/server/index.mjs"]
