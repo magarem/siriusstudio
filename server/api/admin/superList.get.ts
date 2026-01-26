@@ -1,11 +1,10 @@
 import { promises as fs, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import matter from 'gray-matter'; // Necessário para ler MD no preview
-import yaml from 'js-yaml';       // Necessário para ler _order.yml
+import matter from 'gray-matter';
+import yaml from 'js-yaml';
 
 export default defineEventHandler(async (event) => {
-    // --- 0. ANTI-CACHE (CABEÇALHOS) ---
-  // Isso diz ao navegador e proxies para não cachear a resposta JSON
+  // --- 0. ANTI-CACHE ---
   setResponseHeader(event, 'Cache-Control', 'no-cache, no-store, must-revalidate');
   setResponseHeader(event, 'Pragma', 'no-cache');
   setResponseHeader(event, 'Expires', '0');
@@ -13,55 +12,52 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const query = getQuery(event);
 
-  // --- 1. PARÂMETROS E VALIDAÇÃO ---
+  // --- 1. PARÂMETROS ---
   const mode = query.mode === 'preview' ? 'preview' : 'production';
   const site = query.site ? String(query.site) : null;
-  let section = query.section || query.folder; // Aceita ambos os nomes
+  let section = query.section || query.folder; 
   section = String(section || '').replace(/^content\/?/, '').replace(/^\//, '');
 
   if (!section) return [];
 
-  // Em modo preview, o site é obrigatório para achar a pasta storage
   if (mode === 'preview' && !site) {
     throw createError({ statusCode: 400, message: 'Site é obrigatório no modo preview.' });
   }
 
-  // --- 2. DEFINIÇÃO DO DIRETÓRIO ALVO ---
+  // --- 2. DIRETÓRIO ALVO ---
   let targetDir = '';
 
   if (mode === 'preview') {
-    // Caminho do Preview (Markdown em Storage)
     const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
     targetDir = join(APPS_ROOT, 'storage', site!, 'content', section);
   } else {
-    // Caminho de Produção (JSON em Server Data)
-    // Ajuste aqui se sua estrutura de produção for diferente (ex: sites/site/server/data)
     const DATA_ROOT = resolve(process.cwd(), 'server/data');
     targetDir = join(DATA_ROOT, section);
   }
 
-  // Se a pasta não existe, retorna vazio
   if (!existsSync(targetDir)) return [];
 
   try {
-    // --- 3. LEITURA E FILTRAGEM ---
+    // --- 3. LEITURA E FILTRAGEM (CORRIGIDO) ---
     const rawFiles = await fs.readdir(targetDir, { withFileTypes: true });
 
-    // Filtra arquivos baseados no modo
     const filteredFiles = rawFiles.filter(dirent => {
-      if (dirent.isDirectory()) return false;
       const name = dirent.name;
-      
+      // Ignora arquivos de sistema/ocultos
+      if (name.startsWith('_') || name.startsWith('.')) return false;
+
+      // ACEITAR PASTAS AGORA:
+      if (dirent.isDirectory()) return true;
+
+      // Lógica de arquivos
       if (mode === 'preview') {
-        // Preview: Aceita .md, ignora _sistemas
-        return name.endsWith('.md') && !name.startsWith('_');
+        return name.endsWith('.md');
       } else {
-        // Prod: Aceita .json, ignora index.json e _sistemas
-        return name.endsWith('.json') && name !== 'index.json' && !name.startsWith('_');
+        return name.endsWith('.json') && name !== 'index.json';
       }
     });
 
-    // --- 4. PREPARAÇÃO DA ORDENAÇÃO (_order.yml) ---
+    // --- 4. ORDENAÇÃO (_order.yml) ---
     const orderFilePath = join(targetDir, '_order.yml');
     let orderMap = new Map<string, number>();
 
@@ -69,49 +65,85 @@ export default defineEventHandler(async (event) => {
       try {
         const fileContent = readFileSync(orderFilePath, 'utf-8');
         const loaded = yaml.load(fileContent) as string[];
-
         if (Array.isArray(loaded)) {
           orderMap = new Map(loaded.map((name, index) => {
-            // Remove extensão para normalizar (ex: "post.md" vira "post")
             const cleanName = name.replace(/\.[^/.]+$/, "");
             return [cleanName, index];
           }));
         }
-      } catch (e) {
-        console.warn(`Aviso: _order.yml inválido em ${section}`);
-      }
+      } catch (e) {}
     }
 
-    // --- 5. PROCESSAMENTO DOS ARQUIVOS (NORMALIZAÇÃO) ---
+    // --- 5. PROCESSAMENTO (COM SUPORTE A PASTAS) ---
     const items = await Promise.all(filteredFiles.map(async (dirent) => {
       try {
         const filePath = join(targetDir, dirent.name);
-        const fileContent = await fs.readFile(filePath, 'utf-8');
         
-        // Variáveis normalizadas
         let title = '';
         let description = '';
         let image = null;
         let date = null;
-        
-        // Nome limpo (sem extensão)
         const fileNameNoExt = dirent.name.replace(/\.[^/.]+$/, "");
         const webPath = `/${section}/${fileNameNoExt}`.replace(/\/+/g, '/');
 
-        // Lógica de Extração baseada no modo
+        // === CASO A: É UMA PASTA ===
+        if (dirent.isDirectory()) {
+            // Tenta achar um index para pegar metadados da pasta (capa, título personalizado)
+            let indexContent = null;
+            let hasIndex = false;
+
+            // Define qual arquivo de índice procurar baseado no modo
+            const indexName = mode === 'preview' ? 'index.md' : 'index.json';
+            const indexParamsPath = join(filePath, indexName);
+
+            if (existsSync(indexParamsPath)) {
+                try {
+                    const rawIndex = await fs.readFile(indexParamsPath, 'utf-8');
+                    if (mode === 'preview') {
+                        const { data } = matter(rawIndex);
+                        title = data.title;
+                        image = data.images?.[0] || data.image;
+                        description = data.description;
+                    } else {
+                        const json = JSON.parse(rawIndex);
+                        const meta = { ...(json.data || {}), ...(json.meta || {}), ...json };
+                        title = meta.title;
+                        image = meta.images?.[0] || meta.image;
+                        description = meta.description;
+                    }
+                    hasIndex = true;
+                } catch (err) {
+                    console.warn(`Erro ao ler index da pasta ${dirent.name}`);
+                }
+            }
+
+            // Fallback se não tiver index ou título: Formata o nome da pasta
+            if (!title) {
+                title = fileNameNoExt.charAt(0).toUpperCase() + fileNameNoExt.slice(1).replace(/-/g, ' ');
+            }
+
+            return {
+                title,
+                description,
+                image, // Retorna a imagem se achou no index da pasta
+                path: webPath,
+                isFolder: true, // Flag importante para o frontend
+                _fileName: fileNameNoExt
+            };
+        }
+
+        // === CASO B: É UM ARQUIVO (Código Original) ===
+        const fileContent = await fs.readFile(filePath, 'utf-8');
+        
         if (mode === 'preview') {
-          // A. PREVIEW (Markdown + GrayMatter)
           const { data } = matter(fileContent);
           title = data.title || fileNameNoExt;
           description = data.description || '';
           image = data.images?.[0] || data.topimages?.[0] || data.image || null;
           date = data.date || data.publishDate || null;
         } else {
-          // B. PRODUÇÃO (JSON Parse)
           const json = JSON.parse(fileContent);
-          // O JSON compilado às vezes tem 'data' (frontmatter) ou está na raiz, depende do parser
           const meta = { ...(json.data || {}), ...(json.meta || {}), ...json };
-          
           title = meta.title || fileNameNoExt;
           description = meta.description || '';
           image = meta.images?.[0] || meta.topimages?.[0] || meta.image || null;
@@ -124,8 +156,8 @@ export default defineEventHandler(async (event) => {
           image,
           date,
           path: webPath,
-          key: webPath,
-          _fileName: fileNameNoExt // Auxiliar para ordenação
+          isFolder: false,
+          _fileName: fileNameNoExt
         };
 
       } catch (e) {
@@ -134,28 +166,23 @@ export default defineEventHandler(async (event) => {
       }
     }));
 
-    // Remove falhas
     const validItems = items.filter((item): item is NonNullable<typeof item> => Boolean(item));
 
-    // --- 6. APLICAÇÃO DA ORDENAÇÃO ---
+    // --- 6. ORDENAÇÃO ---
     validItems.sort((a, b) => {
+      // Pastas primeiro? Descomente abaixo se quiser pastas no topo
+      // if (a.isFolder && !b.isFolder) return -1;
+      // if (!a.isFolder && b.isFolder) return 1;
+
       const indexA = orderMap.has(a._fileName) ? orderMap.get(a._fileName)! : 9999;
       const indexB = orderMap.has(b._fileName) ? orderMap.get(b._fileName)! : 9999;
 
-      // 1. Pelo _order.yml
       if (indexA !== indexB) return indexA - indexB;
-
-      // 2. Por Data (se existir, mais recentes primeiro)
-      // if (a.date && b.date) {
-      //   return new Date(b.date).getTime() - new Date(a.date).getTime();
-      // }
-
-      // 3. Alfabético (Título)
+      
+      // Fallback alfabético
       return a.title.localeCompare(b.title);
     });
 
-    // --- 7. RETORNO LIMPO ---
-    // Remove a chave auxiliar _fileName antes de enviar pro front
     return validItems.map(({ _fileName, ...rest }) => rest);
 
   } catch (error: any) {
