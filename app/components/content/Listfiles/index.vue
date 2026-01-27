@@ -2,7 +2,7 @@
 import { computed, ref } from "vue";
 import ListfilesGrid from './Grid.vue';
 import ListfilesList from './List.vue';
-import ListfilesList2 from './List2.vue';
+import Supergrid from './Supergrid.vue';
 import ListfilesRaw from './Raw.vue';
 
 // --- PROPS ---
@@ -229,31 +229,21 @@ const displayedItems = computed(() => {
       />
 
       <ListfilesList 
-        v-else-if="view === 'list'" 
+        v-else-if="view?.toLowerCase() === 'list'" 
         :items="displayedItems" 
         :viewConfig="viewConfig" 
         :fallbackImage="fallbackImage"
         :fileIcon="fileIcon"
       />
 
-      <ListfilesList2
-        v-else-if="view === 'list2'"
+      <Supergrid
+        v-else-if="view?.toLowerCase() === 'supergrid'"
         :items="displayedItems"
         :viewparams="viewparams"
       />
 
-       <!-- <ListfilesList2 
-        v-else-if="view === 'list2'" 
-        :items="displayedItems" 
-        :cardLayout="cardLayout"
-        :columns="columns"
-        :viewConfig="viewConfig" 
-        :fallbackImage="fallbackImage"
-        :fileIcon="fileIcon"
-      /> -->
-
       <ListfilesRaw 
-        v-else-if="view === 'rawlist'" 
+        v-else-if="view?.toLowerCase() === 'rawlist'" 
         :items="displayedItems" 
         :fileIcon="fileIcon"
       />
