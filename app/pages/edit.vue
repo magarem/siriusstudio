@@ -520,9 +520,6 @@ const parseMD = (full) => {
 watch(
   fileData,
   (newData) => {
-    // Se newData.content for null ou undefined, passamos string vazia,
-    // mas se o arquivo existir e for vazio, passamos string vazia também.
-    // A API deve retornar { content: "..." }
     const content = newData?.content || "";
     parseMD(content);
   },
@@ -761,7 +758,7 @@ const saveFile = async () => {
         content: finalContent,
       },
     });
-    toast.add({ severity: "success", summary: "Salvo", detail: "Arquivo atualizado." });
+    toast.add({ severity: "success", summary: "Salvo", detail: "Arquivo atualizado.", life: 1000 });
     
     // Se salvamos em modo visual, atualizamos o rawContent para refletir a mudança
     if (!showRawMode.value) {
@@ -786,7 +783,7 @@ const handlePublish = async () => {
     severity: "info",
     summary: "Publicando...",
     detail: "Gerando arquivos do site.",
-    life: 2000,
+    life: 2000
   });
 
   try {
@@ -802,7 +799,7 @@ const handlePublish = async () => {
         severity: "success",
         summary: "Sucesso!",
         detail: "Site atualizado e arquivos gerados.",
-        life: 3000,
+        life: 2000,
       });
     } else {
       throw new Error(result.message);
@@ -813,6 +810,7 @@ const handlePublish = async () => {
       severity: "error",
       summary: "Erro",
       detail: "Falha ao publicar site.",
+      life: 2000
     });
   } finally {
     isPublishing.value = false;
@@ -884,7 +882,8 @@ const handleRenameAction = async (newName) => {
       },
     });
 
-    toast.add({ severity: "success", summary: "Renomeado com sucesso" });
+    toast.add({ severity: "success", summary: "Renomeado com sucesso",
+    life: 2000 });
     
     // 2. Atualiza a lista lateral para refletir o novo nome
     await refreshFiles();
@@ -905,6 +904,7 @@ const handleRenameAction = async (newName) => {
       severity: "error",
       summary: "Erro ao renomear",
       detail: e.data?.message || e.message,
+      life: 2000
     });
   }
 };
@@ -953,6 +953,7 @@ const handleMoveAction = async (newPath) => {
       severity: "error",
       summary: "Erro ao mover",
       detail: e.data?.message || e.message,
+      life: 2000
     });
   }
 };

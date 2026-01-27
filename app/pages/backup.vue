@@ -104,7 +104,7 @@ const navigate = {
 
 <template>
   <div class="min-h-screen bg-[#0a0f0d] text-slate-200 font-sans flex flex-col">
-    <Toast />
+    
     <ConfirmDialog />
 
     <AdminSidebar
