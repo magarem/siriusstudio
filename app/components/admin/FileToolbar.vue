@@ -103,6 +103,7 @@ const handleRename = () => {
 
 const handleDelete = (event) => {
   confirm.require({
+    header: 'Confirmar exclusão',
     target: event.currentTarget,
     message: `Tem certeza que deseja excluir "${props.filename}"?`,
     icon: "pi pi-exclamation-triangle",

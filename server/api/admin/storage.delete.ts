@@ -1,11 +1,12 @@
 import { unlink, rm, lstat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { getCookie } from 'h3'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
-  const { site, folder, file } = body;
-
-  if (!site || !folder || !file) {
+  const {folder, file } = body;
+  const site = getCookie(event, 'cms_site_context')
+  if (!folder || !file) {
     throw createError({ statusCode: 400, message: 'Parâmetros ausentes' });
   }
 
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const filePath = resolve(storageRoot, site, folder, file);
 
   // LOG DE DEBUG (Útil para ver no container se o caminho está certo)
-  // console.log("Tentando deletar:", filePath);
+  console.log("Tentando deletar:", filePath);
 
   // SEGURANÇA: Previne Path Traversal (impedir deletar coisas fora do storage)
   if (!filePath.startsWith(storageRoot)) {

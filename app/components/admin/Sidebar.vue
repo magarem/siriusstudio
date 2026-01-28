@@ -148,7 +148,6 @@ const handleDelete = async () => {
     await $fetch("/api/admin/storage", {
       method: "DELETE",
       body: {
-        site: props.siteContext,
         folder: props.currentFolder,
         file: itemToDelete.value.name,
       },
@@ -156,9 +155,9 @@ const handleDelete = async () => {
 
     toast.add({ severity: "success", summary: "Excluído", detail: "Item removido com sucesso.", life: 2000 });
     
-    if (props.currentFile && props.currentFile.endsWith(itemToDelete.value.name)) {
-        emit('delete', itemToDelete.value); 
-    }
+    // if (props.currentFile && props.currentFile.endsWith(itemToDelete.value.name)) {
+    //     emit('delete', itemToDelete.value); 
+    // }
     
     emit('refresh');
     deleteDialogVisible.value = false;
