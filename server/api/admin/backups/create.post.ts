@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Definição de caminhos
-  const rootDir = path.resolve(process.cwd(), '..')
+  const rootDir = path.resolve(process.cwd(), '../..')
   const sourceDir = path.join(rootDir, 'storage', siteCookie)
   const destDir = path.join(rootDir, 'backups', siteCookie)
 
