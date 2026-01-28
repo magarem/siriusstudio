@@ -47,8 +47,8 @@ export default defineEventHandler(async (event) => {
   // --- LÓGICA DE ENTREGA DA IMAGEM ---
   
   // Caminho: /app/storage/[siteId]/images/[arquivo]
-  const filePath = resolve(process.cwd(), 'storage', siteId, 'images', pathParam)
-
+  const filePath = resolve(process.cwd(), '..', '..', 'storage', siteId, 'images', pathParam)
+  console.log('Serving image from:', filePath)
   if (existsSync(filePath)) {
     const ext = pathParam.split('.').pop()?.toLowerCase()
     const mimeTypes: any = { 
