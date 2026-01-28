@@ -7,13 +7,15 @@ const confirm = useConfirm();
 const siteContext = useCookie("cms_site_context");
 
 // --- DADOS ---
-// O lazy: true ajuda a não travar a abertura do modal
+// Busca a lista de backups do servidor
 const { data: backups, refresh, pending } = await useFetch('/api/admin/backups/list', {
     lazy: true,
-    server: false // Busca no cliente para garantir dados frescos ao abrir modal
+    server: false
 });
 
-// --- CRIAR BACKUP ---
+// =============================================================================
+// 1. CRIAR BACKUP
+// =============================================================================
 const showCreateDialog = ref(false);
 const newBackupName = ref('');
 const createLoading = ref(false);
@@ -27,60 +29,147 @@ const handleCreateBackup = async () => {
             method: 'POST',
             body: { name: newBackupName.value }
         });
-        toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Ponto de restauração criado.', life: 3000 });
+        toast.add({ severity: 'success', summary: 'Sucesso', detail: 'Backup criado com sucesso.', life: 3000 });
         showCreateDialog.value = false;
         newBackupName.value = '';
         refresh();
     } catch (e) {
-        toast.add({ severity: 'error', summary: 'Erro', detail: e.message });
+        toast.add({ severity: 'error', summary: 'Erro', detail: e.message || 'Falha ao criar backup.' });
     } finally {
         createLoading.value = false;
     }
 };
 
-// --- RESTAURAR BACKUP ---
+// =============================================================================
+// 2. RESTAURAR BACKUP (Lógica Complexa com Progresso)
+// =============================================================================
 const restoreLoading = ref(false);
+const showRestoreProgress = ref(false);
+const restoreBackupName = ref('');
 
 const confirmRestore = (backup) => {
     confirm.require({
-        message: `ATENÇÃO: Isso irá substituir TODO o conteúdo atual do site pela versão "${backup.name}". Deseja continuar?`,
+        group: 'restore', // <--- IMPORTANTE: Usa o Dialog customizado
+        message: `ATENÇÃO: Isso substituirá TODO o site pela versão "${backup.name}". Continuar?`,
         header: 'Confirmar Restauração',
         icon: 'pi pi-exclamation-triangle',
-        acceptClass: 'p-button-danger',
-        acceptLabel: 'SIM, RESTAURAR',
-        rejectLabel: 'Cancelar',
+        acceptLabel: 'Sim', // <--- Botão de Confirmação
+        rejectLabel: 'Não', // <--- Botão de Cancelamento
         accept: () => handleRestore(backup)
     });
 };
 
 const handleRestore = async (backup) => {
+    if (restoreLoading.value) return;
+
+    restoreBackupName.value = backup.name;
     restoreLoading.value = true;
+    showRestoreProgress.value = true; // Abre modal de progresso
+
     try {
         await $fetch('/api/admin/backups/restore', {
             method: 'POST',
             body: { filename: backup.filename }
         });
         
-        toast.add({ severity: 'success', summary: 'Restaurado', detail: 'Recarregando sistema...', life: 2000 });
-        
-        // Reload forçado para aplicar o banco de dados antigo
+        toast.add({ severity: 'success', summary: 'Restaurado', detail: 'Reiniciando sistema...', life: 2000 });
         setTimeout(() => window.location.reload(), 1500);
         
     } catch (e) {
+        showRestoreProgress.value = false; // Fecha modal de progresso se der erro
         toast.add({ severity: 'error', summary: 'Erro Crítico', detail: 'Falha ao restaurar backup.' });
-    } finally {
         restoreLoading.value = false;
     }
 };
 
+// =============================================================================
+// 3. EXCLUIR BACKUP (Lógica Simples)
+// =============================================================================
+const deleteLoading = ref(false);
+
+const confirmDelete = (backup) => {
+    confirm.require({
+        group: 'delete',
+        message: `Tem certeza que deseja excluir o backup "${backup.name}"?`,
+        header: 'Excluir Backup',
+        icon: 'pi pi-trash',
+        acceptClass: 'p-button-danger',
+        acceptLabel: 'EXCLUIR',
+        rejectLabel: 'Cancelar',
+        accept: () => handleDelete(backup)
+    });
+};
+
+const handleDelete = async (backup) => {
+    deleteLoading.value = true;
+    try {
+        await $fetch('/api/admin/backups/delete', {
+            method: 'POST',
+            body: { filename: backup.filename }
+        });
+        toast.add({ severity: 'success', summary: 'Excluído', detail: 'Backup removido permanentemente.', life: 2000 });
+        refresh();
+    } catch (e) {
+        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao excluir arquivo.' });
+    } finally {
+        deleteLoading.value = false;
+    }
+};
+
 const formatDate = (dateString) => {
+    if (!dateString) return '-';
     return new Date(dateString).toLocaleString('pt-BR');
 };
 </script>
 
 <template>
   <div class="flex flex-col gap-4 text-slate-200">
-    <ConfirmDialog />
+    
+    <ConfirmDialog group="delete" />
+
+    <ConfirmDialog group="restore">
+        <template #message="slotProps">
+            <div class="flex gap-4 items-center p-2">
+                <i :class="slotProps.message.icon" class="text-4xl text-yellow-500"></i>
+                <p class="text-slate-200 leading-relaxed text-sm">{{ slotProps.message.message }}</p>
+            </div>
+        </template>
+        <template #footer="slotProps">
+            <Button label="Cancelar" text class="text-zinc-400 hover:text-white" @click="slotProps.reject" />
+            <Button label="SIM, RESTAURAR" severity="warning" :loading="restoreLoading" @click="slotProps.accept" />
+        </template>
+    </ConfirmDialog>
+
+    <Dialog 
+        v-model:visible="showRestoreProgress" 
+        modal 
+        :closable="false" 
+        :style="{ width: '400px' }" 
+        class="bg-[#141b18]" 
+        :appendTo="'body'"
+        :showHeader="false"
+    >
+        <div class="flex flex-col items-center gap-6 py-6 text-center">
+            <div class="relative">
+                <i class="pi pi-spin pi-cog text-6xl text-[#6f942e] opacity-20 absolute top-0 left-0"></i>
+                <i class="pi pi-spin pi-spinner text-6xl text-[#6f942e]"></i>
+            </div>
+            
+            <div class="flex flex-col gap-2">
+                <span class="font-black text-xl text-white tracking-wide">RESTAURANDO...</span>
+                <span class="text-zinc-400 text-sm">Backup: <span class="text-[#6f942e] font-mono">{{ restoreBackupName }}</span></span>
+            </div>
+
+            <div class="w-full px-6">
+                 <ProgressBar mode="indeterminate" style="height: 6px;" class="custom-progress"></ProgressBar>
+            </div>
+
+            <div class="bg-yellow-500/10 border border-yellow-500/20 rounded p-3 text-xs text-yellow-500/90 flex items-center gap-2">
+                <i class="pi pi-info-circle"></i>
+                <span>O sistema será reiniciado automaticamente ao finalizar.</span>
+            </div>
+        </div>
+    </Dialog>
 
     <div class="bg-[#0a0f0d] border border-white/10 rounded-lg overflow-hidden">
         <DataTable :value="backups" :loading="pending" class="p-datatable-sm" stripedRows scrollable scrollHeight="400px">
@@ -91,7 +180,7 @@ const formatDate = (dateString) => {
                 </div>
             </template>
 
-            <Column field="name" header="Nome / Descrição">
+            <Column field="name" header="Nome / Descrição" style="min-width: 200px">
                 <template #body="slotProps">
                     <div class="flex flex-col">
                         <span class="font-bold text-white text-xs">{{ slotProps.data.name }}</span>
@@ -112,18 +201,29 @@ const formatDate = (dateString) => {
                 </template>
             </Column>
 
-            <Column header="" style="width: 100px" alignFrozen="right" frozen>
+            <Column header="" style="width: 140px" alignFrozen="right" frozen>
                 <template #body="slotProps">
-                    <div class="flex justify-end">
+                    <div class="flex justify-end gap-2">
                         <Button 
-                            label="Restaurar" 
                             icon="pi pi-refresh" 
                             size="small" 
                             severity="warning" 
                             outlined
-                            :loading="restoreLoading"
+                            tooltip="Restaurar"
+                            tooltipOptions="{ position: 'top' }"
                             @click="confirmRestore(slotProps.data)" 
-                            class="!text-[10px] !py-1 !px-2"
+                            class="!h-7 !w-7"
+                        />
+                        <Button 
+                            icon="pi pi-trash" 
+                            size="small" 
+                            severity="danger" 
+                            outlined
+                            tooltip="Excluir"
+                            tooltipOptions="{ position: 'top' }"
+                            :loading="deleteLoading"
+                            @click="confirmDelete(slotProps.data)" 
+                            class="!h-7 !w-7"
                         />
                     </div>
                 </template>
@@ -159,6 +259,13 @@ const formatDate = (dateString) => {
 </template>
 
 <style scoped>
+:deep(.custom-progress .p-progressbar-value) {
+    background: #6f942e;
+}
+:deep(.custom-progress) {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 :deep(.p-datatable .p-datatable-thead > tr > th) {
     background: #141b18;
     color: #9ca3af;

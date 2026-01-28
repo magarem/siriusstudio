@@ -1,10 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { exec } from 'node:child_process'
-import { promisify } from 'node:util'
+import * as tar from 'tar' // npm install tar
 import { getCookie } from 'h3'
-
-const execAsync = promisify(exec)
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event) // { filename: '...' }
@@ -14,30 +11,50 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: 'Dados inválidos' })
   }
 
-  const rootDir = path.resolve(process.cwd(), '..')
-  const backupFile = path.join(rootDir, 'backups', siteCookie, body.filename)
-  const storageRoot = path.join(rootDir, 'storage') // Onde vamos extrair
-  const siteStorage = path.join(storageRoot, siteCookie) // A pasta que será substituída
+  // --- DEFINIÇÃO DE CAMINHOS (DOCKER AWARE) ---
+  const appRoot = process.env.APPS_ROOT || path.resolve(process.cwd(), '..')
+  
+  const backupsRoot = path.join(appRoot, 'backups')
+  const storageRoot = path.join(appRoot, 'storage')
+  
+  // Caminho exato do arquivo de backup (.tar.gz)
+  const backupFile = path.join(backupsRoot, siteCookie, body.filename)
+  
+  // A pasta do site que será DELETADA e RECRIADA
+  const siteStorageDir = path.join(storageRoot, siteCookie)
+
+  // Segurança: Evita Path Traversal
+  if (!backupFile.startsWith(path.join(backupsRoot, siteCookie))) {
+     throw createError({ statusCode: 403, message: 'Acesso negado ao arquivo.' })
+  }
 
   if (!fs.existsSync(backupFile)) {
-    throw createError({ statusCode: 404, message: 'Backup não encontrado' })
+    throw createError({ statusCode: 404, message: 'Arquivo de backup não encontrado no disco.' })
   }
 
   try {
-    // 1. Remove a pasta atual do site (PERIGO: Ponto sem retorno)
-    // Usamos rm -rf via comando para ser rápido
-    if (fs.existsSync(siteStorage)) {
-        await execAsync(`rm -rf "${siteStorage}"`)
+    // 1. LIMPEZA: Remove a pasta atual do site
+    if (fs.existsSync(siteStorageDir)) {
+      try {
+        fs.rmSync(siteStorageDir, { recursive: true, force: true })
+      } catch (e) {
+        throw createError({ statusCode: 500, message: 'Erro de permissão ao apagar site atual.' })
+      }
     }
 
-    // 2. Extrai o backup
-    // -x: extract, -z: gzip, -f: file
-    // -C: diretório de destino
-    await execAsync(`tar -xzf "${backupFile}" -C "${storageRoot}"`)
+    // 2. RESTAURAÇÃO: Extrai o backup
+    // ALTERAÇÕES AQUI:
+    await tar.extract({
+      file: backupFile,
+      cwd: storageRoot,
+      strict: false,        // [IMPORTANTE] Desativa checagem rígida de symlinks que causa o erro no Docker
+      preserveOwner: false, // [IMPORTANTE] Evita erros de permissão se o UID mudar
+      unlink: true          // [IMPORTANTE] Força a remoção de arquivos conflitantes antes de extrair
+    })
 
     return { success: true }
-  } catch (error) {
-    console.error(error)
+  } catch (error: any) {
+    console.error('Erro Restore:', error)
     throw createError({ statusCode: 500, message: 'Falha crítica ao restaurar: ' + error.message })
   }
 })

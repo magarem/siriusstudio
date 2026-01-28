@@ -1102,7 +1102,7 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
     <Dialog
       v-model:visible="showBackupModal"
       modal
-      header="GERENCIADOR DE BACKUPS"
+      header="Gerenciador de pontos de restauração"
       :style="{ width: '800px', maxWidth: '95vw' }"
       class="bg-[#141b18]"
       :dismissableMask="true"

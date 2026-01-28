@@ -6,7 +6,15 @@ export default defineEventHandler(async (event) => {
   const siteCookie = getCookie(event, 'cms_site_context')
   if (!siteCookie) return []
 
-  const backupDir = path.resolve(process.cwd(), '..', 'backups', siteCookie)
+  // --- CORREÇÃO DO CAMINHO (Mesma lógica do create) ---
+  // Se estiver no Docker, usa /app. Se local, tenta subir um nível.
+  const appRoot = process.env.APPS_ROOT || path.resolve(process.cwd(), '..')
+  
+  // Caminho absoluto correto: /app/backups/nome_do_site
+  const backupDir = path.join(appRoot, 'backups', siteCookie)
+
+  // Debug: Se quiser ver no log do container onde ele está procurando
+  // console.log('Procurando backups em:', backupDir) 
 
   if (!fs.existsSync(backupDir)) {
     return []
@@ -15,38 +23,36 @@ export default defineEventHandler(async (event) => {
   const files = fs.readdirSync(backupDir)
     .filter(file => file.endsWith('.tar.gz'))
     .map(file => {
-      const stats = fs.statSync(path.join(backupDir, file))
+      const filePath = path.join(backupDir, file)
       
-      // Lógica para extrair o nome legível
-      // Formato esperado: YYYY-MM-DDTHH-mm-ss_nome-do-backup.tar.gz
-      let displayName = file;
-      
-      // 1. Encontra o primeiro underscore (separador entre data e nome)
-      const firstUnderscoreIndex = file.indexOf('_');
-      
-      if (firstUnderscoreIndex !== -1) {
-          // Pega tudo depois do primeiro _
-          const rawName = file.substring(firstUnderscoreIndex + 1);
-          
-          // Remove a extensão .tar.gz
-          let cleanName = rawName.replace('.tar.gz', '');
-          
-          // Opcional: Transforma hifens de volta em espaços para ficar bonito na tabela
-          // Ex: "versao-final-1" vira "versao final 1"
-          cleanName = cleanName.replace(/-/g, ' ');
-          
-          // Capitaliza a primeira letra (Cosmético)
-          displayName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
-      }
+      try {
+        const stats = fs.statSync(filePath)
+        
+        // --- Sua lógica de Formatação de Nome (Mantida) ---
+        let displayName = file;
+        const firstUnderscoreIndex = file.indexOf('_');
+        
+        if (firstUnderscoreIndex !== -1) {
+            const rawName = file.substring(firstUnderscoreIndex + 1);
+            let cleanName = rawName.replace('.tar.gz', '');
+            cleanName = cleanName.replace(/-/g, ' ');
+            displayName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+        }
 
-      return {
-        filename: file, // Nome real do arquivo (importante para o Restore)
-        name: displayName, // Nome bonito para exibir na tabela
-        size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
-        created: stats.birthtime,
-        timestamp: stats.birthtime.getTime()
+        return {
+          filename: file, 
+          name: displayName,
+          size: (stats.size / 1024 / 1024).toFixed(2) + ' MB',
+          created: stats.birthtime,
+          timestamp: stats.birthtime.getTime()
+        }
+      } catch (err) {
+        console.error(`Erro ao ler stats de ${file}:`, err)
+        return null
       }
     })
+    // Remove nulos caso algum arquivo tenha falhado na leitura
+    .filter(Boolean) 
     .sort((a, b) => b.timestamp - a.timestamp)
 
   return files
