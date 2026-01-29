@@ -2,12 +2,14 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import matter from "gray-matter";
 import yaml from "js-yaml"; // <--- 1. IMPORTAÇÃO ADICIONADA
+import { getCookie } from 'h3'
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const query = getQuery(event);
 
-  const site = query.site ? String(query.site) : null;
+  // const site = query.site ? String(query.site) : null;
+  const site = getCookie(event, 'cms_site_context')
   const folder = query.folder ? String(query.folder) : null;
   const file = query.file ? String(query.file) : null;
 

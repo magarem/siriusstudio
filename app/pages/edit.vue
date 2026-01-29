@@ -5,7 +5,8 @@ import { useToast } from "primevue/usetoast";
 // --- NOVOS COMPONENTES MODULARIZADOS ---
 import CreateFileModal from "~/components/admin/modals/CreateFile.vue";
 import CreateFolderModal from "~/components/admin/modals/CreateFolder.vue";
-
+import RawEditor from "~/components/admin/editors/RawEditor.vue"; // [NOVO]
+import VisualSplitEditor from "~/components/admin/editors/VisualSplitEditor.vue"; // [NOVO]
 // --- COMPONENTES DO SISTEMA ---
 import AdminSidebar from "~/components/admin/Sidebar.vue";
 import AdminTopbar from "~/components/admin/Topbar.vue";
@@ -15,6 +16,8 @@ import ImageExplorer from "~/components/admin/ImageExplorer.vue";
 import DashboardHome from "~/components/admin/DashboardHome.vue";
 import FileToolbar from "~/components/admin/FileToolbar.vue";
 import BackupManager from "~/components/admin/BackupManager.vue";
+
+const config = useRuntimeConfig();
 
 definePageMeta({ layout: "" });
 
@@ -37,15 +40,48 @@ const checkMobile = () => {
 };
 
 onMounted(() => {
-  checkMobile();
+ checkMobile();
   window.addEventListener("resize", checkMobile);
   window.addEventListener("keydown", handleKeydown);
+
+  // --- [NOVO] LISTENER PARA MENSAGEM DO PREVIEW ---
+  window.addEventListener("message", handleMessageFromPreview);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", checkMobile);
   window.removeEventListener("keydown", handleKeydown);
+  
+  // --- [NOVO] REMOVER LISTENER ---
+  window.removeEventListener("message", handleMessageFromPreview);
 });
+
+// pages/edit.vue
+
+const handleMessageFromPreview = (event) => {
+  // 1. Validação de segurança
+  if (event.data?.type === 'SIRIUS_EDIT_REQUEST') {
+    const fileToEdit = event.data.filepath;
+    
+    if (fileToEdit) {
+      // 2. Navega para o arquivo no CMS
+      navigate.selectFile(fileToEdit);
+      
+      // 3. O TRUQUE PARA FOCAR A ABA
+      // Usamos um setTimeout pequeno para garantir que a UI atualize antes de travar
+      setTimeout(() => {
+          // O confirm nativo força o navegador a dar atenção a esta aba
+          const shouldFocus = window.confirm(`O arquivo "${fileToEdit}" foi aberto.\nDeseja editar agora?`);
+          
+          // Se o usuário der OK, o foco já estará aqui.
+          if (shouldFocus) {
+              // Apenas garante o foco no input principal se quiser
+              // document.body.focus(); 
+          }
+      }, 100);
+    }
+  }
+};
 
 const startResize = (e) => {
   isResizing.value = true;
@@ -125,12 +161,13 @@ const imageTarget = ref(null);
 // CONFIGURAÇÃO DO SITE (_config.json)
 const { data: configFileData } = await useFetch("/api/admin/storage", {
   query: {
-    site: siteContext.value,
     folder: ".",
     file: "_config.json",
   },
   key: `site-config-${siteContext.value}`,
 });
+const siteURL = JSON.parse(configFileData.value?.content).url || "";
+console.log("siteURL:", siteURL);
 
 const configFileData_obj = configFileData.value
   ? JSON.parse(configFileData.value.content)
@@ -199,29 +236,33 @@ const { data: schemaData } = await useFetch("/api/admin/schema", {
 const previewWindow = ref(null);
 
 const handlePreview = () => {
-  if (!configFileData_obj?.url) {
+
+  if (!siteURL) {
     toast.add({ severity: "warn", summary: "Sem URL", detail: 'Configure a "url" no _config.json', life: 2000 });
     return;
   }
 
-  let path = "/";
-  if (form.value.frontmatter?.slug) path = form.value.frontmatter.slug;
-  else if (form.value.frontmatter?.permalink) path = form.value.frontmatter.permalink;
-  else {
-    let cleanPath = currentFile.value || "";
-    cleanPath = cleanPath.replace(/\.md$/, "");
-    if (cleanPath.startsWith("content/")) cleanPath = cleanPath.substring(8);
-    if (cleanPath.endsWith("/_index") || cleanPath === "_index") cleanPath = cleanPath.replace("_index", "");
-    path = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
-    if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
-  }
+  const finalUrl = siteURL + currentFile.value.replace(".md", "").replace("content/", "") + "?preview=true";
+  
+  window.open(finalUrl, "sirius_preview");
+  // let path = "/";
+  // if (form.value.frontmatter?.slug) path = form.value.frontmatter.slug;
+  // else if (form.value.frontmatter?.permalink) path = form.value.frontmatter.permalink;
+  // else {
+  //   let cleanPath = currentFile.value || "";
+  //   cleanPath = cleanPath.replace(/\.md$/, "");
+  //   if (cleanPath.startsWith("content/")) cleanPath = cleanPath.substring(8);
+  //   if (cleanPath.endsWith("/_index") || cleanPath === "_index") cleanPath = cleanPath.replace("_index", "");
+  //   path = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
+  //   if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  // }
 
-  const baseUrl = configFileData_obj.url.endsWith("/") ? configFileData_obj.url.slice(0, -1) : configFileData_obj.url;
-  let finalUrl = `${baseUrl}${path}`;
-  finalUrl += finalUrl.includes("?") ? "&preview=true" : "?preview=true";
+  // const baseUrl = configFileData_obj.url.endsWith("/") ? configFileData_obj.url.slice(0, -1) : configFileData_obj.url;
+  // let finalUrl = `${baseUrl}${path}`;
+  // finalUrl += finalUrl.includes("?") ? "&preview=true" : "?preview=true";
 
-  previewWindow.value = window.open(finalUrl, "sirius_preview");
-  setTimeout(() => sendPreviewUpdate(), 1500);
+  // previewWindow.value = window.open(finalUrl, "sirius_preview");
+  // setTimeout(() => sendPreviewUpdate(), 1500);
 };
 
 let debounceTimer = null;
@@ -516,8 +557,8 @@ const saveFile = async () => {
 };
 
 const handlePublish = async () => {
-  if (isPublishing.value) return;
-  isPublishing.value = true;
+  // if (isPublishing.value) return;
+  // isPublishing.value = true;
   toast.add({ severity: "info", summary: "Publicando...", detail: "Gerando site...", life: 2000 });
 
   try {
@@ -531,7 +572,7 @@ const handlePublish = async () => {
     console.error(error);
     toast.add({ severity: "error", summary: "Erro", detail: "Falha ao publicar." });
   } finally {
-    isPublishing.value = false;
+    // isPublishing.value = false;
   }
 };
 
@@ -662,47 +703,23 @@ const handleKeydown = (e) => {
           @toggle-meta="showMetaSidebar = !showMetaSidebar"
         />
 
-        <div v-if="showRawMode" class="flex-1 animate-fade-in min-h-0 bg-[#141b18] border-x border-b border-white/5 rounded-b-lg flex flex-col relative">
-          <div class="absolute top-2 right-4 z-10 opacity-50 hover:opacity-100 transition-opacity pointer-events-none">
-            <span class="text-[10px] text-orange-400 bg-orange-900/20 border border-orange-500/20 px-2 py-1 rounded">
-              ⚠️ Cuidado com a indentação YAML
-            </span>
-          </div>
-          <textarea
+        <RawEditor
+            v-if="showRawMode"
             v-model="rawContent"
-            class="flex-1 p-6 bg-transparent text-[#a3d95b] font-mono text-[13px] leading-[1.6] outline-none resize-none custom-scrollbar"
-            spellcheck="false"
-            placeholder="Cole seu Markdown aqui..."
-          ></textarea>
-        </div>
+        />
 
-        <div v-else class="flex flex-row h-full overflow-hidden animate-fade-in pt-3">
-          <aside v-show="showMetaSidebar" class="shrink-0 flex flex-col pr-1" :style="{ width: sidebarWidth + 'px' }">
-            <div class="h-full overflow-y-auto custom-scrollbar pr-2">
-              <AdminMetaEditor
-                :fields="currentModel.fields"
-                :frontmatter="form.frontmatter"
-                :site-context="siteContext"
-                @open-image="imageActions.open"
-              />
-            </div>
-          </aside>
-
-          <div v-show="showMetaSidebar" class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] active:bg-[#6f942e] transition-colors duration-150 flex flex-col justify-center items-center group select-none z-10 mr-2" :class="isResizing ? 'bg-[#6f942e]' : 'bg-transparent'" @mousedown.prevent="startResize">
-            <div class="w-[1px] h-full bg-white/10 group-hover:bg-[#6f942e]/50 transition-colors"></div>
-          </div>
-
-          <div class="flex-1 h-full min-w-0 overflow-hidden">
-            <AdminMarkdownEditor
-              v-model:content="form.content"
-              :current-folder="editorCtxFolder"
-              :current-file="currentFile"
-              :is-raw="showRawMode"
-              @toggle-raw="toggleRawMode"
-              @open-image="imageActions.open()"
-            />
-          </div>
-        </div>
+        <VisualSplitEditor
+            v-else
+            :frontmatter="form.frontmatter"
+            :content="form.content"
+            @update:content="form.content = $event"
+            :fields="currentModel.fields"
+            :site-context="siteContext"
+            :current-folder="editorCtxFolder"
+            :current-file="currentFile"
+            :show-meta="showMetaSidebar"
+            @open-image="imageActions.open"
+        />
       </div>
 
       <div v-else class="h-[calc(100vh-120px)] w-full">

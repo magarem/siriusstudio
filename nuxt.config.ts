@@ -5,6 +5,7 @@ export default defineNuxtConfig({
     storagePath: process.env.STORAGE_PATH,
     jwtSecret: process.env.JWT_SECRET || "chave-de-emergencia-sirius-123",
     public: {
+      siteURL: process.env.NUXT_PUBLIC_SITE_URL || "http://localhost:3000",
       uploadPath: process.env.NUXT_PUBLIC_UPLOAD_PATH || "public/images",
     },
   },
