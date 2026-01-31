@@ -57,6 +57,7 @@ const startResize = (e) => {
       <div class="h-full overflow-y-auto custom-scrollbar pr-2">
         <AdminMetaEditor
           :fields="fields"
+          :currentFolder="currentFolder"
           :frontmatter="frontmatter"
           :site-context="siteContext"
           @open-image="$emit('open-image', $event)"

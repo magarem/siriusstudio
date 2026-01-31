@@ -7,7 +7,7 @@ const props = defineProps({
   visible: Boolean,
   files: Array,
   currentFolder: String,
-  currentFile: String,
+  currentFile: String, 
   siteContext: String
 });
 
@@ -18,66 +18,100 @@ const emit = defineEmits([
 
 const toast = useToast();
 
-// Opções para o SelectBox (Dropdown)
+// --- STATE ---
+const localFiles = ref([]);
+const contextMenu = ref();
+const activeMenuFile = ref(null);
+const indexFile = ref(null); // [NOVO] Estado para o arquivo fixo
+
+// Opções de Raiz
 const roots = ['content', 'pages', 'components', 'data', 'layouts'];
 const rootOptions = roots.map(r => ({ label: r.toUpperCase(), value: r }));
 
-// Computed para controlar o Dropdown
 const selectedRoot = computed({
-  get: () => {
-    if (!props.currentFolder) return 'content';
-    return props.currentFolder.split('/')[0];
-  },
-  set: (val) => {
-    emit('change-root', val);
-  }
+  get: () => props.currentFolder ? props.currentFolder.split('/')[0] : 'content',
+  set: (val) => emit('change-root', val)
 });
 
 const removeExtension = (filename) => filename.replace(/\.[^/.]+$/, "");
 
-// --- DRAG & DROP ---
-const localFiles = ref([]);
-watch(() => props.files, (newVal) => { localFiles.value = [...(newVal || [])]; }, { immediate: true });
+watch(() => props.files, (newVal) => { 
+  const allFiles = newVal || [];
 
+  // 1. Separa o arquivo de índice (Capa)
+  indexFile.value = allFiles.find(f => !f.isDirectory && (f.name === '_index.md' || f.name === 'index.md'));
+
+  // 2. Filtra o resto para a lista arrastável
+  localFiles.value = allFiles.filter(f => {
+    // Exclui o index da lista arrastável (já está separado acima)
+    if (f === indexFile.value) return false;
+
+    // [CRÍTICO] Remove o index da lista normal explicitamente pelo nome
+    if (!f.isDirectory && (f.name === '_index.md' || f.name === 'index.md')) {
+        return false; 
+    }
+    // Lógica padrão
+    if (f.isDirectory) return true;
+    const allowedExtensions = ['.md', '.json', '.yml', '.yaml'];
+    return allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext));
+  });
+}, { immediate: true });
+
+// ... dentro de <script setup>
+
+// --- LÓGICA INTELIGENTE (SEM FETCH EXTRA) ---
+const handleItemClick = (file) => {
+  if (file.isDirectory) {
+    // 1. Sempre abre o editor no _index.md (Comportamento de Página)
+    // Isso garante que você edita o conteúdo da pasta clicada
+    const indexPath = `${props.currentFolder}/${file.name}/_index.md`;
+    emit('select', indexPath);
+    selectedRoot.value = `${props.currentFolder}`
+    // 2. Decide instantaneamente se navega ou não
+    // A API já nos disse se tem subitens relevantes
+    if (file.hasChildren) {
+      // alert(file.name)
+      
+        // emit('navigate', file.name);
+        selectedRoot.value = `${props.currentFolder}/${file.name}`
+    } else {
+      selectedRoot.value = `${props.currentFolder}`
+        // Feedback visual opcional: "É uma folha"
+        // Você pode adicionar um toast rápido se quiser:
+        // toast.add({ severity: 'secondary', summary: 'Pasta Folha', detail: 'Sem subitens para exibir.', life: 1000 });
+    }
+  } else {
+    // Arquivo normal (.md solto)
+    emit('select', file.name);
+  }
+};
+
+// --- DRAG & DROP ---
 const onDragEnd = async () => {
   const orderedNames = localFiles.value.map(f => f.name);
   try {
-    await $fetch('/api/admin/reorder', { method: 'POST', body: { folder: props.currentFolder, files: orderedNames } });
+    await $fetch('/api/admin/reorder', { 
+      method: 'POST', 
+      body: { folder: props.currentFolder, files: orderedNames } 
+    });
     emit('refresh'); 
   } catch (error) {
-    console.error("Erro ao salvar ordem:", error);
     localFiles.value = [...(props.files || [])];
   }
 };
 
-// --- MENU DE CONTEXTO ---
-const menu = ref();
-const activeMenuFile = ref(null);
+// --- CONTEXT MENU ---
+const menuItems = ref([
+    { label: 'Renomear', icon: 'pi pi-pencil', command: () => openRenameDialog(activeMenuFile.value) },
+    { label: 'Mover para...', icon: 'pi pi-folder-open', command: () => openMoveDialog(activeMenuFile.value) },
+    { separator: true },
+    { label: 'Excluir', icon: 'pi pi-trash', class: 'text-red-400 hover:text-red-500', command: () => confirmDelete(activeMenuFile.value) }
+]);
 
 const toggleMenu = (event, file) => {
     activeMenuFile.value = file;
-    menu.value.toggle(event);
+    contextMenu.value.toggle(event);
 };
-
-const menuItems = ref([
-    {
-        label: 'Renomear',
-        icon: 'pi pi-pencil',
-        command: () => openRenameDialog(activeMenuFile.value)
-    },
-    {
-        label: 'Mover',
-        icon: 'pi pi-arrow-right-arrow-left',
-        command: () => openMoveDialog(activeMenuFile.value)
-    },
-    { separator: true },
-    {
-        label: 'Excluir',
-        icon: 'pi pi-trash',
-        class: 'text-red-400 hover:text-red-500',
-        command: () => confirmDelete(activeMenuFile.value)
-    }
-]);
 
 // --- RENOMEAR ---
 const renameDialogVisible = ref(false);
@@ -94,37 +128,26 @@ const openRenameDialog = (file) => {
 const confirmRename = async () => {
   if (!newFileName.value || !targetFile.value) return;
   renameLoading.value = true;
-  
   try {
     const oldName = targetFile.value.name;
     const extension = oldName.includes('.') ? '.' + oldName.split('.').pop() : '';
     let finalNewName = newFileName.value;
-    
-    if (!finalNewName.endsWith(extension) && extension) { finalNewName += extension; }
+    if (!finalNewName.toLowerCase().endsWith(extension) && extension) finalNewName += extension;
 
     const fullOldPath = `${props.currentFolder}/${oldName}`;
     const fullNewPath = `${props.currentFolder}/${finalNewName}`;
 
-    const response = await $fetch('/api/admin/rename', {
-      method: 'POST',
-      body: { oldname: fullOldPath, newname: fullNewPath }
-    });
+    const response = await $fetch('/api/admin/rename', { method: 'POST', body: { oldname: fullOldPath, newname: fullNewPath } });
 
-    toast.add({ severity: 'success', summary: 'Renomeado', detail: 'Atualizado com sucesso.', life: 2000 });
+    toast.add({ severity: 'success', summary: 'Renomeado', life: 2000 });
     renameDialogVisible.value = false;
     emit('refresh'); 
     
     if (props.currentFile && props.currentFile.endsWith(oldName)) {
-        if (response && response.newname) {
-             emit('select', response.newname);
-        } else {
-             emit('select', fullNewPath);
-        }
+        emit('select', response?.newname || fullNewPath);
     }
-
   } catch (error) {
-    console.error(error);
-    toast.add({ severity: 'error', summary: 'Erro', detail: error.data?.message || 'Falha ao renomear arquivo.' });
+    toast.add({ severity: 'error', summary: 'Erro', detail: error.data?.message });
   } finally {
     renameLoading.value = false;
   }
@@ -143,44 +166,28 @@ const confirmDelete = (file) => {
 const handleDelete = async () => {
   if (!itemToDelete.value) return;
   deleteLoading.value = true;
-
   try {
-    await $fetch("/api/admin/storage", {
-      method: "DELETE",
-      body: {
-        folder: props.currentFolder,
-        file: itemToDelete.value.name,
-      },
-    });
-
-    toast.add({ severity: "success", summary: "Excluído", detail: "Item removido com sucesso.", life: 2000 });
-    
-    // if (props.currentFile && props.currentFile.endsWith(itemToDelete.value.name)) {
-    //     emit('delete', itemToDelete.value); 
-    // }
-    
+    await $fetch("/api/admin/storage", { method: "DELETE", body: { folder: props.currentFolder, file: itemToDelete.value.name } });
+    toast.add({ severity: "success", summary: "Excluído", life: 2000 });
     emit('refresh');
     deleteDialogVisible.value = false;
     itemToDelete.value = null;
-
   } catch (e) {
-    console.error(e);
-    toast.add({ severity: "error", summary: "Erro", detail: "Não foi possível excluir o item." });
+    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao excluir." });
   } finally {
     deleteLoading.value = false;
   }
 };
 
-// --- MOVER (LÓGICA NOVA COM ÁRVORE) ---
+// --- MOVER ---
 const moveDialogVisible = ref(false);
 const itemToMove = ref(null);
 const moveLoading = ref(false);
 const folderTree = ref([]);
 const selectedNodeKey = ref(null);
 const expandedNodeKeys = ref({});
-const newPath = ref(""); // Caminho final absoluto
+const destinationPath = ref(""); 
 
-// Função auxiliar para construir a árvore (igual ao FileToolbar)
 const buildTree = (paths) => {
   const root = [];
   paths.forEach((path) => {
@@ -202,71 +209,41 @@ const buildTree = (paths) => {
 
 const openMoveDialog = async (file) => {
   itemToMove.value = file;
-  newPath.value = ""; // Limpa caminho anterior
-  
-  // 1. Busca pastas atualizadas
+  destinationPath.value = props.currentFolder;
   try {
-    const folders = await $fetch('/api/admin/folders', { 
-        query: { site: props.siteContext } 
-    });
+    const folders = await $fetch('/api/admin/folders', { query: { site: props.siteContext } });
+    const relevantFolders = folders.filter(p => !p.includes('.')); 
+    folderTree.value = buildTree(relevantFolders);
     
-    // 2. Filtra apenas pastas de conteúdo
-    const contentFolders = folders.filter((path) => path === "content" || path.startsWith("content/"));
-    
-    // 3. Monta a Árvore
-    folderTree.value = buildTree(contentFolders);
-    
-    // 4. Expande tudo
     const _expanded = {};
-    contentFolders.forEach((path) => { _expanded[path] = true; });
+    relevantFolders.forEach((path) => { _expanded[path] = true; });
     expandedNodeKeys.value = _expanded;
     
-    // 5. Seleciona a pasta atual
-    if (props.currentFolder) {
-        selectedNodeKey.value = { [props.currentFolder]: true };
-    }
-    
+    if (props.currentFolder) selectedNodeKey.value = { [props.currentFolder]: true };
     moveDialogVisible.value = true;
   } catch (e) {
-    console.error(e);
-    toast.add({ severity: 'error', summary: 'Erro', detail: 'Não foi possível carregar as pastas.' });
+    toast.add({ severity: 'error', summary: 'Erro', detail: 'Erro ao carregar pastas.' });
   }
 };
 
-const onNodeSelect = (node) => { 
-    // Monta o novo caminho: Pasta Selecionada + Nome do Arquivo Atual
-    if (itemToMove.value) {
-        newPath.value = `${node.key}/${itemToMove.value.name}`; 
-    }
-};
+const onNodeSelect = (node) => { destinationPath.value = node.key; };
 
 const handleMove = async () => {
-  if (!itemToMove.value || !newPath.value) return;
+  if (!itemToMove.value || !destinationPath.value) return;
   moveLoading.value = true;
-
   const oldPathFull = `${props.currentFolder}/${itemToMove.value.name}`;
+  const newPathFull = `${destinationPath.value}/${itemToMove.value.name}`;
 
   try {
-    const response = await $fetch('/api/admin/rename', {
-      method: 'POST',
-      body: { oldname: oldPathFull, newname: newPath.value }
-    });
-
-    toast.add({ severity: 'success', summary: 'Movido', detail: `Sucesso!`, life: 2000 });
+    const response = await $fetch('/api/admin/rename', { method: 'POST', body: { oldname: oldPathFull, newname: newPathFull } });
+    toast.add({ severity: 'success', summary: 'Movido', life: 2000 });
     moveDialogVisible.value = false;
     emit('refresh');
-
-    // Se moveu o arquivo atual, atualiza a seleção
     if (props.currentFile && props.currentFile.endsWith(itemToMove.value.name)) {
-         if (response && response.newname) {
-             emit('select', response.newname);
-        } else {
-             emit('select', newPath.value);
-        }
+         emit('select', response?.newname || newPathFull);
     }
   } catch (error) {
-    console.error(error);
-    toast.add({ severity: 'error', summary: 'Erro', detail: error.data?.message || 'Erro ao mover item.' });
+    toast.add({ severity: 'error', summary: 'Erro', detail: error.data?.message });
   } finally {
     moveLoading.value = false;
   }
@@ -278,23 +255,28 @@ const handleMove = async () => {
     :visible="visible" 
     @update:visible="emit('update:visible', $event)" 
     header="Explorer" 
-    class="w-80 bg-[#141b18] border-r border-white/5"
+    class="w-80 bg-[#141b18] border-r border-white/5 p-0"
+    :showCloseIcon="false"
   >
     <template #header>
-      <div class="flex flex-col w-full pr-4">
-        <div class="flex items-center gap-2 mb-1">
-           <i class="pi pi-star-fill text-[#6f942e] text-sm"></i>
-           <span class="font-black text-slate-100 tracking-tighter text-[20px]">Sirius Studio</span>
+      <div class="flex flex-col w-full pr-2 pt-2">
+        <div class="flex items-center justify-between mb-1">
+           <div class="flex items-center gap-2">
+               <i class="pi pi-star-fill text-[#6f942e] text-sm"></i>
+               <span class="font-black text-slate-100 tracking-tighter text-[20px]">Sirius Studio</span>
+           </div>
+           <Button icon="pi pi-times" text rounded class="!h-8 !w-8 text-slate-500 hover:text-white" @click="emit('update:visible', false)" />
         </div>
-        <div class="flex items-center gap-2 pl-6 opacity-80">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-[#6f942e] truncate">
+        <div class="pl-6 opacity-70">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-[#6f942e] truncate block">
                 {{ siteContext || 'Sem contexto' }}
             </span>
         </div>
       </div>
     </template>
     
-    <div class="flex flex-col h-full w-full">
+    <div class="flex flex-col h-full w-full overflow-hidden">
+      
       <div class="p-3 border-b border-white/5 bg-[#141b18] shrink-0 z-10 flex flex-col gap-3">
         <div class="flex items-center gap-2">
             <Dropdown 
@@ -302,82 +284,109 @@ const handleMove = async () => {
                 :options="rootOptions" 
                 optionLabel="label" 
                 optionValue="value"
-                class="w-full custom-dropdown !h-9 flex items-center"
+                class="w-full custom-dropdown !h-9 flex items-center text-xs"
             />
-            <Button 
-                icon="pi pi-file-plus" 
-                class="!w-9 !h-9 !p-0 bg-[#6f942e] border-none text-black shrink-0" 
-                v-tooltip.bottom="'Novo Arquivo'"
-                @click="emit('create-file')" 
-            />
-            <Button 
-                icon="pi pi-folder-plus" 
-                class="!w-9 !h-9 !p-0 bg-white/10 border-none text-slate-300 hover:bg-white/20 shrink-0" 
-                v-tooltip.bottom="'Nova Pasta'"
-                @click="emit('create-folder')" 
-            />
+            <Button icon="pi pi-file-plus" class="!w-9 !h-9 !p-0 bg-[#6f942e] border-none text-black shrink-0 hover:brightness-110" v-tooltip.bottom="'Novo Arquivo'" @click="emit('create-file')" />
+            <Button icon="pi pi-folder-plus" class="!w-9 !h-9 !p-0 bg-white/10 border-none text-slate-300 hover:bg-white/20 shrink-0" v-tooltip.bottom="'Nova Pasta'" @click="emit('create-folder')" />
         </div>
+
         <div class="flex items-center gap-2">
             <Button 
                 icon="pi pi-arrow-up"
                 class="!w-8 !h-8 !p-0 shrink-0"
                 :class="currentFolder.includes('/') ? 'bg-white/10 text-slate-300 hover:bg-white/20' : 'opacity-30 cursor-not-allowed bg-transparent border border-white/5 text-slate-600'"
                 :disabled="!currentFolder.includes('/')"
-                v-tooltip.bottom="'Voltar nível'"
+                v-tooltip.bottom="'Subir nível'"
                 @click="emit('back')"
             />
             <div class="flex-1 bg-black/40 border border-white/5 rounded px-2 py-1.5 flex items-center gap-2 overflow-hidden h-8" :title="currentFolder">
                 <i class="pi pi-folder-open text-[#6f942e] text-[10px] shrink-0"></i>
-                <span class="text-[10px] font-mono text-slate-300 truncate select-all leading-none mt-0.5">
-                    /{{ currentFolder }}
-                </span>
+                <span class="text-[10px] font-mono text-slate-300 truncate select-all leading-none mt-0.5">{{ currentFolder }}</span>
             </div>
         </div>
       </div>
 
       <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+        
+        <div v-if="indexFile" 
+             @click="emit('select', `${currentFolder}/${indexFile.name}`)"
+             @contextmenu.prevent="toggleMenu($event, indexFile)"
+             class="group flex items-center justify-between p-2.5 mb-1 rounded-md transition-all border border-transparent select-none cursor-pointer"
+             :class="[
+                currentFile === `${currentFolder}/${indexFile.name}`
+                ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-sm' 
+                : 'hover:bg-white/5 text-slate-300'
+             ]"
+        >
+            <div class="flex items-center gap-3 overflow-hidden flex-1">
+               <i class="pi pi-file text-lg text-[#6f942e]"></i>
+               
+               <span class="text-base font-bold truncate text-[#6f942e]">
+                 Página principal
+               </span>
+            </div>
+            
+            <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pl-2">
+               <i class="pi pi-thumbtack text-[9px] text-slate-600 rotate-45 mr-2 opacity-50" title="Fixo"></i>
+               <Button icon="pi pi-ellipsis-v" text rounded class="!w-6 !h-6 !p-0 text-slate-500 hover:text-white hover:bg-white/10" @click.stop="toggleMenu($event, indexFile)" />
+            </div>
+        </div>
+        
         <VueDraggable 
           v-model="localFiles"
           :animation="150"
           @end="onDragEnd"
-          class="flex flex-col gap-1"
+          class="flex flex-col gap-1 min-h-[50px]"
+          ghost-class="ghost-card"
           handle=".drag-handle"
         >
           <div v-for="file in localFiles" :key="file.name" 
-               @click="file.isDirectory ? emit('navigate', file.name) : emit('select', file.name)"
-               :class="['group flex items-center justify-between p-3 rounded-sm transition-all border border-transparent pr-2 select-none', currentFile === (file.isDirectory ? '' : `${currentFolder}/${file.name}`) ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-lg' : 'hover:bg-white/5 text-slate-300']">
-            
-            <div class="flex items-center gap-3 overflow-hidden  w-full">
-               <i class="drag-handle cursor-grab active:cursor-grabbing" :class="[file.isDirectory ? 'pi pi-folder text-yellow-600 text-lg' : 'pi pi-file text-indigo-400 text-lg']"></i>
-               <span class="text-sm font-medium truncate">{{ file.isDirectory ? file.name : removeExtension(file.name) }}</span>
+               @click="handleItemClick(file)"
+               @contextmenu.prevent="toggleMenu($event, file)"
+               class="group flex items-center justify-between p-2.5 rounded-md transition-all border border-transparent pr-2 select-none cursor-pointer"
+               :class="[
+                  currentFile === `${currentFolder}/${file.name}` || 
+                  (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/_index.md`))
+                  ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-sm' 
+                  : 'hover:bg-white/5 text-slate-300'
+               ]"
+          >
+            <div class="flex items-center gap-3 overflow-hidden flex-1">
+               
+               <i class="drag-handle cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
+                  :class="[
+                    file.hasChildren ? 'pi pi-folder text-amber-600' : 'pi pi-file text-slate-500',
+                    currentFile === `${currentFolder}/${file.name}` || 
+                    (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/_index.md`))
+                    ? '!text-[#6f942e]' : '',
+                    'text-lg'
+                  ]"
+               ></i>
+               
+               <span class="text-base font-medium truncate tracking-tight">
+                 {{ file.isDirectory ? file.name : removeExtension(file.name) }}
+               </span>
             </div>
 
             <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pl-2">
-              <Button 
-                icon="pi pi-ellipsis-v" 
-                text 
-                rounded 
-                class="!w-7 !h-7 !p-0 text-slate-400 hover:text-white hover:bg-white/10"
-                @click.stop="toggleMenu($event, file)"
-              />
+              <Button icon="pi pi-ellipsis-v" text rounded class="!w-6 !h-6 !p-0 text-slate-500 hover:text-white hover:bg-white/10" @click.stop="toggleMenu($event, file)" />
             </div>
           </div>
         </VueDraggable>
+        
+        <div v-if="localFiles.length === 0 && !indexFile" class="text-center py-10 opacity-30">
+            <i class="pi pi-folder-open text-4xl mb-2"></i>
+            <p class="text-xs">Pasta vazia</p>
+        </div>
       </div>
     </div>
 
-    <Menu ref="menu" :model="menuItems" :popup="true" class="custom-context-menu" />
-
-    <Dialog v-model:visible="renameDialogVisible" modal header="Renomear Item" :style="{ width: '30rem' }" class="p-fluid bg-[#141b18]">
-      <div class="flex flex-col gap-3 pt-2 pb-4">
+    <Menu ref="contextMenu" :model="menuItems" :popup="true" class="custom-context-menu" />
+    <Dialog v-model:visible="renameDialogVisible" modal header="Renomear Item" :style="{ width: '400px' }" class="p-fluid bg-[#141b18]">
+      <div class="flex flex-col gap-3 pt-2 pb-2">
         <label class="text-xs font-bold uppercase text-slate-500 block mb-1">Novo Nome</label>
-        <InputText 
-            v-model="newFileName" 
-            class="w-full text-xl p-3 font-semibold bg-[#0a0f0d] text-white border border-white/10 focus:border-[#6f942e] focus:ring-0 transition-all rounded-md" 
-            autofocus 
-            @keydown.enter="confirmRename" 
-        />
-        <small class="text-xs text-slate-500">A extensão original será mantida.</small>
+        <InputText v-model="newFileName" class="w-full text-lg p-3 font-semibold bg-[#0a0f0d] text-white border border-white/10 focus:border-[#6f942e] focus:ring-0 transition-all rounded-md" autofocus @keydown.enter="confirmRename" />
+        <div class="text-xs text-slate-500 flex items-center gap-2"><i class="pi pi-info-circle"></i> A extensão original será mantida.</div>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
@@ -386,46 +395,38 @@ const handleMove = async () => {
         </div>
       </template>
     </Dialog>
-
-    <Dialog v-model:visible="moveDialogVisible" modal header="Mover Para..." :style="{ width: '30rem' }" class="p-0 bg-[#141b18]">
-      <div class="flex flex-col gap-4">
-        <div class="bg-zinc-50 dark:bg-[#0a0f0d] border border-zinc-200 dark:border-white/10 rounded p-2 h-64 overflow-y-auto custom-scrollbar">
-          <Tree
-            v-model:selectionKeys="selectedNodeKey"
-            v-model:expandedKeys="expandedNodeKeys"
-            :value="folderTree"
-            selectionMode="single"
-            class="w-full bg-transparent border-none p-0 text-sm custom-tree"
-            @node-select="onNodeSelect"
-          />
+    <Dialog v-model:visible="moveDialogVisible" modal header="Mover Para..." :style="{ width: '450px' }" class="p-0 bg-[#141b18]">
+      <div class="flex flex-col gap-4 p-1">
+        <div class="bg-zinc-900/50 border border-white/10 rounded p-2 h-72 overflow-y-auto custom-scrollbar">
+          <Tree v-model:selectionKeys="selectedNodeKey" v-model:expandedKeys="expandedNodeKeys" :value="folderTree" selectionMode="single" class="w-full bg-transparent border-none p-0 text-sm custom-tree" @node-select="onNodeSelect" />
         </div>
-        
-        <div class="flex flex-col gap-2 p-1">
-          <label class="text-xs text-zinc-500 uppercase font-bold">Caminho de Destino</label>
-          <InputText v-model="newPath" class="w-full font-mono text-sm bg-[#0a0f0d] border-white/10 text-white" />
+        <div class="flex flex-col gap-2 bg-black/20 p-2 rounded border border-white/5">
+          <label class="text-[10px] text-zinc-500 uppercase font-bold tracking-wider">Destino Selecionado</label>
+          <div class="text-xs font-mono text-[#6f942e] break-all">{{ destinationPath || 'Selecione uma pasta acima' }}</div>
         </div>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2 mt-4">
           <Button label="Cancelar" text severity="secondary" @click="moveDialogVisible = false" size="small" />
-          <Button label="Mover" icon="pi pi-send" @click="handleMove" :loading="moveLoading" class="bg-[#6f942e] border-none text-black font-bold" :disabled="!newPath" />
+          <Button label="Mover Aqui" icon="pi pi-arrow-right" @click="handleMove" :loading="moveLoading" class="bg-[#6f942e] border-none text-black font-bold" :disabled="!destinationPath" />
         </div>
       </template>
     </Dialog>
-
     <Dialog v-model:visible="deleteDialogVisible" modal header="Confirmar Exclusão" :style="{ width: '350px' }" class="p-fluid bg-[#141b18]">
       <div class="flex flex-col gap-4 pt-2">
-        <p class="text-sm text-slate-300">
-          Tem certeza que deseja excluir <strong class="text-white">{{ itemToDelete?.name }}</strong>?
-        </p>
-        <p v-if="itemToDelete?.isDirectory" class="text-xs text-red-400 bg-red-400/10 p-2 rounded border border-red-400/20">
-          <i class="pi pi-exclamation-triangle mr-1"></i> Isso apagará todos os arquivos dentro da pasta.
-        </p>
+        <div class="bg-red-500/10 border border-red-500/20 p-4 rounded-md flex items-start gap-3">
+             <i class="pi pi-exclamation-triangle text-red-400 text-xl mt-0.5"></i>
+             <div>
+                 <p class="text-sm text-slate-200 font-bold">Você tem certeza?</p>
+                 <p class="text-xs text-slate-400 mt-1">O item <strong class="text-white">{{ itemToDelete?.name }}</strong> será excluído permanentemente.</p>
+             </div>
+        </div>
+        <p v-if="itemToDelete?.isDirectory" class="text-xs text-center text-slate-500">(Isso apagará todo o conteúdo da pasta)</p>
       </div>
       <template #footer>
         <div class="flex justify-end gap-2">
           <Button label="Cancelar" text severity="secondary" @click="deleteDialogVisible = false" size="small" />
-          <Button label="Excluir" icon="pi pi-trash" severity="danger" @click="handleDelete" :loading="deleteLoading" size="small" />
+          <Button label="Sim, Excluir" icon="pi pi-trash" severity="danger" @click="handleDelete" :loading="deleteLoading" size="small" />
         </div>
       </template>
     </Dialog>
@@ -433,9 +434,35 @@ const handleMove = async () => {
 </template>
 
 <style scoped>
-/* Estilos existentes... */
+/* Mesmos estilos de antes */
+:deep(.custom-dropdown) { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); }
+:deep(.custom-dropdown .p-dropdown-label) { color: #e2e8f0; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; padding: 0.5rem; }
+:deep(.custom-dropdown:hover) { border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.06); }
+:deep(.custom-dropdown.p-focus) { border-color: #6f942e; box-shadow: 0 0 0 1px #6f942e; }
+:deep(.custom-context-menu) { background: #1a201d; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+:deep(.custom-context-menu .p-menuitem-link) { background: transparent; padding: 0.6rem 1rem; }
+:deep(.custom-context-menu .p-menuitem-link .p-menuitem-text) { color: #cbd5e1; font-size: 0.85rem; }
+:deep(.custom-context-menu .p-menuitem-link .p-menuitem-icon) { color: #94a3b8; font-size: 0.85rem; }
+:deep(.custom-context-menu .p-menuitem-link:hover) { background: rgba(255, 255, 255, 0.05); }
+:deep(.custom-tree .p-treenode-label) { color: #e2e8f0; font-size: 0.85rem; }
+:deep(.custom-tree .p-treenode-icon) { color: #d97706; }
+:deep(.custom-tree .p-treenode-content) { padding: 0.2rem; border-radius: 4px; }
+:deep(.custom-tree .p-treenode-content:hover) { background: rgba(255, 255, 255, 0.05); }
+:deep(.custom-tree .p-treenode-content.p-highlight) { background: rgba(111, 148, 46, 0.2); color: #6f942e; }
+:deep(.custom-tree .p-tree-toggler) { color: #64748b; width: 1.5rem; height: 1.5rem; }
+:deep(.p-dialog-header), :deep(.p-dialog-content), :deep(.p-dialog-footer) { background: #141b18; border-color: rgba(255,255,255,0.05); color: white; }
+:deep(.p-dialog-header) { padding: 1rem; }
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(111, 148, 46, 0.5); }
+.ghost-card { opacity: 0.5; background: rgba(111, 148, 46, 0.1); border: 1px dashed #6f942e; }
+
+/* ESTILIZAÇÃO DO DRAWER E COMPONENTES INTERNOS */
+
+/* Dropdown Customizado */
 :deep(.custom-dropdown) {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 :deep(.custom-dropdown .p-dropdown-label) {
@@ -447,42 +474,89 @@ const handleMove = async () => {
 }
 :deep(.custom-dropdown:hover) {
     border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
 }
 :deep(.custom-dropdown.p-focus) {
     border-color: #6f942e;
     box-shadow: 0 0 0 1px #6f942e;
 }
+
+/* Menu de Contexto Customizado */
 :deep(.custom-context-menu) {
-    background: #141b18;
+    background: #1a201d;
     border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 :deep(.custom-context-menu .p-menuitem-link) {
     background: transparent;
+    padding: 0.6rem 1rem;
 }
 :deep(.custom-context-menu .p-menuitem-link .p-menuitem-text) {
     color: #cbd5e1;
-    font-size: 0.875rem;
+    font-size: 0.85rem;
 }
 :deep(.custom-context-menu .p-menuitem-link .p-menuitem-icon) {
     color: #94a3b8;
-    font-size: 0.875rem;
+    font-size: 0.85rem;
 }
 :deep(.custom-context-menu .p-menuitem-link:hover) {
     background: rgba(255, 255, 255, 0.05);
 }
 
-/* Novo estilo para a Árvore no tema Dark */
+/* Árvore (Tree) Dark Mode */
 :deep(.custom-tree .p-treenode-label) {
-    color: #e2e8f0; /* text-slate-200 */
+    color: #e2e8f0;
+    font-size: 0.85rem;
 }
 :deep(.custom-tree .p-treenode-icon) {
-    color: #d97706; /* amber-600 (folder icon) */
+    color: #d97706; /* Ícone de pasta âmbar */
+}
+:deep(.custom-tree .p-treenode-content) {
+    padding: 0.2rem;
+    border-radius: 4px;
 }
 :deep(.custom-tree .p-treenode-content:hover) {
     background: rgba(255, 255, 255, 0.05);
 }
 :deep(.custom-tree .p-treenode-content.p-highlight) {
-    background: rgba(111, 148, 46, 0.2); /* #6f942e com opacidade */
+    background: rgba(111, 148, 46, 0.2);
     color: #6f942e;
+}
+:deep(.custom-tree .p-tree-toggler) {
+    color: #64748b;
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* Dialogs */
+:deep(.p-dialog-header), :deep(.p-dialog-content), :deep(.p-dialog-footer) {
+    background: #141b18;
+    border-color: rgba(255,255,255,0.05);
+    color: white;
+}
+:deep(.p-dialog-header) {
+    padding: 1rem;
+}
+
+/* Scrollbar Customizada */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(111, 148, 46, 0.5);
+}
+
+/* Drag Ghost */
+.ghost-card {
+    opacity: 0.5;
+    background: rgba(111, 148, 46, 0.1);
+    border: 1px dashed #6f942e;
 }
 </style>

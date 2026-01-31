@@ -27,10 +27,10 @@ const onImageError = (event, fallback) => {
         >
           <div class="card-image-wrapper relative w-full overflow-hidden bg-gray-100">
             
-            <div v-if="item.isFolder" class="absolute top-2 right-2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/20 backdrop-blur-md transition-colors group-hover:bg-blue-600/80">
+            <!-- <div v-if="item.isFolder" class="absolute top-2 right-2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/20 backdrop-blur-md transition-colors group-hover:bg-blue-600/80">
               <i class="pi pi-folder text-white text-lg drop-shadow-sm"></i>
             </div>
-            
+             -->
             <img 
               v-if="item.image" 
               :src="item.image" 

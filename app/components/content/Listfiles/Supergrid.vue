@@ -119,12 +119,12 @@ const onItemClick = (item, event) => {
         <div class="card-image-container">
           <div class="image-wrapper">
             <!-- Badge indicador de pasta -->
-            <div 
+            <!-- <div 
               v-if="config.showFolderBadge && item.isFolder" 
               class="type-badge"
             >
               <i class="pi pi-folder"></i>
-            </div>
+            </div> -->
 
             <!-- Imagem principal -->
             <img

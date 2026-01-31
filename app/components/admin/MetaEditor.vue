@@ -4,7 +4,8 @@ import draggable from 'vuedraggable';
 const props = defineProps({
   fields: { type: Array, default: () => [] },
   frontmatter: { type: Object, default: () => ({}) },
-  siteContext: String
+  siteContext: String,
+  currentFolder: String
 });
 
 const emit = defineEmits(['open-image']); // Emite evento para abrir modal no pai
@@ -37,7 +38,8 @@ const getFieldSummary = (field) => {
 const getImageUrl = (path) => {
   if (!path) return '';
   const cleanPath = path.replace(/^\/images/, ''); 
-  return `/api/admin/render-image?site=${props.siteContext}&file=${encodeURIComponent(cleanPath)}`;
+  // return `/api/admin/render-image?site=${props.siteContext}&file=${encodeURIComponent(cleanPath)}`;
+  return `/assets/${props.currentFolder.replace("content/", "")}/${encodeURIComponent(cleanPath)}`;
 };
 
 // --- Manipulação de Dados (REPEATER COMPLEXO) ---

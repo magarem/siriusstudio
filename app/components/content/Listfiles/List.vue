@@ -19,6 +19,7 @@ const onImageError = (event, fallback) => {
 
 <template>
   <div class="custom-list">
+  
     <NuxtLink v-for="item in items" :key="item.path" :to="item.path" class="custom-card list-card group">
       <div class="list-image-wrapper">
           <div v-if="item.isFolder && item.image" class="folder-overlay">

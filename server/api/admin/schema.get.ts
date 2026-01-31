@@ -18,7 +18,8 @@ export default defineEventHandler(async (event) => {
  const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
   console.log('APPS_ROOT definido como:', APPS_ROOT);
 
-  const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), '_schema.json')
+  // const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), '_schema.json')
+  const schemaPath = path.join(APPS_ROOT, 'storage', String(site),'content', '_schema.json')
 
 console.log('schemaPath:', schemaPath);
   try {

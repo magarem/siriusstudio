@@ -7,10 +7,11 @@ defineProps({
 
 <template>
   <div class="flex w-full flex-col gap-2 px-3">
+     
     <NuxtLink
       v-for="item in items"
-      :key="item.path"
-      :to="item.path"
+      :key="item._path"
+      :to="item._path"
       style="text-decoration: none !important;"
       class="group flex items-center gap-4 rounded-xl border border-transparent border-b-gray-100 py-3 transition-all duration-200 ease-out _hover:bg-gray-50"
     >

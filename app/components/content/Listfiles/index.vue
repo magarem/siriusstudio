@@ -15,13 +15,14 @@ const props = defineProps({
   // Se vazio, pega a rota atual.
   section: { type: String, default: "" },
 
-  // Visualização: 'grid', 'list' ou 'rawlist'
+  // Visualização: 'grid', 'list', 'supergrid' ou 'rawlist'
   view: { type: String, default: "grid" },
- viewparams: {
+  
+  viewparams: {
     type: Object,
     default: () => ({
       columns: 4,
-      card_layout: 'vertical', // 'horizontal' ou 'vertical'
+      card_layout: 'vertical',
       card_showtextbox: false,
       card_showtitle: true,
       card_showdescription: true,
@@ -31,24 +32,22 @@ const props = defineProps({
       card_border_radius: '12px',
       card_showaction: false,
       card_showbadges: true,
-      card_minwidth: '280px' // Reduzido para melhor ajuste
+      card_minwidth: '280px'
     })
   },
   // Limite de itens
   limit: { type: Number, default: 1000 },
   cardLayout: { 
     type: String, 
-    default: 'vertical', // 'horizontal' ou 'vertical'
+    default: 'vertical',
     validator: (value) => ['horizontal', 'vertical'].includes(value)
   },
   columns: { type: Number, default: 4 },
-  // Configurações visuais extras
-  // viewparams: { type: [Object, String], default: () => ({}) },
 
   // MODO PASTA: Agrupa subpastas
   subfolders: { type: Boolean, default: false },
 
-  // IMAGENS: Imagem padrão automática (Vertical)
+  // IMAGENS: Imagem padrão automática
   fallbackImage: { type: String, default: "/images/generic_image.png" },
 
   // Ícone padrão para arquivos
@@ -56,20 +55,16 @@ const props = defineProps({
 });
 
 const config = useRuntimeConfig();
-const route = useRoute(); // Hook para pegar a URL atual
+const route = useRoute();
 const siteName = config.public.siteName;
 const { isEnabled } = usePreview();
 
 // --- LÓGICA DE SEÇÃO AUTOMÁTICA ---
 const targetSection = computed(() => {
-  // 1. Se o dev passou a prop, usa ela (Prioridade máxima)
   if (props.section) return props.section;
-
-  // 2. Se não passou, usa o caminho da URL atual
-  // Ex: se estou em /atrativos, vira 'content/atrativos'
-  // Removemos barras duplicadas caso existam
+  // Remove barras duplicadas e define content como base
   const currentPath = route.path === "/" ? "" : route.path;
-  return `content${currentPath}`;
+  return `content${currentPath}`.replace('//', '/');
 });
 
 // --- COMPUTEDS DE AMBIENTE ---
@@ -112,7 +107,7 @@ const timestamp = ref(Date.now());
 
 const queryParams = computed(() => ({
   site: siteName,
-  section: targetSection.value, // USA A SEÇÃO CALCULADA
+  section: targetSection.value,
   mode: isDiskMode.value ? "preview" : "production",
   t: timestamp.value,
   nocache: 1,
@@ -128,7 +123,7 @@ const {
   query: queryParams,
   transform: (response) => (Array.isArray(response) ? response : []),
   default: () => [],
-  watch: [targetSection, isDiskMode], // REAGE SE A ROTA MUDAR
+  watch: [targetSection, isDiskMode],
 });
 
 const forceRefresh = () => {
@@ -138,64 +133,109 @@ const forceRefresh = () => {
 
 const loading = computed(() => status.value === "pending");
 
-// --- TRATAMENTO DE IMAGEM QUEBRADA ---
-const onImageError = (event) => {
-  if (
-    props.fallbackImage &&
-    event.target.src.indexOf(props.fallbackImage) === -1
-  ) {
-    event.target.src = props.fallbackImage;
-  } else {
-    event.target.style.display = "none";
-    const placeholder =
-      event.target.parentElement.querySelector(".placeholder");
-    if (placeholder) placeholder.style.display = "flex";
-  }
+// --- HELPER: RESOLVE ASSETS URL (NOVO) ---
+const resolveSmartImage = (itemPath, imgName) => {
+  if (!imgName) return props.fallbackImage;
+  // Se já for link externo ou absoluto da public
+  if (imgName.startsWith('http') || imgName.startsWith('/')) return imgName;
+
+  // Se for local (apenas nome do arquivo), precisamos montar o caminho
+  // itemPath vem como: "content/atrativos/bistro/_index.md"
+  
+  // 1. Remove o nome do arquivo para pegar a pasta pai
+  let folderPath = itemPath.substring(0, itemPath.lastIndexOf('/'));
+  
+  // 2. Remove o prefixo 'content/' pois a rota /assets/ assume base no content
+  folderPath = folderPath.replace(/^content\//, '').replace(/^content/, '');
+  
+  // 3. Retorna URL do Túnel
+  return `/assets/${folderPath}/${imgName}`.replace('//', '/');
 };
 
-// --- LÓGICA DE AGRUPAMENTO ---
+// --- HELPER: LIMPA O LINK PARA NAVEGAÇÃO ---
+const resolveLink = (itemPath) => {
+  // De: content/atrativos/bistro/_index.md
+  // Para: /atrativos/bistro
+  return itemPath
+    .replace(/^content/, '')
+    .replace('/_index.md', '')
+    .replace('/index', '')
+    .replace('/index.md', '')
+    .replace('.md', '');
+};
+
+// --- LÓGICA DE PROCESSAMENTO E AGRUPAMENTO ---
 const displayedItems = computed(() => {
   const rawItems = items.value || [];
 
+  // MODO 1: Lista Plana (Transforma URLs de imagem e Links)
   if (!props.subfolders) {
-    return rawItems.slice(0, props.limit);
+    return rawItems.slice(0, props.limit).map(item => ({
+      ...item,
+      // Garante que a imagem use o túnel de assets se for local
+      image: resolveSmartImage(item.path, item.image),
+      // Garante que o link (_path) seja limpo para navegação Nuxt
+      path: resolveLink(item.path),
+      _path: resolveLink(item.path)
+    }));
   }
 
+  // MODO 2: Agrupamento por Pastas (Subfolders = true)
   const foldersMap = {};
 
   rawItems.forEach((item) => {
-    // Usa targetSection ao invés de props.section
+    // Calcula caminho relativo à seção atual
     let relativePath = item.path.replace(targetSection.value, "");
     if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
     const parts = relativePath.split("/");
 
     if (parts.length > 0) {
       const folderName = parts[0];
+      // Ignora arquivos soltos na raiz da seção ou arquivos ocultos
       if (!folderName || folderName.includes(".")) return;
 
       if (!foldersMap[folderName]) {
+        // Cria a entrada da pasta
         foldersMap[folderName] = {
           title:
             folderName.charAt(0).toUpperCase() +
             folderName.slice(1).replace(/-/g, " "),
-          path: `${targetSection.value}/${folderName}`.replace("//", "/"),
-          image: item.image,
+          // O link da pasta é: seção_atual + / + nome_pasta
+          _path: `${targetSection.value}/${folderName}`.replace(/^content/, '').replace("//", "/").replace("/index",""),
+          // Usa a imagem do primeiro item encontrado como capa, processada
+          image: resolveSmartImage(item.path, item.image),
           isFolder: true,
           count: 1,
         };
       } else {
         foldersMap[folderName].count++;
+        // Opcional: Se a pasta já existe mas não tinha imagem, tenta pegar deste item
+        if (!foldersMap[folderName].image || foldersMap[folderName].image === props.fallbackImage) {
+           foldersMap[folderName].image = resolveSmartImage(item.path, item.image);
+        }
       }
     }
   });
 
   return Object.values(foldersMap).slice(0, props.limit);
 });
+
+// --- TRATAMENTO DE IMAGEM QUEBRADA ---
+const onImageError = (event) => {
+  if (props.fallbackImage && event.target.src.indexOf(props.fallbackImage) === -1) {
+    event.target.src = props.fallbackImage;
+  } else {
+    event.target.style.display = "none";
+    const placeholder = event.target.parentElement.querySelector(".placeholder");
+    if (placeholder) placeholder.style.display = "flex";
+  }
+};
 </script>
 
 <template>
   <div class="list-container">
     <h3 v-if="title" class="list-title"><i :class="icon"></i> {{ title }}</h3>
+    
     <div
       v-if="loading && items.length === 0"
       class="w-full h-20 flex items-center justify-center text-gray-400"
@@ -219,7 +259,7 @@ const displayedItems = computed(() => {
     </div>
 
     <div v-else class="fade-in">
-   
+  
       <ListfilesGrid 
         v-if="view === 'grid'" 
         :items="displayedItems" 
@@ -283,7 +323,7 @@ const displayedItems = computed(() => {
   margin-bottom: 30px;
 }
 
-/* CARD GERAL */
+/* --- ESTILOS COMPARTILHADOS QUE PODEM SER USADOS PELOS SUB-COMPONENTES SE NECESSÁRIO --- */
 .custom-card {
   text-decoration: none;
   color: inherit;
@@ -291,10 +331,7 @@ const displayedItems = computed(() => {
   border-radius: v-bind("viewConfig.card_border_radius");
   overflow: hidden;
   background: #fdfdfd;
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s,
-    border-color 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   display: flex;
   padding: 0;
   width: v-bind("viewConfig.card_width");
@@ -306,193 +343,15 @@ const displayedItems = computed(() => {
   border-color: #cbd5e1;
 }
 
-/* IMAGENS E PLACEHOLDERS */
-.folder-overlay {
-  position: absolute;
-  top: 0;
-  right: 0;
-  z-index: 10;
-  background: rgba(0, 0, 0, 0.4);
-  padding: 8px;
-  border-bottom-left-radius: 12px;
-  backdrop-filter: blur(2px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-img,
-.fallback-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.5s ease;
-  display: block;
-  margin: 0;
-  padding: 0;
-}
-
-.custom-card:hover img {
-  transform: scale(1.05);
-}
-
 .placeholder {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0;
-  padding: 0;
-}
-
-/* --- FUNDO AZUL ESCURO PARA PLACEHOLDERS --- */
-.bg-dark-blue {
   background-color: #1e293b;
-  transition: background-color 0.3s ease;
 }
 
-.group:hover .bg-dark-blue {
-  background-color: #334155;
-}
-
-.hidden {
-  display: none !important;
-}
-
-/* === GRID VIEW === */
-.custom-grid {
-  display: grid;
-  grid-template-columns: repeat(v-bind("viewConfig.columns"), 1fr);
-  gap: v-bind("viewConfig.gap");
-  width: 100%;
-  margin-top: 0;
-}
-
-.grid-card {
-  flex-direction: column;
-}
-
-.grid-card .card-image-wrapper {
-  width: 100%;
-  aspect-ratio: v-bind("viewConfig.card_img_aspectratio");
-  overflow: hidden;
-  position: relative;
-  background: #1e293b;
-  margin: 0;
-  padding: 0;
-  display: block;
-}
-
-.grid-card .card-image-wrapper img {
-  object-fit: v-bind("viewConfig.card_img_object_fit");
-}
-
-.grid-card .card-content {
-  padding: v-bind("viewConfig.card_padding");
-}
-
-.grid-card .card-content h2 {
-  color: v-bind("viewConfig.title_color");
-  font-size: v-bind("viewConfig.title_size");
-  font-weight: v-bind("viewConfig.title_weight");
-  margin: 0;
-  line-height: 1.3;
-}
-
-/* === LIST VIEW === */
-.custom-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  width: 100%;
-  margin-top: 0;
-}
-
-.list-card {
-  flex-direction: row;
-  height: v-bind("viewConfig.list_card_height");
-}
-
-.list-image-wrapper {
-  height: 100%;
-  aspect-ratio: v-bind("viewConfig.list_img_aspectratio");
-  flex-shrink: 0;
-  position: relative;
-  overflow: hidden;
-  background: #1e293b;
-  margin: 0;
-  padding: 0;
-}
-
-.list-content {
-  padding: 15px 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  flex-grow: 1;
-}
-
-.list-content h4 {
-  margin: 0 0 8px 0;
-  font-size: 1.25rem;
-  font-weight: bold;
-  color: #333;
-}
-
-.list-content .excerpt {
-  margin: 0;
-  color: #666;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.read-more {
-  margin-top: auto;
-  color: #d1b253;
-  font-weight: 700;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding-top: 10px;
-}
-
-/* RESPONSIVIDADE */
-@media (max-width: 1024px) {
-  .custom-grid {
-    grid-template-columns: repeat(3, 1fr) !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .custom-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px;
-  }
-
-  .list-card {
-    flex-direction: column;
-    height: auto;
-  }
-
-  .list-image-wrapper {
-    width: 100%;
-    aspect-ratio: 16/9;
-  }
-
-  .list-content {
-    padding: 15px;
-  }
-}
-
-@media (max-width: 480px) {
-  .custom-grid {
-    grid-template-columns: 1fr !important;
-  }
-}
-
+/* Helpers */
+.hidden { display: none !important; }
 </style>

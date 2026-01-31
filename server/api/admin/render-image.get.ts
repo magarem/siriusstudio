@@ -1,7 +1,8 @@
-import { readFileSync, existsSync } from 'node:fs';
-import { resolve, join, extname } from 'node:path';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { resolve, join, extname, normalize } from 'node:path';
 
 export default defineEventHandler(async (event) => {
+  const config = useRuntimeConfig();
   const query = getQuery(event);
   const { site, file } = query;
 
@@ -9,16 +10,39 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Parâmetros ausentes' });
   }
 
-  // Caminho absoluto para a pasta de imagens no storage
-  const APPS_ROOT = resolve(process.cwd(), '..');
-  const filePath = join(APPS_ROOT, 'storage', site as string, 'images', file as string);
+  // 1. Define a raiz do armazenamento (igual aos outros endpoints)
+  const APPS_ROOT = config.storagePath 
+    ? resolve(config.storagePath) 
+    : process.cwd();
 
-  console.log('Buscando imagem em:', filePath);
-  if (!existsSync(filePath)) {
+  // 2. Define a raiz do Site
+  const siteRoot = join(APPS_ROOT, 'storage', String(site));
+
+  // 3. Limpa o caminho do arquivo recebido
+  // Remove barras iniciais e previne navegação maliciosa (../)
+  let cleanFile = String(file).replace(/^\/+/, '').replace(/\.\.\//g, '');
+  
+  // Opcional: Se o frontend mandar "routes/assets/...", limpamos para pegar o caminho físico
+  if (cleanFile.startsWith('routes/assets/')) {
+      cleanFile = cleanFile.replace('routes/assets/', 'content/');
+  }
+
+  // 4. Monta o caminho absoluto
+  // A diferença principal: removemos o hardcode 'images' do join
+  const filePath = resolve(siteRoot, cleanFile);
+
+  // 5. Segurança: Garante que o arquivo ainda está dentro da pasta do site (Jail)
+  if (!filePath.startsWith(siteRoot)) {
+      throw createError({ statusCode: 403, statusMessage: 'Acesso negado: Caminho inválido.' });
+  }
+
+  console.log('Renderizando imagem:', filePath);
+
+  if (!existsSync(filePath) || !statSync(filePath).isFile()) {
     throw createError({ statusCode: 404, statusMessage: 'Imagem não encontrada' });
   }
 
-  // Detectar a extensão para definir o Content-Type (png, jpg, webp, etc)
+  // 6. Define o Mime Type
   const ext = extname(filePath).toLowerCase();
   const mimeTypes: Record<string, string> = {
     '.png': 'image/png',
@@ -26,11 +50,15 @@ export default defineEventHandler(async (event) => {
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',
     '.webp': 'image/webp',
-    '.svg': 'image/svg+xml'
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.bmp': 'image/bmp'
   };
 
   setResponseHeader(event, 'Content-Type', mimeTypes[ext] || 'application/octet-stream');
   
-  // Retorna o buffer da imagem
+  // Cache Control para performance no editor (Opcional)
+  setResponseHeader(event, 'Cache-Control', 'public, max-age=3600');
+
   return readFileSync(filePath);
 });
