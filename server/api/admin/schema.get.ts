@@ -4,10 +4,10 @@ import { resolve, join } from 'node:path';
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
-  const { site, folder } = getQuery(event)
+  const { site, schema } = getQuery(event)
   
   // Validação básica de segurança
-  if (!site || !folder) {
+  if (!site || !schema) {
     return { types: {}, mapping: {} }
   }
 
@@ -19,7 +19,8 @@ export default defineEventHandler(async (event) => {
   console.log('APPS_ROOT definido como:', APPS_ROOT);
 
   // const schemaPath = path.join(APPS_ROOT, 'storage', String(site), String(folder), '_schema.json')
-  const schemaPath = path.join(APPS_ROOT, 'storage', String(site),'content', '_schema.json')
+  // const schemaPath = path.join(APPS_ROOT, 'storage', String(site),'content', '_schema.json')
+  const schemaPath = path.join(APPS_ROOT, 'storage', String(site),'content', '_schemas', schema + '.json')
 
 console.log('schemaPath:', schemaPath);
   try {

@@ -12,24 +12,13 @@ const emit = defineEmits(['update:content', 'open-image', 'toggle-raw']);
 
 const textareaRef = ref(null);
 
-// O v-model do textarea usa essa computada para ler e escrever
+// Computada para v-model (bidirecional)
 const localContent = computed({
-  get() {
-    return props.content;
-  },
-  set(newValue) {
-    emit('update:content', newValue);
-  }
+  get() { return props.content; },
+  set(newValue) { emit('update:content', newValue); }
 });
 
-// --- LÓGICA DE INSERÇÃO DE MARKDOWN ---
-
-/**
- * Envolve o texto selecionado ou insere a sintaxe no cursor
- * @param {String} prefix - O que vem antes (ex: "**")
- * @param {String} suffix - O que vem depois (ex: "**")
- * @param {String} placeholder - Texto padrão se nada estiver selecionado
- */
+// --- HELPER: Inserir Texto ---
 const insertFormat = (prefix, suffix = '', placeholder = 'texto') => {
   const el = textareaRef.value;
   if (!el) return;
@@ -38,99 +27,89 @@ const insertFormat = (prefix, suffix = '', placeholder = 'texto') => {
   const end = el.selectionEnd;
   const text = el.value;
 
-  // Pega o texto selecionado ou usa o placeholder
   const selection = text.substring(start, end) || placeholder;
-  
-  // Monta o novo texto
   const insertion = prefix + selection + suffix;
   const newText = text.substring(0, start) + insertion + text.substring(end);
 
-  // Atualiza o valor
   emit('update:content', newText);
 
-  // Recoloca o foco e a seleção (após o Vue atualizar o DOM)
   nextTick(() => {
     el.focus();
-    // Se tinha seleção, seleciona o texto de dentro. Se não, seleciona o placeholder.
     const newCursorStart = start + prefix.length;
     const newCursorEnd = newCursorStart + selection.length;
     el.setSelectionRange(newCursorStart, newCursorEnd);
   });
 };
 
-/**
- * Insere bloco no início da linha (ex: Listas, Títulos)
- */
-const insertBlock = (prefix) => {
-    const el = textareaRef.value;
-    if (!el) return;
-    
-    // Simplificado: Apenas insere na posição do cursor
-    // Uma implementação mais robusta buscaria o início da linha atual
-    insertFormat(prefix, '', 'Item');
-}
+// --- HELPER: Tecla TAB (Essencial) ---
+const handleTab = (e) => {
+  const textarea = e.target;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
 
-// Ações dos botões
+  // Insere 2 espaços
+  const newValue = localContent.value.substring(0, start) + "  " + localContent.value.substring(end);
+  emit('update:content', newValue);
+
+  nextTick(() => {
+    textarea.selectionStart = textarea.selectionEnd = start + 2;
+  });
+};
+
+// --- AÇÕES DO TOOLBAR ---
 const actions = [
-  { icon: 'pi pi-bold', title: 'Negrito (Ctrl+B)', action: () => insertFormat('**', '**', 'negrito') },
-  { icon: 'pi pi-italic', title: 'Itálico (Ctrl+I)', action: () => insertFormat('*', '*', 'itálico') },
-  { icon: 'pi pi-at', title: 'Riscado', action: () => insertFormat('~~', '~~', 'riscado') },
+  { icon: 'pi pi-bold', title: 'Negrito', action: () => insertFormat('**', '**', 'negrito') },
+  { icon: 'pi pi-italic', title: 'Itálico', action: () => insertFormat('*', '*', 'itálico') },
   { separator: true },
   { label: 'H1', title: 'Título 1', action: () => insertFormat('# ', '', 'Título') },
   { label: 'H2', title: 'Título 2', action: () => insertFormat('## ', '', 'Título') },
   { label: 'H3', title: 'Título 3', action: () => insertFormat('### ', '', 'Título') },
   { separator: true },
-  { icon: 'pi pi-list', title: 'Lista com pontos', action: () => insertFormat('- ', '', 'Item') },
-  { icon: 'pi pi-list-check', title: 'Lista Check', action: () => insertFormat('- [ ] ', '', 'Tarefa') },
+  { icon: 'pi pi-list', title: 'Lista', action: () => insertFormat('- ', '', 'Item') },
+  { icon: 'pi pi-check-square', title: 'Tarefa', action: () => insertFormat('- [ ] ', '', 'Tarefa') },
   { separator: true },
   { icon: 'pi pi-link', title: 'Link', action: () => insertFormat('[', '](url)', 'texto link') },
-  { icon: 'pi pi-code', title: 'Bloco de Código', action: () => insertFormat('```\n', '\n```', 'código') },
-  { icon: 'pi pi-align-left', title: 'Citação', action: () => insertFormat('> ', '', 'citação') },
+  { icon: 'pi pi-code', title: 'Código', action: () => insertFormat('```\n', '\n```', 'código') },
   { separator: true },
-  // A imagem chama o evento externo do seu sistema
   { icon: 'pi pi-image', title: 'Inserir Imagem', action: () => emit('open-image') },
 ];
-
 </script>
 
 <template>
-  <main class="bg-[#141b18] rounded-[0.5vw] border border-white/5 flex flex-col overflow-hidden shadow-2xl relative h-full group">
+  <div class="flex flex-col h-full w-full bg-[#0a0f0d] relative group">
     
-    <div class="flex items-center gap-1 p-2 bg-[#1a2320] border-b border-white/5 overflow-x-auto custom-scrollbar shrink-0 select-none">
-        
+    <div class="flex items-center gap-1 p-2 bg-[#141b18] border-b border-white/5 overflow-x-auto custom-scrollbar shrink-0 select-none z-10">
         <template v-for="(btn, idx) in actions" :key="idx">
-            
             <div v-if="btn.separator" class="w-[1px] h-5 bg-white/10 mx-1"></div>
-
             <button 
                 v-else
                 @click="btn.action"
                 :title="btn.title"
-                class="flex items-center justify-center min-w-[28px] h-[28px] px-2 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                type="button"
+                class="flex items-center justify-center min-w-[28px] h-[28px] px-2 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors focus:outline-none"
             >
                 <i v-if="btn.icon" :class="[btn.icon, 'text-[14px]']"></i>
-                
                 <span v-if="btn.label" class="text-[12px] font-bold font-mono">{{ btn.label }}</span>
             </button>
-
         </template>
     </div>
 
-    <div class="flex-1 relative overflow-hidden bg-[#0f1211]">
+    <div class="flex-1 relative overflow-hidden bg-[#0a0f0d] min-h-0">
         <textarea 
             ref="textareaRef"
-            v-model="localContent" 
-            class="w-full h-full p-7 bg-transparent text-indigo-50 font-mono text-[14px] leading-[1.8] outline-none resize-none custom-scrollbar selection:bg-[#6f942e]/30" 
+            v-model="localContent"
+            @keydown.tab.prevent="handleTab"
+            class="w-full h-full p-6 bg-transparent text-slate-200 font-mono text-[14px] leading-[1.8] outline-none resize-none custom-scrollbar selection:bg-[#6f942e]/30 placeholder-white/10"
             spellcheck="false" 
-            placeholder="Comece a escrever seu conteúdo..."
+            placeholder="Comece a escrever seu conteúdo markdown..."
         ></textarea>
     </div>
 
-  </main>
+  </div>
 </template>
 
 <style scoped>
-/* Scrollbar fina para o toolbar e textarea */
+/* Scrollbar fina */
 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.1); border-radius: 10px; }

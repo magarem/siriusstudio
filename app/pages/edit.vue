@@ -274,7 +274,6 @@ const handleMessageFromPreview = (event) => {
 
 const navigate = {
   enterFolder: (f) => { 
-    alert(f);
     currentSidebarFolder.value = `${currentSidebarFolder.value}/${f}`; 
   },
   goBack: () => {
@@ -282,21 +281,38 @@ const navigate = {
     if (parts.length > 1) { parts.pop(); currentSidebarFolder.value = parts.join("/"); }
   },
   selectFile: (path) => {
-    // Normaliza caminho
+    // 1. Normaliza o caminho completo
     const fullPath = path.startsWith("content") || path.includes("/") 
         ? path 
         : `${currentSidebarFolder.value}/${path}`;
     
     currentFile.value = fullPath;
     
-    // Atualiza a sidebar para mostrar a pasta do arquivo (UX)
-    const folderOfFile = fullPath.substring(0, fullPath.lastIndexOf("/"));
-    if (folderOfFile) currentSidebarFolder.value = folderOfFile;
+    // 2. Descobre a pasta onde o arquivo mora
+    // Ex: "content/blog/_index.md" -> "content/blog"
+    const fileFolder = fullPath.substring(0, fullPath.lastIndexOf("/"));
+    
+    // 3. Lógica de Decisão da Sidebar (O Pulo do Gato 🐱)
+    
+    // CASO A: Cliquei em "Página principal" ou num arquivo solto da lista atual
+    if (fileFolder === currentSidebarFolder.value) {
+        // NÃO FAZ NADA com a sidebar. 
+        // Eu já estou vendo a pasta certa. Isso corrige o bug de subir diretório.
+    } 
+    // CASO B: Cliquei numa pasta da lista (é um _index de subpasta)
+    else if ((fullPath.endsWith('/_index.md') || fullPath.endsWith('/index.md')) && fileFolder.startsWith(currentSidebarFolder.value)) {
+        // NÃO FAZ NADA. 
+        // Mantém a sidebar na lista pai para não "entrar" na pasta com um clique só.
+    }
+    // CASO C: Link externo ou navegação profunda
+    else {
+        // Só muda a sidebar se for realmente necessário
+        currentSidebarFolder.value = fileFolder;
+    }
 
-    // Atualiza URL
+    // 4. Atualiza URL e reseta visual
     window.history.pushState({}, "", `?file=${fullPath}`);
-    // showSidebar.value = false; // Fecha sidebar no mobile
-    showRawMode.value = false; // Reseta modo visual
+    showRawMode.value = false; 
   },
   changeRoot: (r) => { currentSidebarFolder.value = r; },
   toDashboard: () => {
@@ -455,12 +471,12 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#0a0f0d] text-slate-200 font-sans selection:bg-[#6f942e]/30 flex flex-col">
+  <div class="flex h-screen w-full bg-[#0a0f0d] text-slate-200 font-sans selection:bg-[#6f942e]/30 overflow-hidden">
     <Toast />
 
     <AdminSidebar
       :site-context="siteContext"
-      v-model:visible="showSidebar"
+      :visible="showSidebar"
       :files="sortedFiles"
       :current-folder="currentSidebarFolder"
       :current-file="currentFile"
@@ -471,74 +487,78 @@ onUnmounted(() => window.removeEventListener("keydown", handleKeydown));
       @change-root="navigate.changeRoot"
       @create-file="createActions.openFile"
       @create-folder="createActions.openFolder"
+      @update:visible="(val) => showSidebar = val"
     />
 
-    <AdminTopbar
-      :site-context="siteContext"
-      :site-url="userSiteUrl"
-      :current-folder="editorCtxFolder"
-      :current-file="currentFileNameOnly"
-      :loading-save="loadingSave"
-      :loading-publish="loadingPublish"
-      @toggle-sidebar="showSidebar = true"
-      @save="saveFile"
-      @publish="handlePublish"
-      @preview="handlePreview"
-      @logout="logout"
-      @open-media="imageActions.open()"
-      @go-dashboard="navigate.toDashboard"
-      @open-backup="showBackupModal = true"
-    />
-
-    <div class="flex-1 p-4 md:p-6 max-w-[1700px] mx-auto w-full">
+    <div class="flex-1 flex flex-col min-w-0 overflow-hidden relative transition-all duration-300">
       
-      <div v-if="currentFile" class="flex flex-col h-[calc(100vh-120px)]">
+      <AdminTopbar
+        :site-context="siteContext"
+        :site-url="userSiteUrl"
+        :current-folder="editorCtxFolder"
+        :current-file="currentFileNameOnly"
+        :loading-save="loadingSave"
+        :loading-publish="loadingPublish"
+        @toggle-sidebar="showSidebar = !showSidebar"
+        @save="saveFile"
+        @publish="handlePublish"
+        @preview="handlePreview"
+        @logout="logout"
+        @open-media="imageActions.open()"
+        @go-dashboard="navigate.toDashboard"
+        @open-backup="showBackupModal = true"
+      />
+
+      <main class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-1 w-full max-w-[1700px] mx-auto">
         
-        <FileToolbar
-          :filename="currentFileNameOnly"
-          :filepath="currentFile"
-          :is-raw="showRawMode"
-          :show-meta="showMetaSidebar"
-          :all-folders="allFolders || []"
-          @rename="handleFileToolbarActions.rename"
-          @move="handleFileToolbarActions.move"
-          @delete="handleFileToolbarActions.delete"
-          @toggle-raw="showRawMode = !showRawMode"
-          @media="imageActions.open()"
-          @navigate-file="(path) => navigate.selectFile(path)"
-          @toggle-meta="showMetaSidebar = !showMetaSidebar"
-        />
-
-        <RawEditor
-            v-if="showRawMode"
-            v-model="rawContent"
-        />
-
-        <VisualSplitEditor
-            v-else
-            :frontmatter="form.frontmatter"
-            :content="form.content"
-            @update:content="form.content = $event"
-            :fields="currentModel.fields"
-            :site-context="siteContext"
-            :current-folder="editorCtxFolder"
-            :current-file="currentFile"
+        <div v-if="currentFile" class="flex flex-col min-h-full">
+          
+          <FileToolbar
+            :filename="currentFileNameOnly"
+            :filepath="currentFile"
+            :is-raw="showRawMode"
             :show-meta="showMetaSidebar"
-            @open-image="imageActions.open"
-        />
-      </div>
+            :all-folders="allFolders || []"
+            @rename="handleFileToolbarActions.rename"
+            @move="handleFileToolbarActions.move"
+            @delete="handleFileToolbarActions.delete"
+            @toggle-raw="showRawMode = !showRawMode"
+            @media="imageActions.open()"
+            @navigate-file="(path) => navigate.selectFile(path)"
+            @toggle-meta="showMetaSidebar = !showMetaSidebar"
+          />
 
-      <div v-else class="h-[calc(100vh-120px)] w-full">
-        <DashboardHome
-          :site-context="siteContext"
-          :current-folder="currentSidebarFolder"
-          :files="sortedFiles"
-          @navigate="(path) => { if (path.endsWith('.md')) navigate.selectFile(path); else navigate.enterFolder(path); }"
-          @create-file="createActions.openFile"
-          @open-media="imageActions.open()"
-          @publish="handlePublish"
-        />
-      </div>
+          <RawEditor
+              v-if="showRawMode"
+              v-model="rawContent"
+          />
+
+          <VisualSplitEditor
+              v-else
+              :frontmatter="form.frontmatter"
+              :content="form.content"
+              @update:content="form.content = $event"
+              :fields="currentModel.fields"
+              :site-context="siteContext"
+              :current-folder="editorCtxFolder"
+              :current-file="currentFile"
+              :show-meta="showMetaSidebar"
+              @open-image="imageActions.open"
+          />
+        </div>
+
+        <div v-else class="h-full w-full">
+          <DashboardHome
+            :site-context="siteContext"
+            :current-folder="currentSidebarFolder"
+            :files="sortedFiles"
+            @navigate="(path) => { if (path.endsWith('.md')) navigate.selectFile(path); else navigate.enterFolder(path); }"
+            @create-file="createActions.openFile"
+            @open-media="imageActions.open()"
+            @publish="handlePublish"
+          />
+        </div>
+      </main>
     </div>
 
     <CreateFileModal
