@@ -14,12 +14,46 @@ import CreateFolderModal from "~/components/admin/modals/CreateFolder.vue";
 const siteContext = useCookie("cms_site_context");
 const toast = useToast();
 
+const settingsMenu = ref(); // Referência para o componente Menu
+
+const markdownEditorRef = ref(null);
+
 // --- MODAIS ---
 const showCreateModal = ref(false);
 const showFolderModal = ref(false);
 const showBackupModal = ref(false);
 
 definePageMeta({ layout: "" }); 
+
+const settingsItems = ref([
+    {
+        label: 'SISTEMA',
+        items: [
+            {
+                label: 'Ponto de Restauração',
+                icon: 'pi pi-history',
+                command: () => { showBackupModal.value = true; }
+            },
+            {
+                label: 'Recompilar Site (Deploy)',
+                icon: 'pi pi-cloud-upload',
+                command: () => handlePublish() // Reutilizando sua função existente
+            }
+        ]
+    },
+    {
+        separator: true
+    },
+    {
+        label: 'Logout',
+        icon: 'pi pi-sign-out',
+        command: () => { /* Lógica de logout futura */ }
+    }
+]);
+
+const toggleSettings = (event) => {
+    settingsMenu.value.toggle(event);
+};
 
 // =============================================================================
 // 1. CONFIGURAÇÕES GERAIS
@@ -53,7 +87,7 @@ const previewWindow = ref(null);
 
 const handlePreview = () => {
   if (!userSiteUrl.value) {
-    toast.add({ severity: "warn", summary: "Sem URL", detail: 'Configure a "url" no _config.json', life: 3000 });
+    toast.add({ severity: "warn", summary: "Sem URL", detail: 'Configure a "url" no _config.json', life: 2000 });
     return;
   }
 
@@ -176,7 +210,13 @@ const imageActions = {
   handleSelect: (finalPath) => {
     const t = imageTarget.value;
     if (t.mode === "markdown") {
-        fileData.value.content += `\n![](${finalPath})`;
+        // Em vez de concatenar no fim, chamamos o método do filho
+        if (markdownEditorRef.value) {
+            markdownEditorRef.value.insertAtCursor(`![](${finalPath})`);
+        } else {
+            // Fallback caso ref não exista (raro)
+            fileData.value.content += `\n![](${finalPath})`;
+        }
     } else if (t.mode === "set") {
         t.obj[t.key] = finalPath;
     } else if (t.mode === "push") {
@@ -309,7 +349,7 @@ const saveFile = async () => {
         const folder = currentFile.value.substring(0, currentFile.value.lastIndexOf("/"));
         const filename = currentFile.value.split("/").pop();
         await $fetch("/api/admin/storage", { method: "POST", body: { site: siteContext.value, folder, file: filename, content: finalContent } });
-        toast.add({ severity: "success", summary: "Salvo com sucesso!" });
+        toast.add({ severity: "success", summary: "Salvo com sucesso!", life: 1000 });
     } catch (e) { toast.add({ severity: "error", summary: "Erro ao salvar" }); }
 };
 
@@ -333,13 +373,13 @@ const handlePublish = async () => {
     });
 
     if (result.success) {
-        toast.add({ severity: "success", summary: "Sucesso!", detail: "Site publicado e atualizado.", life: 4000 });
+        toast.add({ severity: "success", summary: "Sucesso!", detail: "Site publicado e atualizado.", life: 2000 });
     } else {
         throw new Error(result.message || "Erro desconhecido ao compilar.");
     }
   } catch (error) {
     console.error(error);
-    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao publicar o site." });
+    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao publicar o site.", life: 2000 });
   } finally {
     loadingPublish.value = false;
   }
@@ -444,33 +484,118 @@ const createActions = {
       await refreshFolders();
   }
 };
+
+const goToBackup = () => {
+  showBackupModal.value = true;
+};
+
+const userMenu = ref();
+
+const userMenuItems = ref([
+    {
+        label: 'Perfil',
+        icon: 'pi pi-user',
+        disabled: true // Desabilitado por enquanto
+    },
+    {
+        separator: true
+    },
+    {
+        label: 'Sair do Sistema',
+        icon: 'pi pi-power-off',
+        class: 'text-red-400', // Destaque visual (opcional, depende do tema do PrimeVue)
+        command: () => handleLogout()
+    }
+]);
+
+// [NOVO] Função de Logout
+const handleLogout = () => {
+    // Limpa o cookie de contexto
+    const cookie = useCookie('cms_site_context');
+    cookie.value = null;
+    
+    // Redireciona (ajuste a rota conforme seu login)
+    navigateTo('/');
+};
+
+const toggleUserMenu = (event) => {
+    userMenu.value.toggle(event);
+};
+
 </script>
 
 <template>
   <div class="h-screen w-screen bg-[#0a0f0d] text-slate-300 flex flex-col overflow-hidden font-sans">
     
-    <Toast />
+<header class="h-14 bg-[#141b18] border-b border-white/5 shrink-0 flex items-center justify-between px-4 z-20 select-none shadow-sm relative overflow-hidden">
+    
+    <div class="flex items-center">
+        
+        <div class="flex items-center gap-2 cursor-default group mr-4">
+            <i class="pi pi-star-fill text-[#6f942e] text-sm group-hover:scale-110 transition-transform duration-300 drop-shadow-[0_0_6px_rgba(111,148,46,0.5)]"></i>
 
-    <header class="h-14 bg-[#141b18] border-b border-white/5 shrink-0 flex items-center px-4 justify-between z-20">
-       <div class="flex items-center gap-2">
-           <div class="font-black text-[#6f942e] text-lg tracking-tighter">SIRIUS <span class="text-white font-light opacity-50">STUDIO</span></div>
-       </div>
-       <div class="flex items-center gap-3">
-            <div class="text-xs font-mono text-zinc-500 bg-black/20 px-2 py-1 rounded border border-white/5">{{ siteContext }}</div>
-            <button class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400"><i class="pi pi-user"></i></button>
-       </div>
-    </header>
+            <div _class="flex flex-col leading-none">
+                <span class="font-black text-slate-200 text-lg tracking-tight group-hover:text-white transition-colors">Sirius</span>
+                <span class="text-[14px] text-[#6f942e]/80 font-bold _tracking-[0.25em] _uppercase group-hover:text-[#6f942e] transition-colors pl-2">Studio</span>
+            </div>
+        </div>
+
+
+        <div 
+            class="flex items-center gap-2 mt-0 px-3 py-0.5 rounded-full bg-[#0a0f0d]/50 border border-white/10 group/ctx hover:border-[#6f942e]/50 transition-colors cursor-default"
+            v-tooltip.bottom="'Site que você está editando'"
+        >
+            <div class="w-1.5 h-1.5 rounded-full bg-[#6f942e] animate-pulse shadow-[0_0_6px_#6f942e]"></div>
+            <span class="text-xs font-mono text-slate-300 font-medium tracking-tight group-hover/ctx:text-white transition-colors">
+                {{ siteContext }}
+            </span>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+        <div class="relative">
+            <button 
+                @click="toggleUserMenu"
+                aria-haspopup="true" 
+                aria-controls="user_menu"
+                class="flex items-center gap-3 pl-3 pr-1 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/5 transition-all group"
+            >
+                <div class="hidden md:flex flex-col items-end leading-none">
+                    <span class="text-[11px] font-bold text-slate-300 group-hover:text-white">Admin</span>
+                </div>
+                <div class="w-8 h-8 rounded-full bg-gradient-to-b from-zinc-700 to-zinc-800 border border-white/10 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
+                    <i class="pi pi-user text-zinc-400 text-xs"></i>
+                </div>
+            </button>
+            <Menu ref="userMenu" id="user_menu" :model="userMenuItems" :popup="true" class="w-48 mt-2" />
+        </div>
+    </div>
+
+</header>
 
     <div class="flex-1 flex flex-row overflow-hidden relative">
       
-      <aside class="w-12 h-full bg-[#050806] border-r border-white/5 flex flex-col items-center py-3 shrink-0 z-30 gap-4">
+      <aside class="w-12 h-full bg-[#141b19] border-r border-white/5 flex flex-col items-center py-3 shrink-0 z-30 gap-4">
          <button @click="showFileManager = !showFileManager" class="w-8 h-8 rounded-md flex items-center justify-center transition-all duration-200 group relative" :class="showFileManager ? 'bg-[#6f942e]/10 text-[#6f942e]' : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5'" title="Explorador">
             <i class="pi pi-folder text-lg"></i>
             <div v-if="showFileManager" class="absolute left-0 top-2 bottom-2 w-[2px] bg-[#6f942e] rounded-r-full"></div>
          </button>
-         <button class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/5"><i class="pi pi-cog text-lg"></i></button>
+         
+      <button 
+    @click="goToBackup" 
+    aria-haspopup="true" 
+    aria-controls="overlay_menu"
+    class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
+    title="Configurações"
+>
+    <i class="pi pi-cog text-lg"></i>
+</button>
+
+<Menu ref="settingsMenu" id="overlay_menu" :model="settingsItems" :popup="true" class="w-64" />
+    <div class="flex-1"></div>
+         
          <div class="flex-1"></div> 
-         <button class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 mb-2"><i class="pi pi-user text-xs"></i></button>
+         <!-- <button class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 mb-2"><i class="pi pi-user text-xs"></i></button> -->
       </aside>
 
       <div 
@@ -550,9 +675,11 @@ const createActions = {
                 
                  <div class="flex-1 flex flex-col bg-[#0a0f0d] min-w-0 h-full relative">
                      <AdminMarkdownEditor 
+                        ref="markdownEditorRef"
                         class="w-full h-full" 
                         :content="fileData.content" 
                         @update:content="fileData.content = $event" 
+                        :site-context="siteContext"
                         :current-folder="currentFolder" 
                         :current-file="currentFile" 
                         @open-image="imageActions.open()"
@@ -598,11 +725,11 @@ const createActions = {
     </div>
 
     <footer class="h-6 bg-[#141b18] border-t border-white/5 shrink-0 flex items-center justify-between px-3 text-[10px] text-slate-500 z-20 font-mono">
-        <div class="flex items-center gap-3">
+        <!-- <div class="flex items-center gap-3">
             <span>READY</span>
             <span v-if="isResizingFrontmatter || isResizingSidebar" class="text-[#6f942e]">RESIZING...</span>
         </div>
-        <div>MARKDOWN</div>
+        <div>MARKDOWN</div> -->
     </footer>
 
 
@@ -646,6 +773,21 @@ const createActions = {
       :current-folder="currentFolder"
       @success="createActions.onFolderCreated"
     />
+
+    <!-- <BackupRestoreModal
+        v-model:visible="showBackupModal"
+        :site-context="siteContext"
+    /> -->
+     <Dialog
+      v-model:visible="showBackupModal"
+      modal
+      header="Gerenciador de pontos de restauração"
+      :style="{ width: '800px', maxWidth: '95vw' }"
+      class="bg-[#141b18]"
+      :dismissableMask="true"
+    >
+      <BackupManager />
+    </Dialog>
   </div>
 </template>
 

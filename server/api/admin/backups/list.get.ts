@@ -4,6 +4,8 @@ import { getCookie } from 'h3'
 
 export default defineEventHandler(async (event) => {
   const siteCookie = getCookie(event, 'cms_site_context')
+
+  console.log('siteCookie:', siteCookie)
   if (!siteCookie) return []
 
   // --- CORREÇÃO DO CAMINHO (Mesma lógica do create) ---

@@ -1,6 +1,6 @@
 <script setup>
 import { useToast } from "primevue/usetoast";
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 
 // --- PROPS & EMITS ---
 const props = defineProps({
@@ -28,6 +28,10 @@ const itemToMove = ref(null);
 
 const showZoom = ref(false);
 const zoomedFileIndex = ref(0);
+
+// --- DRAG AND DROP STATES ---
+const isDragging = ref(false);
+const isUploading = ref(false);
 
 // --- DATA FETCHING ---
 const { data: files, refresh } = await useFetch('/api/admin/storage', {
@@ -62,15 +66,13 @@ const breadcrumbs = computed(() => {
 });
 
 const uploadUrl = computed(() => {
+  // URL usada pelo componente FileUpload do PrimeVue (botão do header)
   return `/api/admin/upload?site=${siteContext.value}&folder=${encodeURIComponent(folder.value)}`;
 });
 
-// --- HELPER DE URL (NOVO) ---
+// --- HELPER DE URL ---
 const getPublicUrl = (fileName) => {
-  // 1. Remove 'content' do início para URLs limpas (já que routes/assets mapeia o content)
   const cleanFolder = folder.value.replace(/^content\/?/, '');
-  
-  // 2. Monta a URL com o prefixo solicitado /routes/assets
   return `/assets/${cleanFolder}/${fileName}`.replace(/\/+/g, '/');
 };
 
@@ -91,16 +93,11 @@ const goBack = () => {
 
 // --- AÇÃO PRINCIPAL: SELECIONAR IMAGEM ---
 const selectImage = (name) => {
-  // LÓGICA INTELIGENTE:
-  // 1. Se estamos na mesma pasta do arquivo editado, usa apenas o nome (Link Relativo - Melhor para Markdown)
   if (folder.value === props.initialFolder) {
       emit('select', name);
-  } 
-  // 2. Se estamos em outra pasta, usa o Link Absoluto com o novo padrão /routes/assets
-  else {
+  } else {
       emit('select', getPublicUrl(name));
   }
-  
   toast.add({ severity: 'success', summary: 'Imagem Selecionada', life: 1000 });
 };
 
@@ -151,13 +148,62 @@ const confirmCreateFolder = async () => {
   }
 };
 
+// Callback do componente FileUpload (Header)
 const onUpload = () => {
   refresh();
   toast.add({ severity: 'success', summary: 'Upload concluído!', life: 2000 });
 };
 
+// --- LÓGICA DE DRAG & DROP ---
+const handleDrop = async (e) => {
+    isDragging.value = false;
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        await uploadDroppedFiles(files);
+    }
+};
+
+const uploadDroppedFiles = async (fileList) => {
+    isUploading.value = true;
+    try {
+        const formData = new FormData();
+        let hasImage = false;
+
+        // Adiciona todos os arquivos válidos ao FormData
+        for (let i = 0; i < fileList.length; i++) {
+            const file = fileList[i];
+            if (file.type.startsWith('image/')) {
+                formData.append('file', file); // A API lê isso como array
+                hasImage = true;
+            }
+        }
+
+        if (!hasImage) {
+            toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens são permitidas.' });
+            return;
+        }
+
+        // Envia para a API usando QUERY STRING para site e folder
+        await $fetch('/api/admin/upload', {
+            method: 'POST',
+            body: formData,
+            params: {
+                site: siteContext.value,
+                folder: folder.value // Envia para a pasta atual do Explorer
+            }
+        });
+
+        toast.add({ severity: 'success', summary: 'Upload concluído', life: 2000 });
+        refresh(); // Atualiza a lista visualmente
+    } catch (e) {
+        console.error(e);
+        toast.add({ severity: 'error', summary: 'Erro no Upload', detail: 'Falha ao enviar arquivos.' });
+    } finally {
+        isUploading.value = false;
+    }
+};
+
 const copyImageUrl = (name) => {
-  // Usa o novo helper para copiar o link completo
   const url = getPublicUrl(name); 
   navigator.clipboard.writeText(url).then(() => {
     toast.add({ severity: 'info', summary: 'Link copiado!', detail: url, life: 2000 });
@@ -178,7 +224,7 @@ const deleteItem = async (fileName, isDir) => {
   }
 };
 
-// --- RENOMEAR ---
+// --- RENOMEAR & MOVER (Mantido Igual) ---
 const openRenameModal = (file) => {
   itemToRename.value = file;
   renameValue.value = file.name;
@@ -206,7 +252,6 @@ const handleRename = async () => {
   }
 };
 
-// --- MOVER ---
 const openMoveModal = (file) => {
   itemToMove.value = file;
   showMove.value = true;
@@ -268,7 +313,6 @@ const handleMove = async (destinationSubFolder) => {
       </div>
 
       <div class="flex items-center gap-3 shrink-0">
-        
         <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
            <Button 
              icon="pi pi-th-large" text rounded size="small"
@@ -283,9 +327,7 @@ const handleMove = async (destinationSubFolder) => {
              @click="viewMode = 'list'" v-tooltip.bottom="'Lista'"
            />
         </div>
-
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-
         <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" v-tooltip.bottom="'Nova Pasta'" />
         
         <div class="relative overflow-hidden group">
@@ -295,14 +337,10 @@ const handleMove = async (destinationSubFolder) => {
               chooseLabel="UPLOAD" class="p-button-sm custom-upload-btn" 
             />
         </div>
-
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-
         <Button 
             icon="pi pi-times" 
-            text 
-            rounded 
-            size="small" 
+            text rounded size="small" 
             @click="$emit('close')" 
             class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" 
             v-tooltip.bottom="'Fechar'"
@@ -310,8 +348,28 @@ const handleMove = async (destinationSubFolder) => {
       </div>
     </header>
 
-    <section class="flex-1 overflow-y-auto custom-scrollbar p-4 content-start relative h-[60vh]">
+    <section 
+        class="flex-1 overflow-y-auto custom-scrollbar p-4 content-start relative h-[60vh]"
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleDrop"
+    >
       
+      <div 
+        v-if="isDragging" 
+        class="absolute inset-0 z-50 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] flex items-center justify-center backdrop-blur-sm m-2 rounded-xl pointer-events-none"
+      >
+        <div class="bg-[#141b18] px-6 py-3 rounded-full border border-[#6f942e] text-[#6f942e] font-bold shadow-xl flex items-center gap-3 animate-bounce">
+            <i class="pi pi-cloud-upload text-xl"></i>
+            SOLTE ARQUIVOS AQUI
+        </div>
+      </div>
+
+      <div v-if="isUploading" class="absolute inset-0 z-50 bg-black/60 flex flex-col items-center justify-center backdrop-blur-sm">
+         <i class="pi pi-spin pi-spinner text-5xl text-[#6f942e] mb-4"></i>
+         <span class="text-white font-mono text-sm tracking-widest animate-pulse">ENVIANDO...</span>
+      </div>
+
       <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div v-for="file in files" :key="file.name" 
              class="bg-[#1a1d1c] p-2 rounded-xl border border-white/5 hover:border-[#6f942e] transition-all group relative overflow-hidden h-40 cursor-pointer"
@@ -377,6 +435,7 @@ const handleMove = async (destinationSubFolder) => {
       <div v-if="files && files.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
         <i class="pi pi-folder-open text-6xl mb-4 text-slate-600"></i>
         <p class="text-sm uppercase tracking-widest text-slate-500 font-bold">Pasta Vazia</p>
+        <p class="text-[10px] text-slate-600 mt-2">Arraste imagens para cá</p>
       </div>
 
     </section>
