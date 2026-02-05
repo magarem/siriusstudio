@@ -38,6 +38,7 @@ const getFieldSummary = (field) => {
 const getImageUrl = (path) => {
   if (!path) return '';
   const cleanPath = path.replace(/^\/images/, ''); 
+  console.log(">>>>", `/assets/${props.currentFolder.replace("content/", "")}/${encodeURIComponent(cleanPath)}`)
   // return `/api/admin/render-image?site=${props.siteContext}&file=${encodeURIComponent(cleanPath)}`;
   return `/assets/${props.currentFolder.replace("content/", "")}/${encodeURIComponent(cleanPath)}`;
 };

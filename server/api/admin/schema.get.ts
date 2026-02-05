@@ -6,6 +6,8 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const { site, schema } = getQuery(event)
   
+
+  console.log('Received site:', site);
   // Validação básica de segurança
   if (!site || !schema) {
     return { types: {}, mapping: {} }

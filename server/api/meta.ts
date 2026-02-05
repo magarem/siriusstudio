@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join } from 'node:path';
 
-const DATA_ROOT = resolve(process.cwd(), 'server/data');
+const DATA_ROOT = resolve(process.cwd(), 'data');
 
 export default defineEventHandler(async (event) => {
   try {

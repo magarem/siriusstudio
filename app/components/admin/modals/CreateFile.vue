@@ -140,6 +140,7 @@ const handleCreate = async () => {
         </div>
 
         <div v-else class="max-h-48 overflow-y-auto custom-scrollbar border border-white/5 rounded p-1 bg-black/20">
+         
           <div
             v-for="s in availableSchemas"
             :key="s.key"

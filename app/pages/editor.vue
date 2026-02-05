@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, triggerRef, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useToast } from "primevue/usetoast";
 import yaml from "js-yaml";
 
@@ -14,8 +14,7 @@ import CreateFolderModal from "~/components/admin/modals/CreateFolder.vue";
 const siteContext = useCookie("cms_site_context");
 const toast = useToast();
 
-const settingsMenu = ref(); // Referência para o componente Menu
-
+const settingsMenu = ref(); 
 const markdownEditorRef = ref(null);
 
 // --- MODAIS ---
@@ -25,6 +24,26 @@ const showBackupModal = ref(false);
 
 definePageMeta({ layout: "" }); 
 
+// =============================================================================
+// 0. COMPUTEDS AUXILIARES
+// =============================================================================
+const currentFile = ref(""); 
+const currentFolder = ref("content");
+const fileData = ref({ frontmatter: {}, content: "" }); 
+const fmSchema = ref("default");
+
+// Identifica se é arquivo "crú" (YAML/TOML) ou Markdown
+const isRawFile = computed(() => {
+    if (!currentFile.value) return false;
+    const lower = currentFile.value.toLowerCase();
+    return lower.endsWith('.yml') || 
+           lower.endsWith('.yaml') || 
+           lower.endsWith('.toml');
+});
+
+// =============================================================================
+// 1. CONFIGURAÇÕES GERAIS
+// =============================================================================
 const settingsItems = ref([
     {
         label: 'SISTEMA',
@@ -37,13 +56,11 @@ const settingsItems = ref([
             {
                 label: 'Recompilar Site (Deploy)',
                 icon: 'pi pi-cloud-upload',
-                command: () => handlePublish() // Reutilizando sua função existente
+                command: () => handlePublish() 
             }
         ]
     },
-    {
-        separator: true
-    },
+    { separator: true },
     {
         label: 'Logout',
         icon: 'pi pi-sign-out',
@@ -55,9 +72,6 @@ const toggleSettings = (event) => {
     settingsMenu.value.toggle(event);
 };
 
-// =============================================================================
-// 1. CONFIGURAÇÕES GERAIS
-// =============================================================================
 const showFileManager = ref(true);
 
 const { data: configFileData } = await useFetch("/api/admin/storage", {
@@ -72,16 +86,160 @@ const userSiteUrl = computed(() => {
   } catch (e) { return ""; }
 });
 
+// =============================================================================
+// 2. PARSE E NAVEGAÇÃO
+// =============================================================================
+
+// Função Parse atualizada para suportar Raw Files
+const parseFile = (fullText, filename = "") => {
+  if (!fullText) return { frontmatter: {}, content: "" };
+  const normalized = fullText.replace(/\r\n/g, "\n");
+  const lower = filename.toLowerCase();
+
+  const isRaw = lower.endsWith('.yml') || 
+                lower.endsWith('.yaml') || 
+                lower.endsWith('.toml');
+  
+  if (isRaw) {
+      return { frontmatter: {}, content: normalized, isRaw: true };
+  }
+
+  const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (match) {
+    try { return { frontmatter: yaml.load(match[1]) || {}, content: match[2].trim() }; } 
+    catch (e) { return { frontmatter: {}, content: normalized }; }
+  }
+  return { frontmatter: {}, content: normalized };
+};
+
+// Fetch do conteúdo do arquivo
+const { data: rawFileContent } = await useAsyncData(
+  'file-content',
+  () => {
+    if (!currentFile.value) return Promise.resolve(null);
+    const folder = currentFile.value.substring(0, currentFile.value.lastIndexOf("/"));
+    const filename = currentFile.value.split("/").pop();
+    return $fetch("/api/admin/storage", {
+      params: { site: siteContext.value, folder, file: filename }
+    });
+  },
+  { watch: [currentFile] }
+);
+
+// Watcher para processar conteúdo carregado
+watch(rawFileContent, (newVal) => {
+  if (newVal?.content) {
+    const parsed = parseFile(newVal.content, currentFile.value);
+    fileData.value = parsed;
+    
+    // Se isRaw, esconde schema ("none"). Se não, usa frontmatter ou default.
+    fmSchema.value = parsed.isRaw ? "none" : (parsed.frontmatter?.schema || "default");
+    
+    console.log(`Arquivo carregado. RAW: ${parsed.isRaw}. Schema: ${fmSchema.value}`);
+  } else {
+    fileData.value = { frontmatter: {}, content: "" };
+    fmSchema.value = "default";
+  }
+});
+
+// Fetch da lista de arquivos (Sidebar)
+const { data: files, refresh: refreshFiles } = await useFetch("/api/admin/storage", {
+  query: { site: siteContext, folder: currentFolder },
+  watch: [currentFolder],
+});
+const sortedFiles = computed(() => files.value || []);
+
+// --- HELPER: ENCONTRAR INDEX ALTERNATIVO ---
+const findAlternativeIndex = async (folderPath) => {
+    const candidates = ["_index.toml", "_index.yml", "_index.yaml", "_index.md"]; 
+    for (const candidate of candidates) {
+        try {
+            await $fetch("/api/admin/storage", { 
+                params: { site: siteContext.value, folder: folderPath, file: candidate }
+            });
+            return `${folderPath}/${candidate}`;
+        } catch (e) { /* continue */ }
+    }
+    return null;
+};
+
+// --- NAVEGAÇÃO ---
+const handleNavigate = {
+    enterFolder: (f) => { currentFolder.value = `${currentFolder.value}/${f}`; },
+    
+    goBack: () => {
+        const parts = currentFolder.value.split("/");
+        if (parts.length > 1) { parts.pop(); currentFolder.value = parts.join("/"); }
+    },
+    
+    changeRoot: (r) => { currentFolder.value = r; },
+    
+    selectFile: async (path) => {
+        // 1. Resolve caminho completo inicial
+        let fullPath = path.includes('/') ? path : `${currentFolder.value}/${path}`;
+        
+        // --- INTERCEPTAÇÃO: Se for _index.md, verifica se existe ou procura alternativas ---
+        if (fullPath.endsWith('/_index.md') || fullPath.endsWith('/index.md')) {
+             try {
+                 const folderToCheck = fullPath.substring(0, fullPath.lastIndexOf("/"));
+                 const filenameToCheck = fullPath.split("/").pop();
+                 // Tenta carregar (head check)
+                 await $fetch("/api/admin/storage", {
+                      params: { site: siteContext.value, folder: folderToCheck, file: filenameToCheck }
+                 });
+             } catch (e) {
+                 // Falhou ao abrir .md -> Procura alternativas (toml, yml)
+                 const folderPath = fullPath.substring(0, fullPath.lastIndexOf("/"));
+                 const altIndex = await findAlternativeIndex(folderPath);
+                 if (altIndex) {
+                     console.log(`[Redirecionamento] _index.md não encontrado. Abrindo: ${altIndex}`);
+                     fullPath = altIndex;
+                 }
+             }
+        }
+
+        currentFile.value = fullPath;
+        
+        // 2. Identifica pastas
+        const fileFolder = fullPath.substring(0, fullPath.lastIndexOf("/"));
+        
+        if (fileFolder === 'content') {
+            currentFolder.value = 'content';
+            return;
+        }
+
+        const parts = fileFolder.split('/');
+        const folderName = parts.pop(); 
+        const parentFolder = parts.join('/');
+
+        // 3. Smart Resolve: Verifica se é um arquivo de índice (MD, TOML, YAML)
+        const isIndexFile = /\/(_?index)\.(md|toml|yaml|yml)$/i.test(fullPath);
+
+        if (isIndexFile) {
+            try {
+                const parentItems = await $fetch("/api/admin/storage", {
+                    params: { site: siteContext.value, folder: parentFolder }
+                });
+                const folderObj = parentItems.find(f => f.name === folderName && f.isDirectory);
+
+                if (folderObj && !folderObj.hasChildren) {
+                    currentFolder.value = parentFolder;
+                    return; 
+                }
+            } catch (e) {
+                console.error("Erro ao verificar hasChildren:", e);
+            }
+        }
+        
+        // 4. Comportamento Padrão
+        if (fileFolder !== currentFolder.value) {
+            currentFolder.value = fileFolder;
+        }
+    }
+};
 
 // =============================================================================
-// 2. ESTADO DE NAVEGAÇÃO & ARQUIVOS
-// =============================================================================
-const currentFolder = ref("content");
-const currentFile = ref(""); 
-const fileData = ref({ frontmatter: {}, content: "" }); 
-const fmSchema = ref("default");
-// =============================================================================
-// 3. SISTEMA DE PREVIEW (Portado da V1)
+// 3. SISTEMA DE PREVIEW & COMUNICAÇÃO
 // =============================================================================
 const previewWindow = ref(null);
 
@@ -91,35 +249,24 @@ const handlePreview = () => {
     return;
   }
 
-  // 1. Limpeza do path para URL amigável
   let cleanPath = currentFile.value || "";
-  
-  // Remove prefixo de pasta de conteúdo
   cleanPath = cleanPath.replace(/^content\/?/, "");
-  
-  // Remove arquivo de índice (o sistema de rotas esconde isso)
-  cleanPath = cleanPath.replace(/\/_index\.md$/, "").replace(/\/_index$/, "");
-  cleanPath = cleanPath.replace(/\/index\.md$/, "").replace(/\/index$/, "");
-  cleanPath = cleanPath.replace(/\.md$/, "");
+  cleanPath = cleanPath.replace(/\/_index\.(md|toml|yaml|yml)$/, "").replace(/\/_index$/, "");
+  cleanPath = cleanPath.replace(/\/index\.(md|toml|yaml|yml)$/, "").replace(/\/index$/, "");
+  cleanPath = cleanPath.replace(/\.(md|toml|yaml|yml)$/, "");
 
-  // Home Page
   if (cleanPath === "") cleanPath = "/";
   if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
 
   const finalUrl = `${userSiteUrl.value}${cleanPath}?preview=true`;
-  console.log("Opening Preview:", finalUrl);
-  
   previewWindow.value = window.open(finalUrl, "sirius_preview");
 };
 
-// Envia dados para a janela de preview via postMessage
 const sendPreviewUpdate = () => {
   if (!previewWindow.value || previewWindow.value.closed) return;
-  
   previewWindow.value.postMessage({
     type: "SIRIUS_PREVIEW_UPDATE",
     data: {
-      // Adaptação: Na V2 usamos fileData em vez de form
       title: fileData.value.frontmatter.title,
       description: fileData.value.frontmatter.description,
       body: fileData.value.content,
@@ -128,54 +275,34 @@ const sendPreviewUpdate = () => {
   }, "*");
 };
 
-// Observa mudanças no arquivo e atualiza o preview (com debounce)
 let debounceTimer = null;
 watch(fileData, () => { 
     clearTimeout(debounceTimer); 
     debounceTimer = setTimeout(sendPreviewUpdate, 200); 
 }, { deep: true });
 
-// Listener para receber pedidos de edição vindos do Preview
+// Listener para Smart Redirect vindo do Preview
 const handleMessageFromPreview = async (event) => {
   if (event.data?.type === 'SIRIUS_EDIT_REQUEST') {
     let fileToEdit = event.data.filepath;
     
     if (fileToEdit) {
-      // SMART RESOLVE: 
-      // O Preview manda "caminho.md" por padrão.
-      // Se "caminho" for na verdade uma pasta, o arquivo correto é "caminho/_index.md".
-      
-      // Se não for já um _index, vamos verificar se existe uma versão pasta
-      if (fileToEdit.endsWith('.md') && !fileToEdit.endsWith('_index.md') && !fileToEdit.endsWith('index.md')) {
+      const isStandardContent = fileToEdit.match(/\.(md|toml|yaml|yml)$/i);
+      const isAlreadyIndex = fileToEdit.match(/(_index|index)\.(md|toml|yaml|yml)$/i);
+
+      if (isStandardContent && !isAlreadyIndex) {
+         const possibleFolder = fileToEdit.replace(/\.(md|toml|yaml|yml)$/i, ""); 
          
-         const possibleFolder = fileToEdit.slice(0, -3); // remove .md (ex: content/sobre/visitacao)
+         // Usa o helper para achar o index correto daquela pasta
+         const realIndex = await findAlternativeIndex(possibleFolder);
          
-         try {
-            // Tenta dar um "peek" para ver se existe o _index.md dentro dessa suposta pasta
-            // Usamos $fetch silencioso para testar
-            const folderPart = possibleFolder.substring(0, possibleFolder.lastIndexOf('/')); // content/sobre
-            const namePart = possibleFolder.split('/').pop(); // visitacao
-
-            // Aqui verificamos se conseguimos ler o _index.md dentro da pasta alvo
-            await $fetch("/api/admin/storage", {
-                params: { 
-                    site: siteContext.value, 
-                    folder: possibleFolder, // Tenta usar o nome do arquivo como pasta
-                    file: "_index.md" 
-                }
-            });
-
-            // Se o fetch acima não deu erro (não caiu no catch), significa que o _index existe!
-            // Então trocamos o alvo para o _index
-            console.log(`[SIRIUS] Redirecionando ${fileToEdit} para ${possibleFolder}/_index.md`);
-            fileToEdit = `${possibleFolder}/_index.md`;
-
-         } catch (e) {
-            // Se der erro (404), significa que não é uma pasta ou não tem _index.
-            // Mantemos o original (ex: content/sobre/visitacao.md)
+         if (realIndex) {
+             fileToEdit = realIndex;
+         } else {
+             // Fallback padrão se nada for encontrado
+             fileToEdit = `${possibleFolder}/_index.md`;
          }
       }
-
       handleNavigate.selectFile(fileToEdit);
     }
   }
@@ -183,14 +310,16 @@ const handleMessageFromPreview = async (event) => {
 
 onMounted(() => {
   window.addEventListener("message", handleMessageFromPreview);
+  window.addEventListener("keydown", handleKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener("message", handleMessageFromPreview);
+  window.removeEventListener("keydown", handleKeydown);
 });
 
 // =============================================================================
-// 4. GESTÃO DE IMAGENS
+// 4. IMAGENS & AÇÕES
 // =============================================================================
 const showImageModal = ref(false);
 const imageTarget = ref(null); 
@@ -210,11 +339,9 @@ const imageActions = {
   handleSelect: (finalPath) => {
     const t = imageTarget.value;
     if (t.mode === "markdown") {
-        // Em vez de concatenar no fim, chamamos o método do filho
         if (markdownEditorRef.value) {
             markdownEditorRef.value.insertAtCursor(`![](${finalPath})`);
         } else {
-            // Fallback caso ref não exista (raro)
             fileData.value.content += `\n![](${finalPath})`;
         }
     } else if (t.mode === "set") {
@@ -223,253 +350,115 @@ const imageActions = {
         t.list.push(finalPath);
     }
     showImageModal.value = false;
-    // Força update do preview após inserir imagem
     sendPreviewUpdate();
   },
 };
 
-
 // =============================================================================
-// 5. FETCHING DE ARQUIVOS
+// 5. SALVAR & PUBLICAR
 // =============================================================================
-const { data: files, refresh: refreshFiles } = await useFetch("/api/admin/storage", {
-  query: { site: siteContext, folder: currentFolder },
-  watch: [currentFolder],
-});
-const sortedFiles = computed(() => files.value || []);
-
-const { data: rawFileContent } = await useAsyncData(
-  'file-content',
-  () => {
-    if (!currentFile.value) return Promise.resolve(null);
-    const folder = currentFile.value.substring(0, currentFile.value.lastIndexOf("/"));
-    const filename = currentFile.value.split("/").pop();
-    return $fetch("/api/admin/storage", {
-      params: { site: siteContext.value, folder, file: filename }
-    });
-  },
-  { watch: [currentFile] }
-);
-
-const parseFile = (fullText) => {
-  if (!fullText) return { frontmatter: {}, content: "" };
-  const normalized = fullText.replace(/\r\n/g, "\n");
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (match) {
-    try { return { frontmatter: yaml.load(match[1]) || {}, content: match[2].trim() }; } 
-    catch (e) { return { frontmatter: {}, content: normalized }; }
-  }
-  return { frontmatter: {}, content: normalized };
-};
-
-// ... no bloco de Parsing
-watch(rawFileContent, (newVal) => {
-  if (newVal?.content) {
-    const parsed = parseFile(newVal.content);
-    fileData.value = parsed;
-    
-    // ATUALIZAÇÃO DO SCHEMA:
-    // Se o arquivo tiver "schema: nome" no frontmatter, usa ele. Caso contrário, "default".
-    fmSchema.value = parsed.frontmatter?.schema || "default";
-    
-    console.log("Novo arquivo carregado. Schema detectado:", fmSchema.value);
-  } else {
-    fileData.value = { frontmatter: {}, content: "" };
-    fmSchema.value = "default";
-  }
-});
-
-const handleNavigate = {
-    enterFolder: (f) => { currentFolder.value = `${currentFolder.value}/${f}`; },
-    
-    goBack: () => {
-        const parts = currentFolder.value.split("/");
-        if (parts.length > 1) { parts.pop(); currentFolder.value = parts.join("/"); }
-    },
-    
-    changeRoot: (r) => { currentFolder.value = r; },
-    
-    selectFile: async (path) => {
-        // 1. Define o arquivo imediatamente (UI Responsiva)
-        const fullPath = path.includes('/') ? path : `${currentFolder.value}/${path}`;
-        currentFile.value = fullPath;
-        
-        // 2. Identifica a pasta do arquivo e a pasta pai
-        // Ex: content/contact/_index.md
-        // fileFolder = content/contact
-        // parentFolder = content
-        // folderName = contact
-        const fileFolder = fullPath.substring(0, fullPath.lastIndexOf("/"));
-        
-        // Se for na raiz (content/_index.md), não faz nada, só fica na raiz
-        if (fileFolder === 'content') {
-            currentFolder.value = 'content';
-            return;
-        }
-
-        const parts = fileFolder.split('/');
-        const folderName = parts.pop(); // Pega o nome "contact"
-        const parentFolder = parts.join('/'); // Pega "content"
-
-        // 3. Lógica baseada no hasChildren da API
-        if (fullPath.endsWith('/_index.md') || fullPath.endsWith('/index.md')) {
-            try {
-                // Buscamos a lista da pasta PAI para ver as propriedades da pasta alvo
-                const parentItems = await $fetch("/api/admin/storage", {
-                    params: { site: siteContext.value, folder: parentFolder }
-                });
-
-                // Encontra o objeto da pasta (ex: objeto "contact")
-                const folderObj = parentItems.find(f => f.name === folderName && f.isDirectory);
-
-                // SE A PASTA NÃO TIVER FILHOS (hasChildren: false)
-                // Mantemos a sidebar na pasta PAI.
-                if (folderObj && !folderObj.hasChildren) {
-                    console.log(`Pasta '${folderName}' não tem filhos. Mantendo sidebar em '${parentFolder}'.`);
-                    currentFolder.value = parentFolder;
-                    return; // Encerra aqui
-                }
-            } catch (e) {
-                console.error("Erro ao verificar hasChildren:", e);
-            }
-        }
-        // 4. Comportamento Padrão: Entra na pasta
-        // Se tem filhos (hasChildren: true) ou não é index, entra na pasta.
-        if (fileFolder !== currentFolder.value) {
-            currentFolder.value = fileFolder;
-        }
-    }
-};
-
 const saveFile = async () => {
     if (!currentFile.value) return;
     try {
-        const yamlPart = yaml.dump(fileData.value.frontmatter, { indent: 2, lineWidth: -1, noRefs: true });
-        const finalContent = `---\n${yamlPart.trim()}\n---\n\n${fileData.value.content}`;
+        let finalContent = "";
         const folder = currentFile.value.substring(0, currentFile.value.lastIndexOf("/"));
         const filename = currentFile.value.split("/").pop();
+
+        if (isRawFile.value) {
+            // RAW: Salva o conteúdo direto sem frontmatter
+            finalContent = fileData.value.content;
+        } else {
+            // MD: Monta frontmatter + content
+            const yamlPart = yaml.dump(fileData.value.frontmatter, { indent: 2, lineWidth: -1, noRefs: true });
+            finalContent = `---\n${yamlPart.trim()}\n---\n\n${fileData.value.content}`;
+        }
+
         await $fetch("/api/admin/storage", { method: "POST", body: { site: siteContext.value, folder, file: filename, content: finalContent } });
         toast.add({ severity: "success", summary: "Salvo com sucesso!", life: 1000 });
     } catch (e) { toast.add({ severity: "error", summary: "Erro ao salvar" }); }
 };
 
-
-// ... (logo após saveFile)
-
-// =============================================================================
-// AÇÃO DE PUBLICAR (DEPLOY)
-// =============================================================================
 const loadingPublish = ref(false);
-
 const handlePublish = async () => {
   loadingPublish.value = true;
   toast.add({ severity: "info", summary: "Publicando...", detail: "Gerando arquivos estáticos...", life: 2000 });
-
   try {
-    // Chama a API que compila o site (Hugo/Jekyll/etc)
-    const result = await $fetch("/api/admin/compile-all", {
-      method: "POST",
-      body: { site: siteContext.value },
-    });
-
+    const result = await $fetch("/api/admin/compile-all", { method: "POST", body: { site: siteContext.value } });
     if (result.success) {
-        toast.add({ severity: "success", summary: "Sucesso!", detail: "Site publicado e atualizado.", life: 2000 });
+        toast.add({ severity: "success", summary: "Sucesso!", detail: "Site publicado.", life: 2000 });
     } else {
-        throw new Error(result.message || "Erro desconhecido ao compilar.");
+        throw new Error(result.message || "Erro desconhecido.");
     }
   } catch (error) {
-    console.error(error);
-    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao publicar o site.", life: 2000 });
+    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao publicar.", life: 2000 });
   } finally {
     loadingPublish.value = false;
   }
 };
 
-
+const handleKeydown = (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+    e.preventDefault();
+    if (currentFile.value) saveFile();
+  }
+};
 
 // =============================================================================
-// 6. LOGICA DE RESIZE
+// 6. UI RESIZE & SCHEMA
 // =============================================================================
 const fileManagerWidth = ref(320); 
 const isResizingSidebar = ref(false);
-
 const startSidebarResize = () => {
   isResizingSidebar.value = true;
   document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
   window.addEventListener('mousemove', handleSidebarMouseMove);
   window.addEventListener('mouseup', stopSidebarResize);
 };
-
 const handleSidebarMouseMove = (e) => {
   const newWidth = e.clientX - 48;
   if (newWidth > 200 && newWidth < 600) fileManagerWidth.value = newWidth;
 };
-
 const stopSidebarResize = () => {
   isResizingSidebar.value = false;
   document.body.style.cursor = '';
-  document.body.style.userSelect = '';
   window.removeEventListener('mousemove', handleSidebarMouseMove);
   window.removeEventListener('mouseup', stopSidebarResize);
 };
 
 const frontmatterWidth = ref(350); 
 const isResizingFrontmatter = ref(false); 
-
 const startResizeFrontmatter = () => {
   isResizingFrontmatter.value = true;
   document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
   window.addEventListener('mousemove', handleFrontmatterMouseMove);
   window.addEventListener('mouseup', stopResizeFrontmatter);
 };
-
 const handleFrontmatterMouseMove = (e) => {
   const newWidth = window.innerWidth - e.clientX;
-  if (newWidth > 250 && newWidth < 800) {
-     frontmatterWidth.value = newWidth; 
-  }
+  if (newWidth > 250 && newWidth < 800) frontmatterWidth.value = newWidth; 
 };
-
 const stopResizeFrontmatter = () => {
   isResizingFrontmatter.value = false;
   document.body.style.cursor = '';
-  document.body.style.userSelect = '';
   window.removeEventListener('mousemove', handleFrontmatterMouseMove);
   window.removeEventListener('mouseup', stopResizeFrontmatter);
 };
 
-// =============================================================================
-// 7. SCHEMA
-// =============================================================================
-const currentFileNameOnly = computed(() => currentFile.value ? currentFile.value.split("/").pop() : "");
-const editorCtxFolder = computed(() => {
-  if (!currentFile.value) return currentFolder.value;
-  const lastSlash = currentFile.value.lastIndexOf("/");
-  return lastSlash !== -1 ? currentFile.value.substring(0, lastSlash) : "content";
-});
-
-
-console.log("Frontmatter Schema:", fmSchema);
+// Carregamento de Schema (Campos laterais)
 const { data: schemaData } = await useFetch("/api/admin/schema", {
-  query: { site: siteContext, 
-  schema: computed(() => fmSchema.value) },
+  query: { site: siteContext, schema: computed(() => fmSchema.value) },
   watch: [fmSchema, currentFile],
 });
 
 const fields = computed(() => {
   if (!schemaData.value) return [];
-  //const fmSchema = fileData.value.frontmatter?.schema;
-  //const mapSchema = schemaData.value.mapping?.[currentFileNameOnly.value];
-  //const typeKey = fmSchema || mapSchema || "default";
-  const typeKey = fmSchema || "default";
   return schemaData.value.fields || [];
 });
 
-// Watcher de debug para ver os campos mudando no console
-watch(fields, (newFields) => {
-  console.log(`Campos carregados para o schema [${fmSchema.value}]:`, newFields.length);
+const editorCtxFolder = computed(() => {
+  if (!currentFile.value) return currentFolder.value;
+  const lastSlash = currentFile.value.lastIndexOf("/");
+  return lastSlash !== -1 ? currentFile.value.substring(0, lastSlash) : "content";
 });
 
 const createActions = {
@@ -481,46 +470,24 @@ const createActions = {
   },
   onFolderCreated: async () => {
       await refreshFiles();
-      await refreshFolders();
   }
 };
 
-const goToBackup = () => {
-  showBackupModal.value = true;
-};
+const goToBackup = () => { showBackupModal.value = true; };
 
+// User Menu
 const userMenu = ref();
-
 const userMenuItems = ref([
-    {
-        label: 'Perfil',
-        icon: 'pi pi-user',
-        disabled: true // Desabilitado por enquanto
-    },
-    {
-        separator: true
-    },
-    {
-        label: 'Sair do Sistema',
-        icon: 'pi pi-power-off',
-        class: 'text-red-400', // Destaque visual (opcional, depende do tema do PrimeVue)
-        command: () => handleLogout()
-    }
+    { label: 'Perfil', icon: 'pi pi-user', disabled: true },
+    { separator: true },
+    { label: 'Sair do Sistema', icon: 'pi pi-power-off', class: 'text-red-400', command: () => handleLogout() }
 ]);
-
-// [NOVO] Função de Logout
 const handleLogout = () => {
-    // Limpa o cookie de contexto
     const cookie = useCookie('cms_site_context');
     cookie.value = null;
-    
-    // Redireciona (ajuste a rota conforme seu login)
     navigateTo('/');
 };
-
-const toggleUserMenu = (event) => {
-    userMenu.value.toggle(event);
-};
+const toggleUserMenu = (event) => userMenu.value.toggle(event);
 
 </script>
 
@@ -530,17 +497,13 @@ const toggleUserMenu = (event) => {
 <header class="h-14 bg-[#141b18] border-b border-white/5 shrink-0 flex items-center justify-between px-4 z-20 select-none shadow-sm relative overflow-hidden">
     
     <div class="flex items-center">
-        
         <div class="flex items-center gap-2 cursor-default group mr-4">
             <i class="pi pi-star-fill text-[#6f942e] text-sm group-hover:scale-110 transition-transform duration-300 drop-shadow-[0_0_6px_rgba(111,148,46,0.5)]"></i>
-
             <div _class="flex flex-col leading-none">
                 <span class="font-black text-slate-200 text-lg tracking-tight group-hover:text-white transition-colors">Sirius</span>
-                <span class="text-[14px] text-[#6f942e]/80 font-bold _tracking-[0.25em] _uppercase group-hover:text-[#6f942e] transition-colors pl-2">Studio</span>
+                <span class="text-[14px] text-[#6f942e]/80 font-bold group-hover:text-[#6f942e] transition-colors pl-2">Studio</span>
             </div>
         </div>
-
-
         <div 
             class="flex items-center gap-2 mt-0 px-3 py-0.5 rounded-full bg-[#0a0f0d]/50 border border-white/10 group/ctx hover:border-[#6f942e]/50 transition-colors cursor-default"
             v-tooltip.bottom="'Site que você está editando'"
@@ -570,7 +533,6 @@ const toggleUserMenu = (event) => {
             <Menu ref="userMenu" id="user_menu" :model="userMenuItems" :popup="true" class="w-48 mt-2" />
         </div>
     </div>
-
 </header>
 
     <div class="flex-1 flex flex-row overflow-hidden relative">
@@ -582,21 +544,18 @@ const toggleUserMenu = (event) => {
          </button>
          
       <button 
-    @click="goToBackup" 
-    aria-haspopup="true" 
-    aria-controls="overlay_menu"
-    class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
-    title="Configurações"
->
-    <i class="pi pi-cog text-lg"></i>
-</button>
+        @click="goToBackup" 
+        aria-haspopup="true" 
+        aria-controls="overlay_menu"
+        class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
+        title="Configurações"
+    >
+        <i class="pi pi-cog text-lg"></i>
+    </button>
 
-<Menu ref="settingsMenu" id="overlay_menu" :model="settingsItems" :popup="true" class="w-64" />
+    <Menu ref="settingsMenu" id="overlay_menu" :model="settingsItems" :popup="true" class="w-64" />
     <div class="flex-1"></div>
-         
-         <div class="flex-1"></div> 
-         <!-- <button class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-zinc-400 mb-2"><i class="pi pi-user text-xs"></i></button> -->
-      </aside>
+    </aside>
 
       <div 
         v-show="showFileManager"
@@ -636,38 +595,39 @@ const toggleUserMenu = (event) => {
                      <span class="truncate select-all">{{ currentFile }}</span>
                  </div>
                  
-                 <div class="flex items-center gap-2">
-                     
-                     <button 
-                        @click="handlePreview" 
-                        class="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-[#6f942e] transition-colors" 
-                        title="Visualizar no Site"
-                     >
-                         <i class="pi pi-eye"></i>
-                     </button>
-                     
-                     <div class="w-[1px] h-4 bg-white/10 mx-1"></div>
+                 <div class="flex items-center bg-white/5 rounded-lg p-1 border border-white/5 gap-1">
+                    <button 
+                       @click="saveFile" 
+                       class="flex items-center gap-2 px-3 py-1.5 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-xs rounded transition-colors"
+                       title="Salvar alterações (CTRL+S)"
+                    >
+                        <i class="pi pi-save"></i> 
+                        <span>Salvar</span>
+                    </button>
 
-                     <button 
-                        @click="saveFile" 
-                        class="flex items-center gap-2 px-3 py-1.5 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-xs rounded transition-colors"
-                        title="Salvar alterações deste arquivo (CTRL+S)"
-                     >
-                         <i class="pi pi-save"></i> Salvar
-                     </button>
+                    <div class="w-[1px] h-4 bg-white/10 mx-0.5"></div>
 
-                     <div class="w-[1px] h-4 bg-white/10 mx-1"></div>
+                    <button 
+                       @click="handlePreview" 
+                       class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs rounded transition-colors" 
+                       title="Visualizar no Site"
+                    >
+                        <i class="pi pi-eye"></i>
+                        <span>Preview</span>
+                    </button>
 
-                     <button 
-                        @click="handlePublish" 
-                        :disabled="loadingPublish"
-                        class="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-wait"
-                        title="Gerar e Publicar o site completo"
-                     >
-                         <i class="pi" :class="loadingPublish ? 'pi-spin pi-spinner' : 'pi-cloud-upload'"></i> 
-                         <span>{{ loadingPublish ? 'Gerando...' : 'Publicar' }}</span>
-                     </button>
-                 </div>
+                    <div class="w-[1px] h-4 bg-white/10 mx-0.5"></div>
+
+                    <button 
+                       @click="handlePublish" 
+                       :disabled="loadingPublish"
+                       class="flex items-center gap-2 px-3 py-1.5 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-wait"
+                       title="Gerar e Publicar o site completo"
+                    >
+                        <i class="pi" :class="loadingPublish ? 'pi-spin pi-spinner' : 'pi-cloud-upload'"></i> 
+                        <span>{{ loadingPublish ? 'Gerando...' : 'Publicar' }}</span>
+                    </button>
+                </div>
              </div>
              <div v-else class="h-12 border-b border-white/5 bg-[#0a0f0d]"></div>
 
@@ -693,10 +653,11 @@ const toggleUserMenu = (event) => {
                     <div class="w-[1px] h-8 bg-white/20 group-hover:bg-white/80 rounded-full"></div>
                  </div>
 
-                 <div 
+                <div 
+                    v-if="!isRawFile && fields.length > 0" 
                     class="flex flex-col bg-[#141b18] border-l border-white/5 shrink-0 h-full" 
                     :style="{ width: frontmatterWidth + 'px' }"
-                 >
+                >
                     <div class="flex-1 overflow-y-auto custom-scrollbar">
                         <AdminMetaEditor 
                             v-if="fields.length > 0"
@@ -710,7 +671,7 @@ const toggleUserMenu = (event) => {
                             class="h-full"
                         />
                     </div>
-                 </div>
+                </div>
 
                  <div v-if="isResizingFrontmatter" class="fixed inset-0 z-50 cursor-col-resize bg-transparent"></div>
              </div>
@@ -725,11 +686,6 @@ const toggleUserMenu = (event) => {
     </div>
 
     <footer class="h-6 bg-[#141b18] border-t border-white/5 shrink-0 flex items-center justify-between px-3 text-[10px] text-slate-500 z-20 font-mono">
-        <!-- <div class="flex items-center gap-3">
-            <span>READY</span>
-            <span v-if="isResizingFrontmatter || isResizingSidebar" class="text-[#6f942e]">RESIZING...</span>
-        </div>
-        <div>MARKDOWN</div> -->
     </footer>
 
 
@@ -774,10 +730,6 @@ const toggleUserMenu = (event) => {
       @success="createActions.onFolderCreated"
     />
 
-    <!-- <BackupRestoreModal
-        v-model:visible="showBackupModal"
-        :site-context="siteContext"
-    /> -->
      <Dialog
       v-model:visible="showBackupModal"
       modal

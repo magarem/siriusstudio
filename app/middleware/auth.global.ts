@@ -15,6 +15,6 @@ export default defineNuxtRouteMiddleware((to, from) => {
   // CASO 2: Tentou entrar no Login JÁ TENDO cookie -> Manda pro Editor
   // (Melhora a experiência, evita login duplo)
   if (to.path === '/login' && siteContext.value) {
-    return navigateTo('/edit');
+    return navigateTo('/editor');
   }
 });

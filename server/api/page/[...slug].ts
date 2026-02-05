@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 // Aponta para a pasta onde o Sirius salvou os JSONs
-const DATA_DIR = path.resolve(process.cwd(), 'server/data');
+const DATA_DIR = path.resolve(process.cwd(), 'data');
 
 export default defineEventHandler(async (event) => {
   // Pega o slug da URL (ex: 'atrativos/bistro' ou undefined para home)
@@ -22,10 +22,10 @@ export default defineEventHandler(async (event) => {
   // Como o Compiler converteu "_index.md" para "index.json",
   // a lógica padrão de pastas funciona.
   const possiblePaths = [
-    // 1. Tenta slug direto (ex: server/data/contato.json)
+    // 1. Tenta slug direto (ex: data/contato.json)
     path.join(DATA_DIR, `${slug}.json`),
     
-    // 2. Tenta index dentro da pasta (ex: server/data/atrativos/index.json)
+    // 2. Tenta index dentro da pasta (ex: data/atrativos/index.json)
     // Isso resolve o caso de pastas como "atrativos/_index.md" que virou "index.json"
     path.join(DATA_DIR, slug, 'index.json'),
 

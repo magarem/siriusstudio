@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import ListfilesGrid from './Grid.vue';
 import ListfilesList from './List.vue';
 import Supergrid from './Supergrid.vue';
@@ -7,112 +7,164 @@ import ListfilesRaw from './Raw.vue';
 
 // --- PROPS ---
 const props = defineProps({
-  // Título e Ícone do bloco
-  title: { type: String, default: "" },
-  icon: { type: String, default: "pi pi-images" },
+  // --- MODO SOURCE (NOVO) ---
+  // Caminho para um arquivo .toml/.md que contém os parametros
+  source: { type: String, default: null },
 
-  // Caminho da pasta. AGORA OPCIONAL.
-  // Se vazio, pega a rota atual.
-  section: { type: String, default: "" },
-
-  // Visualização: 'grid', 'list', 'supergrid' ou 'rawlist'
-  view: { type: String, default: "grid" },
+  // --- PARÂMETROS DIRETOS ---
+  title: { type: String, default: null }, // Null para diferenciar de vazio
+  icon: { type: String, default: null },
+  section: { type: String, default: null },
+  view: { type: String, default: null },
   
+  // Pode vir como String (do Markdown) ou Objeto (do TOML/JS)
   viewparams: {
-    type: Object,
-    default: () => ({
-      columns: 4,
-      card_layout: 'vertical',
-      card_showtextbox: false,
-      card_showtitle: true,
-      card_showdescription: true,
-      card_showbody: true,
-      card_img_aspectratio: '3/4',
-      gap: '24px',
-      card_border_radius: '12px',
-      card_showaction: false,
-      card_showbadges: true,
-      card_minwidth: '280px'
-    })
+    type: [Object, String],
+    default: null
   },
-  // Limite de itens
-  limit: { type: Number, default: 1000 },
-  cardLayout: { 
-    type: String, 
-    default: 'vertical',
-    validator: (value) => ['horizontal', 'vertical'].includes(value)
-  },
-  columns: { type: Number, default: 4 },
-
-  // MODO PASTA: Agrupa subpastas
-  subfolders: { type: Boolean, default: false },
-
-  // IMAGENS: Imagem padrão automática
+  
+  limit: { type: Number, default: null },
+  columns: { type: Number, default: null },
+  subfolders: { type: Boolean, default: null }, // Null para permitir override
   fallbackImage: { type: String, default: "/images/generic_image.png" },
-
-  // Ícone padrão para arquivos
   fileIcon: { type: String, default: "pi pi-file" },
 });
 
 const config = useRuntimeConfig();
 const route = useRoute();
 const siteName = config.public.siteName;
-const { isEnabled } = usePreview();
+const { isEnabled } = usePreview(); // Hook de preview (se existir no seu projeto)
 
-// --- LÓGICA DE SEÇÃO AUTOMÁTICA ---
+// =============================================================================
+// 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE)
+// =============================================================================
+
+// Detecta se estamos em modo preview
+const isPreview = computed(() => {
+  return route.query.preview === 'true' || (import.meta.client && window.location.hostname.startsWith('preview.'));
+});
+
+// Endpoint para buscar o arquivo de configuração (.toml/.md)
+const sourceEndpoint = computed(() => {
+  if (!props.source) return null;
+  const cleanPath = props.source.replace(/^\//, '').replace(/\.md$/, '').replace(/\.toml$/, '');
+  return isPreview.value ? `/api/preview/${cleanPath}` : `/api/page/${cleanPath}`;
+});
+
+// Busca os dados do arquivo de configuração
+const { data: fetchedConfig } = await useFetch(sourceEndpoint, {
+  key: `listfiles-config-${props.source}`,
+  immediate: !!props.source,
+  watch: [sourceEndpoint],
+  lazy: true
+});
+
+// =============================================================================
+// 2. MERGE DE PARÂMETROS (FINAL PARAMS)
+// =============================================================================
+
+// Valores Padrão do Componente
+const defaults = {
+  title: "",
+  icon: "pi pi-images",
+  section: "",
+  view: "grid",
+  limit: 1000,
+  subfolders: false,
+  viewparams: {
+    columns: 4,
+    card_layout: 'vertical',
+    card_showtextbox: false,
+    card_showtitle: true,
+    card_showdescription: true,
+    card_showbody: true,
+    card_img_aspectratio: '3/4',
+    gap: '24px',
+    card_border_radius: '12px',
+    card_showaction: false,
+    card_showbadges: true,
+    card_minwidth: '200px'
+  }
+};
+
+const finalParams = computed(() => {
+  // 1. Dados vindos do arquivo (TOML/MD)
+  const rawFile = fetchedConfig.value?.data || fetchedConfig.value || {};
+  
+  // 2. Tratamento do viewparams (pode vir string JSON ou Objeto)
+  let fileViewParams = rawFile.viewparams || {};
+  let propViewParams = props.viewparams || {};
+  
+  if (typeof propViewParams === 'string') {
+    try { propViewParams = JSON.parse(propViewParams); } catch { propViewParams = {}; }
+  }
+
+  // 3. Merge: Defaults < File Data < Props (Props têm prioridade máxima se passadas)
+  return {
+    title: props.title ?? rawFile.title ?? defaults.title,
+    icon: props.icon ?? rawFile.icon ?? defaults.icon,
+    section: props.section ?? rawFile.section ?? defaults.section,
+    view: props.view ?? rawFile.view ?? defaults.view,
+    limit: props.limit ?? rawFile.limit ?? defaults.limit,
+    subfolders: props.subfolders ?? rawFile.subfolders ?? defaults.subfolders,
+    
+    // Merge profundo para viewparams
+    viewparams: {
+      ...defaults.viewparams,
+      ...fileViewParams,
+      ...propViewParams
+    }
+  };
+});
+
+// =============================================================================
+// 3. LÓGICA INTERNA (AGORA USANDO finalParams)
+// =============================================================================
+
+// Configurações Visuais derivadas
+const viewConfig = computed(() => {
+  const vp = finalParams.value.viewparams;
+  return {
+    columns: vp.columns || 4,
+    gap: vp.gap || "1rem",
+    card_showtitle: vp.card_showtitle !== false,
+    card_showtextbox: vp.card_showtextbox !== false,
+    card_showbody: vp.card_showbody !== false,
+    card_width: vp.card_width || "auto",
+    card_padding: vp.card_padding || "12px",
+    card_border_radius: vp.card_border_radius || "12px",
+    card_img_aspectratio: vp.card_img_aspectratio || "4 / 5",
+    card_img_object_fit: vp.card_img_object_fit || "cover",
+    list_card_height: vp.list_card_height || "200px",
+    list_img_aspectratio: vp.list_img_aspectratio || "1 / 1",
+    title_size: vp.title_size || "16px",
+    title_weight: vp.title_weight || "600",
+    title_color: vp.title_color || "#4a3728",
+  };
+});
+
+const isDiskMode = computed(() => isEnabled.value === true || config.public.liveContent === true);
+
+// Determina a seção alvo
 const targetSection = computed(() => {
-  if (props.section) return props.section;
-  // Remove barras duplicadas e define content como base
+  if (finalParams.value.section) return finalParams.value.section;
+  // Fallback para rota atual
   const currentPath = route.path === "/" ? "" : route.path;
   return `content${currentPath}`.replace('//', '/');
 });
 
-// --- COMPUTEDS DE AMBIENTE ---
-const isDiskMode = computed(
-  () => isEnabled.value === true || config.public.liveContent === true,
-);
-
-// --- CONFIGURAÇÃO VISUAL ---
-const parsedViewParams = computed(() => {
-  if (typeof props.viewparams === "string") {
-    try {
-      return JSON.parse(props.viewparams);
-    } catch {
-      return {};
-    }
-  }
-  return props.viewparams || {};
-});
-
-const viewConfig = computed(() => ({
-  columns: parsedViewParams.value.columns || 4,
-  gap: parsedViewParams.value.gap || "1rem",
-  card_showtitle: parsedViewParams.value.card_showtitle !== false,
-  card_showtextbox: parsedViewParams.value.card_showtextbox !== false,
-  card_showbody: parsedViewParams.value.card_showbody !== false,
-  card_width: parsedViewParams.value.card_width || "auto",
-  card_padding: parsedViewParams.value.card_padding || "12px",
-  card_border_radius: parsedViewParams.value.card_border_radius || "12px",
-  card_img_aspectratio: parsedViewParams.value.card_img_aspectratio || "4 / 5",
-  card_img_object_fit: parsedViewParams.value.card_img_object_fit || "cover",
-  list_card_height: parsedViewParams.value.list_card_height || "200px",
-  list_img_aspectratio: parsedViewParams.value.list_img_aspectratio || "1 / 1",
-  title_size: parsedViewParams.value.title_size || "16px",
-  title_weight: parsedViewParams.value.title_weight || "600",
-  title_color: parsedViewParams.value.title_color || "#4a3728",
-}));
-
-// --- DATA FETCHING ---
+// --- DATA FETCHING (ITENS) ---
 const timestamp = ref(Date.now());
 
 const queryParams = computed(() => ({
   site: siteName,
-  section: targetSection.value,
+  section: targetSection.value, // Usa a seção calculada
   mode: isDiskMode.value ? "preview" : "production",
   t: timestamp.value,
   nocache: 1,
 }));
 
+// Fetch dos itens reais (Posts, Eventos, etc)
 const {
   data: items,
   status,
@@ -123,7 +175,7 @@ const {
   query: queryParams,
   transform: (response) => (Array.isArray(response) ? response : []),
   default: () => [],
-  watch: [targetSection, isDiskMode],
+  watch: [targetSection, isDiskMode], // Recarrega se a seção mudar (ex: carregou o TOML)
 });
 
 const forceRefresh = () => {
@@ -133,29 +185,17 @@ const forceRefresh = () => {
 
 const loading = computed(() => status.value === "pending");
 
-// --- HELPER: RESOLVE ASSETS URL (NOVO) ---
+// --- HELPERS DE IMAGEM E LINK ---
 const resolveSmartImage = (itemPath, imgName) => {
   if (!imgName) return props.fallbackImage;
-  // Se já for link externo ou absoluto da public
   if (imgName.startsWith('http') || imgName.startsWith('/')) return imgName;
-
-  // Se for local (apenas nome do arquivo), precisamos montar o caminho
-  // itemPath vem como: "content/atrativos/bistro/_index.md"
   
-  // 1. Remove o nome do arquivo para pegar a pasta pai
   let folderPath = itemPath.substring(0, itemPath.lastIndexOf('/'));
-  
-  // 2. Remove o prefixo 'content/' pois a rota /assets/ assume base no content
   folderPath = folderPath.replace(/^content\//, '').replace(/^content/, '');
-  
-  // 3. Retorna URL do Túnel
   return `/assets/${folderPath}/${imgName}`.replace('//', '/');
 };
 
-// --- HELPER: LIMPA O LINK PARA NAVEGAÇÃO ---
 const resolveLink = (itemPath) => {
-  // De: content/atrativos/bistro/_index.md
-  // Para: /atrativos/bistro
   return itemPath
     .replace(/^content/, '')
     .replace('/_index.md', '')
@@ -164,52 +204,43 @@ const resolveLink = (itemPath) => {
     .replace('.md', '');
 };
 
-// --- LÓGICA DE PROCESSAMENTO E AGRUPAMENTO ---
+// --- PROCESSAMENTO FINAL DOS ITENS ---
 const displayedItems = computed(() => {
   const rawItems = items.value || [];
+  const limit = finalParams.value.limit; // Usa o limit do merge
+  const useSubfolders = finalParams.value.subfolders;
 
-  // MODO 1: Lista Plana (Transforma URLs de imagem e Links)
-  if (!props.subfolders) {
-    return rawItems.slice(0, props.limit).map(item => ({
+  // MODO 1: Lista Plana
+  if (!useSubfolders) {
+    return rawItems.slice(0, limit).map(item => ({
       ...item,
-      // Garante que a imagem use o túnel de assets se for local
       image: resolveSmartImage(item.path, item.image),
-      // Garante que o link (_path) seja limpo para navegação Nuxt
       path: resolveLink(item.path),
       _path: resolveLink(item.path)
     }));
   }
 
-  // MODO 2: Agrupamento por Pastas (Subfolders = true)
+  // MODO 2: Agrupamento por Pastas
   const foldersMap = {};
-
   rawItems.forEach((item) => {
-    // Calcula caminho relativo à seção atual
     let relativePath = item.path.replace(targetSection.value, "");
     if (relativePath.startsWith("/")) relativePath = relativePath.substring(1);
     const parts = relativePath.split("/");
 
     if (parts.length > 0) {
       const folderName = parts[0];
-      // Ignora arquivos soltos na raiz da seção ou arquivos ocultos
       if (!folderName || folderName.includes(".")) return;
 
       if (!foldersMap[folderName]) {
-        // Cria a entrada da pasta
         foldersMap[folderName] = {
-          title:
-            folderName.charAt(0).toUpperCase() +
-            folderName.slice(1).replace(/-/g, " "),
-          // O link da pasta é: seção_atual + / + nome_pasta
+          title: folderName.charAt(0).toUpperCase() + folderName.slice(1).replace(/-/g, " "),
           _path: `${targetSection.value}/${folderName}`.replace(/^content/, '').replace("//", "/").replace("/index",""),
-          // Usa a imagem do primeiro item encontrado como capa, processada
           image: resolveSmartImage(item.path, item.image),
           isFolder: true,
           count: 1,
         };
       } else {
         foldersMap[folderName].count++;
-        // Opcional: Se a pasta já existe mas não tinha imagem, tenta pegar deste item
         if (!foldersMap[folderName].image || foldersMap[folderName].image === props.fallbackImage) {
            foldersMap[folderName].image = resolveSmartImage(item.path, item.image);
         }
@@ -217,10 +248,9 @@ const displayedItems = computed(() => {
     }
   });
 
-  return Object.values(foldersMap).slice(0, props.limit);
+  return Object.values(foldersMap).slice(0, limit);
 });
 
-// --- TRATAMENTO DE IMAGEM QUEBRADA ---
 const onImageError = (event) => {
   if (props.fallbackImage && event.target.src.indexOf(props.fallbackImage) === -1) {
     event.target.src = props.fallbackImage;
@@ -234,7 +264,9 @@ const onImageError = (event) => {
 
 <template>
   <div class="list-container">
-    <h3 v-if="title" class="list-title"><i :class="icon"></i> {{ title }}</h3>
+    <h3 v-if="finalParams.title" class="list-title">
+      <i v-if="finalParams.icon" :class="finalParams.icon"></i> {{ finalParams.title }}
+    </h3>
     
     <div
       v-if="loading && items.length === 0"
@@ -261,7 +293,7 @@ const onImageError = (event) => {
     <div v-else class="fade-in">
   
       <ListfilesGrid 
-        v-if="view === 'grid'" 
+        v-if="finalParams.view === 'grid'" 
         :items="displayedItems" 
         :viewConfig="viewConfig" 
         :fallbackImage="fallbackImage"
@@ -269,7 +301,7 @@ const onImageError = (event) => {
       />
 
       <ListfilesList 
-        v-else-if="view?.toLowerCase() === 'list'" 
+        v-else-if="finalParams.view?.toLowerCase() === 'list'" 
         :items="displayedItems" 
         :viewConfig="viewConfig" 
         :fallbackImage="fallbackImage"
@@ -277,13 +309,13 @@ const onImageError = (event) => {
       />
 
       <Supergrid
-        v-else-if="view?.toLowerCase() === 'supergrid'"
+        v-else-if="finalParams.view?.toLowerCase() === 'supergrid'"
         :items="displayedItems"
-        :viewparams="viewparams"
+        :viewparams="finalParams.viewparams"
       />
 
       <ListfilesRaw 
-        v-else-if="view?.toLowerCase() === 'rawlist'" 
+        v-else-if="finalParams.view?.toLowerCase() === 'rawlist'" 
         :items="displayedItems" 
         :fileIcon="fileIcon"
       />
@@ -292,22 +324,14 @@ const onImageError = (event) => {
 </template>
 
 <style scoped>
-/* ANIMAÇÃO */
 .fade-in {
   animation: fadeIn 0.4s ease-in-out;
 }
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* HEADER */
 .list-title {
   font-size: 1.5rem;
   font-weight: bold;
@@ -322,36 +346,5 @@ const onImageError = (event) => {
   width: 100%;
   margin-bottom: 30px;
 }
-
-/* --- ESTILOS COMPARTILHADOS QUE PODEM SER USADOS PELOS SUB-COMPONENTES SE NECESSÁRIO --- */
-.custom-card {
-  text-decoration: none;
-  color: inherit;
-  border: 1px solid #e2e8f0;
-  border-radius: v-bind("viewConfig.card_border_radius");
-  overflow: hidden;
-  background: #fdfdfd;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-  display: flex;
-  padding: 0;
-  width: v-bind("viewConfig.card_width");
-}
-
-.custom-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1);
-  border-color: #cbd5e1;
-}
-
-.placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #1e293b;
-}
-
-/* Helpers */
 .hidden { display: none !important; }
 </style>

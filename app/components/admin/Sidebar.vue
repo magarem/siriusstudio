@@ -29,7 +29,7 @@ const showDraggable = ref(true);
 
 const removeExtension = (filename) => filename.replace(/\.[^/.]+$/, "");
 
-// [NOVO] Pega apenas o nome da pasta atual (ex: 'blog' em vez de 'content/blog')
+// Pega apenas o nome da pasta atual (ex: 'blog' em vez de 'content/blog')
 const currentFolderName = computed(() => {
   if (!props.currentFolder) return 'Content';
   const parts = props.currentFolder.split('/');
@@ -42,17 +42,21 @@ watch(() => props.files, async (newVal) => {
 
   const allFiles = newVal || [];
 
-  // Separa a capa (_index.md)
-  indexFile.value = allFiles.find(f => !f.isDirectory && (f.name === '_index.md' || f.name === 'index.md'));
+  // 1. LÓGICA DE INDEX INTELIGENTE
+  // Procura, na ordem de prioridade, quem será a "Página Principal" desta pasta
+  const candidates = ['_index.md', 'index.md', '_index.toml', 'index.toml', '_index.yml', 'index.yml', '_index.yaml', 'index.yaml'];
+  
+  // Tenta achar o primeiro candidato que existe na lista de arquivos
+  indexFile.value = allFiles.find(f => !f.isDirectory && candidates.includes(f.name.toLowerCase()));
 
-  // Filtra a lista principal
+  // 2. FILTRO DA LISTA (Arquivos que sobram)
   localFiles.value = allFiles.filter(f => {
-    if (f === indexFile.value) return false;
-    if (!f.isDirectory && (f.name === '_index.md' || f.name === 'index.md')) return false;
+    // Se o arquivo já foi escolhido como indexFile, não mostra na lista solta
+    if (indexFile.value && f.name === indexFile.value.name) return false;
     
-    // Filtra extensões
+    // Filtra extensões permitidas (ADICIONADO .toml)
     if (f.isDirectory) return true;
-    const allowedExtensions = ['.md', '.json', '.yml', '.yaml'];
+    const allowedExtensions = ['.md', '.json', '.yml', '.yaml', '.toml'];
     return allowedExtensions.some(ext => f.name.toLowerCase().endsWith(ext));
   });
 
@@ -64,8 +68,13 @@ watch(() => props.files, async (newVal) => {
 // --- HANDLERS ---
 const handleItemClick = (file) => {
   if (file.isDirectory) {
+    // CORREÇÃO: Não tentamos adivinhar o _index.md aqui.
+    // Enviamos o caminho da pasta simulando um arquivo de index padrão.
+    // O "Smart Resolve" do editor.vue vai interceptar e corrigir se for .toml ou .yml
     const indexPath = `${props.currentFolder}/${file.name}/_index.md`;
+    
     emit('select', indexPath);
+    
     if (file.hasChildren) {
         emit('navigate', file.name);
     }
@@ -264,6 +273,9 @@ const handleMove = async () => {
                <i class="pi pi-file text-lg text-[#6f942e]"></i>
                <span class="text-base font-bold truncate text-[#6f942e]">
                  Página principal
+                 <span v-if="!indexFile.name.endsWith('.md')" class="text-[9px] opacity-60 ml-1 uppercase border border-[#6f942e]/30 px-1 rounded">
+                    {{ indexFile.name.split('.').pop() }}
+                 </span>
                </span>
             </div>
             
@@ -288,7 +300,7 @@ const handleMove = async () => {
                class="group flex items-center justify-between p-2.5 rounded-md transition-all border border-transparent pr-2 select-none cursor-pointer"
                :class="[
                   currentFile === `${currentFolder}/${file.name}` || 
-                  (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/_index.md`))
+                  (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/`)) // Highlight se estiver dentro da pasta
                   ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-sm' 
                   : 'hover:bg-white/5 text-slate-300'
                ]"
@@ -298,7 +310,7 @@ const handleMove = async () => {
                   :class="[
                     file.hasChildren ? 'pi pi-folder text-amber-600' : 'pi pi-file text-slate-500',
                     currentFile === `${currentFolder}/${file.name}` || 
-                    (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/_index.md`))
+                    (file.isDirectory && currentFile.includes(`${currentFolder}/${file.name}/`))
                     ? '!text-[#6f942e]' : '',
                     'text-lg'
                   ]"

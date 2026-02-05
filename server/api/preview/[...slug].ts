@@ -1,60 +1,79 @@
 import { promises as fs } from 'node:fs';
-import { resolve, join, relative, dirname } from 'node:path';
+import { resolve, join, relative, extname } from 'node:path';
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
+import { parse as parseToml } from 'smol-toml'; // Parser para TOML
+import yaml from 'js-yaml'; // Parser para YAML (caso queira suportar também)
 
 export default defineEventHandler(async (event) => {
 
   let slug = getRouterParam(event, 'slug') || 'index';
   slug = slug.replace(/\/+$/, ''); // Remove barra final
 
-  // Ajuste o caminho base se necessário (ex: ../storage/site/content ou apenas content)
   const STORAGE_DIR = resolve(process.cwd(), 'content');
 
   console.log(`🔍 Preview solicitando: ${slug}`);
 
   // LISTA DE PRIORIDADES DE BUSCA
-  // Agora priorizamos o _index.md dentro da pasta
   const possiblePaths = [
-    // 1. O Padrão Novo: content/minha-pagina/_index.md
+    // 1. Prioridade Máxima: Configurações de Bloco (TOML/YAML)
+    join(STORAGE_DIR, slug, '_index.toml'),
+    join(STORAGE_DIR, slug, '_index.yml'),
+    join(STORAGE_DIR, slug, '_index.yaml'),
+
+    // 2. Padrão Novo Markdown: content/pagina/_index.md
     join(STORAGE_DIR, slug, '_index.md'),
     
-    // 2. Caso Especial: Home (content/_index.md)
+    // 3. Caso Especial: Home
+    (slug === 'index' ? join(STORAGE_DIR, '_index.toml') : ''),
     (slug === 'index' ? join(STORAGE_DIR, '_index.md') : ''),
 
-    // 3. Fallback: Arquivo solto antigo (content/minha-pagina.md)
+    // 4. Fallbacks Antigos
     join(STORAGE_DIR, `${slug}.md`),
-
-    // 4. Fallback: Padrão antigo de index (content/minha-pagina/index.md)
     join(STORAGE_DIR, slug, 'index.md')
-  ].filter(p => p !== ''); // Remove strings vazias
+  ].filter(p => p !== ''); 
 
   for (const p of possiblePaths) {
     try {
-      // Tenta ler o arquivo
       const rawContent = await fs.readFile(p, 'utf-8');
-      
-      // Compila o Markdown
-      const parsed = await parseMarkdown(rawContent, {});
-
-      // --- TRUQUE DO SIRIUS ---
-      // Injetamos o caminho real do arquivo no objeto de resposta.
-      // Isso ajuda a Previewbar a saber EXATAMENTE o que editar.
-      // Ex: "atrativos/alimentacao/bistro/_index.md"
+      const ext = extname(p).toLowerCase();
       const relativePath = relative(STORAGE_DIR, p);
       
-      // Adicionamos essas propriedades "escondidas" que o Nuxt Content costuma ter
-      parsed._file = relativePath;
-      parsed._path = slug === 'index' ? '/' : `/${slug}`;
-      parsed._id = relativePath; // Id único baseado no arquivo
+      let resultData = {};
+      let resultBody = {};
 
+      // --- LÓGICA DE PARSE POR EXTENSÃO ---
+      if (ext === '.toml') {
+          // TOML: É puramente dados, não tem "Body" (AST)
+          resultData = parseToml(rawContent);
+          resultBody = null; // Smart Blocks não têm corpo de texto rico
+      } 
+      else if (ext === '.yml' || ext === '.yaml') {
+          // YAML: Também puramente dados
+          resultData = yaml.load(rawContent);
+          resultBody = null;
+      } 
+      else {
+          // MARKDOWN: Usa o parser do Nuxt (MDC)
+          const parsed = await parseMarkdown(rawContent, {});
+          resultData = parsed.data;
+          resultBody = parsed.body;
+      }
+
+      // --- MONTAGEM DA RESPOSTA ---
       return {
-        data: parsed.data, // Frontmatter
-        body: parsed.body, // AST do conteúdo
+        data: resultData || {}, // Frontmatter ou Dados do TOML
+        body: resultBody,       // AST (apenas para Markdown)
+        
+        // Metadados do Nuxt Content
         _file: relativePath,
-        _path: parsed._path
+        _path: slug === 'index' ? '/' : `/${slug}`,
+        _id: relativePath,
+        _extension: ext.replace('.', '')
       }; 
+
     } catch (e) {
-      // Se não achou, silencia o erro e tenta o próximo da lista
+      // Se der erro de leitura ou parse, tenta o próximo
+      // console.error(`Erro ao ler ${p}:`, e.message); // Opcional: Debug
       continue; 
     }
   }

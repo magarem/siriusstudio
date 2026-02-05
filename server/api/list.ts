@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import yaml from 'js-yaml';
 
-const DATA_ROOT = resolve(process.cwd(), 'server/data');
+const DATA_ROOT = resolve(process.cwd(), 'data');
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event);

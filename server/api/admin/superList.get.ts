@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
     targetDir = join(APPS_ROOT, 'storage', site!, 'content', section);
   } else {
     // Caminho no modo Produção/Build
-    const DATA_ROOT = resolve(process.cwd(), 'server/data');
+    const DATA_ROOT = resolve(process.cwd(), 'data');
     targetDir = join(DATA_ROOT, section);
   }
 

@@ -77,7 +77,7 @@ const handleLogin = async () => {
     })
     
     if (res.success) {
-      window.location.href = '/edit'
+      window.location.href = '/editor'
     }
   } catch (err) {
     alert('Erro de identificação. Verifique suas credenciais.')

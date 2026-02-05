@@ -16,7 +16,7 @@ const props = defineProps({
       card_showdescription: true,
       card_showaction: false,
       card_showbadges: true,
-      card_minwidth: '280px' // Reduzido para melhor ajuste
+      card_minwidth: '200px' // Reduzido para melhor ajuste
     })
   },
   config: { 
@@ -279,7 +279,7 @@ const onItemClick = (item, event) => {
 }
 
 .card-item.is-folder {
-  border-left: 3px solid #3b82f6;
+  border-left: 0px solid;
 }
 
 .card-item.no-title .card-content {

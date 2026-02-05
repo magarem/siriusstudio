@@ -1,6 +1,5 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join, dirname, relative, sep } from 'node:path';
-// O MDC Runtime é o motor que converte Markdown -> JSON (AST)
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
 
 export default defineEventHandler(async (event) => {
@@ -9,27 +8,37 @@ export default defineEventHandler(async (event) => {
 
   if (!site) throw createError({ statusCode: 400, message: 'Site obrigatório.' });
 
-  // --- 0. CONFIGURAÇÃO ---
+  // --- 0. CONFIGURAÇÃO DE CAMINHOS ---
   const config = useRuntimeConfig();
   const envPath = config.storagePath as string;
   const APPS_ROOT = resolve(envPath); 
-  const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
-  const DEST_ROOT = join(APPS_ROOT, 'sites', site, 'server', 'data');
   
-  const stats = { processed: 0, copiedOrders: 0, copiedJson: 0, errors: 0 };
+  // ORIGEM: Onde você edita (MD + Imagens)
+  // Ex: .../storage/novagokula/content
+  const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
+  
+  // DESTINO: Onde fica o site compilado (JSON + Imagens)
+  // Ex: .../storage/novagokula/data
+  const DEST_ROOT = join(APPS_ROOT, 'storage', site, 'data');
+  
+  const stats = { processed: 0, copiedOrders: 0, copiedJson: 0, copiedImages: 0, errors: 0 };
   const versions: Record<string, number> = {};
 
   try {
     // --- 1. LIMPEZA (NUKE) ---
+    // Limpa a pasta 'data' inteira para garantir que não sobrem arquivos órfãos (ex: posts deletados)
     try {
-      const files = await fs.readdir(DEST_ROOT);
-      await Promise.all(files.map(f => fs.rm(join(DEST_ROOT, f), { recursive: true, force: true })));
+      if (await fs.stat(DEST_ROOT).catch(() => false)) {
+          const files = await fs.readdir(DEST_ROOT);
+          await Promise.all(files.map(f => fs.rm(join(DEST_ROOT, f), { recursive: true, force: true })));
+      } else {
+          await fs.mkdir(DEST_ROOT, { recursive: true });
+      }
     } catch (e: any) {
-      if (e.code !== 'ENOENT') console.error('Aviso na limpeza:', e.message);
-      await fs.mkdir(DEST_ROOT, { recursive: true });
+      console.error('Aviso na limpeza:', e.message);
     }
 
-    // --- 2. CRAWLER RECURSIVO ---
+    // --- 2. CRAWLER (Buscar arquivos) ---
     async function getFiles(dir: string): Promise<string[]> {
       const dirents = await fs.readdir(dir, { withFileTypes: true });
       const files = await Promise.all(dirents.map((dirent) => {
@@ -39,19 +48,25 @@ export default defineEventHandler(async (event) => {
       return Array.prototype.concat(...files);
     }
 
-    // Verifica se a origem existe
+    // Verifica origem
     try {
         await fs.access(SOURCE_ROOT);
     } catch {
-        throw createError({ statusCode: 404, message: `Content não encontrado: ${SOURCE_ROOT}` });
+        throw createError({ statusCode: 404, message: `Pasta Content não encontrada: ${SOURCE_ROOT}` });
     }
 
     const allFiles = await getFiles(SOURCE_ROOT);
     
-    // Filtros
+    // Categoriza os arquivos
     const mdFiles = allFiles.filter(f => f.endsWith('.md'));
     const orderFiles = allFiles.filter(f => f.endsWith('_order.yml'));
-    const jsonFiles = allFiles.filter(f => f.endsWith('.json'));
+    const jsonFiles = allFiles.filter(f => f.endsWith('.json')); // JSONs manuais que já existiam
+    
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
+    const imageFiles = allFiles.filter(f => {
+        const ext = f.toLowerCase().slice(f.lastIndexOf('.'));
+        return imageExtensions.includes(ext);
+    });
 
     // --- 3. COMPILAÇÃO (MARKDOWN -> JSON) ---
     for (const filePath of mdFiles) {
@@ -61,42 +76,28 @@ export default defineEventHandler(async (event) => {
 
         const rawContent = await fs.readFile(filePath, 'utf-8');
         const relPath = relative(SOURCE_ROOT, filePath);
-        
-        // Normaliza path (Windows/Linux)
         const normalizedRelPath = relPath.split(sep).join('/');
 
-        // [DETECÇÃO DE INDEX]
-        // Verifica se é um arquivo _index.md ou index.md
-        const isIndex = normalizedRelPath.endsWith('_index.md') || normalizedRelPath.endsWith('index.md');
-
-        // [VERSIONAMENTO] 
-        // Se for _index.md, a chave no meta deve ser "pasta/index"
+        // Versionamento
         let keyName = normalizedRelPath.replace('.md', '');
         if (keyName.endsWith('_index')) keyName = keyName.replace('_index', 'index');
         versions[keyName] = lastModified;
 
-        // Parse do Markdown
+        // Parse MDC (Nuxt Content AST)
         const parsedAST = await parseMarkdown(rawContent, { toc: { depth: 2, searchDepth: 2 } });
         parsedAST._id = `content:${site}:${normalizedRelPath}`;
         
-        // [PATH FIX] Gera o caminho web correto (Slug)
-        // Remove .md, remove _index e index do final para gerar rota limpa
+        // Caminho Web (Slug)
         let webPath = normalizedRelPath.replace('.md', '');
-        
-        // Remove sufixos para a URL
         if (webPath.endsWith('/_index')) webPath = webPath.substring(0, webPath.length - 7);
         else if (webPath.endsWith('/index')) webPath = webPath.substring(0, webPath.length - 6);
-        else if (webPath === '_index' || webPath === 'index') webPath = ''; // Home
-
-        // Garante barra inicial
+        else if (webPath === '_index' || webPath === 'index') webPath = ''; 
         if (!webPath.startsWith('/')) webPath = '/' + webPath;
         if (webPath === '') webPath = '/';
-
         parsedAST._path = webPath;
         
-        // [OUTPUT FIX] Define o nome do arquivo JSON de destino
-        // Se a entrada for "pasta/_index.md", a saída DEVE ser "pasta/index.json"
-        // para que o Runtime ache fácil.
+        // Define nome do arquivo de saída
+        // _index.md vira index.json
         let destFileName = relPath;
         if (destFileName.endsWith('_index.md')) {
             destFileName = destFileName.replace('_index.md', 'index.json');
@@ -111,45 +112,53 @@ export default defineEventHandler(async (event) => {
 
         stats.processed++;
       } catch (err) {
-        console.error(`Erro compilando ${filePath}:`, err);
+        console.error(`Erro compilando MD ${filePath}:`, err);
         stats.errors++;
       }
     }
 
-    // --- 4. CÓPIA DE ARQUIVOS JSON PUROS ---
-    for (const filePath of jsonFiles) {
+    // --- 4. CÓPIA DE ARQUIVOS AUXILIARES (JSON, YML) ---
+    const auxFiles = [...jsonFiles, ...orderFiles];
+    for (const filePath of auxFiles) {
       try {
         const relPath = relative(SOURCE_ROOT, filePath);
         const destFile = join(DEST_ROOT, relPath);
         
-        const fileStat = await fs.stat(filePath);
-        const normalizedRelPath = relPath.split(sep).join('/');
-        const keyName = normalizedRelPath.replace('.json', '');
-        
-        if (!versions[keyName]) {
-            versions[keyName] = fileStat.mtime.getTime();
+        // Atualiza versão se for JSON
+        if (filePath.endsWith('.json')) {
+            const normalizedRelPath = relPath.split(sep).join('/');
+            const keyName = normalizedRelPath.replace('.json', '');
+            if (!versions[keyName]) {
+                const s = await fs.stat(filePath);
+                versions[keyName] = s.mtime.getTime();
+            }
         }
 
         await fs.mkdir(dirname(destFile), { recursive: true });
         await fs.copyFile(filePath, destFile);
         
-        stats.copiedJson++;
+        if (filePath.endsWith('_order.yml')) stats.copiedOrders++;
+        else stats.copiedJson++;
+
       } catch (err) {
-        console.error(`Erro copiando JSON ${filePath}:`, err);
-        stats.errors++;
+        console.error(`Erro copiando auxiliar ${filePath}:`, err);
       }
     }
 
-    // --- 5. CÓPIA _ORDER.YML ---
-    for (const filePath of orderFiles) {
+    // --- 5. CÓPIA DE IMAGENS ---
+    // Copia as imagens para a mesma estrutura dentro de 'data'
+    // Assim, se o JSON está em data/blog/index.json, a imagem vai para data/blog/foto.jpg
+    for (const filePath of imageFiles) {
         try {
             const relPath = relative(SOURCE_ROOT, filePath);
             const destFile = join(DEST_ROOT, relPath);
+            
             await fs.mkdir(dirname(destFile), { recursive: true });
             await fs.copyFile(filePath, destFile);
-            stats.copiedOrders++;
+            stats.copiedImages++;
         } catch (err) {
-            console.error(`Erro copiando ordem ${filePath}:`, err);
+            console.error(`Erro copiando imagem ${filePath}:`, err);
+            stats.errors++;
         }
     }
 
@@ -159,7 +168,7 @@ export default defineEventHandler(async (event) => {
       JSON.stringify(versions, null, 2)
     );
 
-    console.log(`✅ Compilação concluída para ${site}.`);
+    console.log(`✅ Compilação concluída: ${site} -> storage/${site}/data`);
     return { success: true, details: stats };
 
   } catch (error: any) {

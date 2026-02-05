@@ -39,14 +39,35 @@ const { data: files, refresh } = await useFetch('/api/admin/storage', {
   watch: [folder]
 });
 
-// --- COMPUTEDS AUXILIARES ---
+// --- COMPUTEDS AUXILIARES (LÓGICA DE FILTRO CORRIGIDA) ---
 
-const subDirectories = computed(() => {
-  return files.value ? files.value.filter(f => f.isDirectory && f.name !== itemToMove.value?.name) : [];
+// 1. LISTA DE EXIBIÇÃO NA TELA (Pastas + Imagens Válidas)
+const filteredFiles = computed(() => {
+  if (!files.value) return [];
+  
+  const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
+
+  return files.value.filter(f => {
+    // A. Sempre mostrar pastas
+    if (f.isDirectory) return true;
+
+    // B. Bloquear explicitamente arquivos de sistema/conteúdo
+    if (f.name === '_index.md' || f.name === 'index.md' || f.name === '.DS_Store') return false;
+
+    // C. Só mostrar se for imagem válida
+    const lowerName = f.name.toLowerCase();
+    return validExtensions.some(ext => lowerName.endsWith(ext));
+  });
 });
 
+// 2. LISTA APENAS DE IMAGENS (Para o Zoom funcionar)
 const imageFiles = computed(() => {
-  return files.value ? files.value.filter(f => !f.isDirectory) : [];
+  return filteredFiles.value.filter(f => !f.isDirectory);
+});
+
+// 3. LISTA APENAS DE PASTAS (Para o modal de Mover)
+const subDirectories = computed(() => {
+  return files.value ? files.value.filter(f => f.isDirectory && f.name !== itemToMove.value?.name) : [];
 });
 
 const currentZoomedFile = computed(() => {
@@ -66,7 +87,6 @@ const breadcrumbs = computed(() => {
 });
 
 const uploadUrl = computed(() => {
-  // URL usada pelo componente FileUpload do PrimeVue (botão do header)
   return `/api/admin/upload?site=${siteContext.value}&folder=${encodeURIComponent(folder.value)}`;
 });
 
@@ -131,7 +151,6 @@ onMounted(() => window.addEventListener('keydown', handleKeydown));
 onUnmounted(() => window.removeEventListener('keydown', handleKeydown));
 
 // --- FILESYSTEM ACTIONS ---
-
 const confirmCreateFolder = async () => {
   const name = prompt("Nome da nova pasta:");
   if (!name) return;
@@ -148,18 +167,37 @@ const confirmCreateFolder = async () => {
   }
 };
 
-// Callback do componente FileUpload (Header)
 const onUpload = () => {
   refresh();
   toast.add({ severity: 'success', summary: 'Upload concluído!', life: 2000 });
 };
 
-// --- LÓGICA DE DRAG & DROP ---
+// --- LÓGICA DE DRAG & DROP COMPLETA ---
 const handleDrop = async (e) => {
     isDragging.value = false;
+    
+    // 1. TENTA PEGAR ARQUIVOS LOCAIS
     const files = e.dataTransfer.files;
-    if (files.length > 0) {
+    if (files && files.length > 0) {
         await uploadDroppedFiles(files);
+        return;
+    }
+
+    // 2. SE NÃO TEM ARQUIVO, TENTA PEGAR URL (DE OUTRA ABA)
+    const html = e.dataTransfer.getData('text/html');
+    const uri = e.dataTransfer.getData('text/uri-list'); 
+
+    let src = null;
+    if (html) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const img = doc.querySelector('img');
+        if (img) src = img.src;
+    }
+    if (!src && uri) src = uri;
+
+    if (src) {
+        await processRemoteImage(src);
     }
 };
 
@@ -168,12 +206,10 @@ const uploadDroppedFiles = async (fileList) => {
     try {
         const formData = new FormData();
         let hasImage = false;
-
-        // Adiciona todos os arquivos válidos ao FormData
         for (let i = 0; i < fileList.length; i++) {
             const file = fileList[i];
             if (file.type.startsWith('image/')) {
-                formData.append('file', file); // A API lê isso como array
+                formData.append('file', file);
                 hasImage = true;
             }
         }
@@ -183,21 +219,51 @@ const uploadDroppedFiles = async (fileList) => {
             return;
         }
 
-        // Envia para a API usando QUERY STRING para site e folder
         await $fetch('/api/admin/upload', {
             method: 'POST',
             body: formData,
             params: {
                 site: siteContext.value,
-                folder: folder.value // Envia para a pasta atual do Explorer
+                folder: folder.value 
             }
         });
-
         toast.add({ severity: 'success', summary: 'Upload concluído', life: 2000 });
-        refresh(); // Atualiza a lista visualmente
+        refresh();
     } catch (e) {
         console.error(e);
         toast.add({ severity: 'error', summary: 'Erro no Upload', detail: 'Falha ao enviar arquivos.' });
+    } finally {
+        isUploading.value = false;
+    }
+};
+
+// Tenta baixar imagem de URL externa (Drag de outra aba)
+const processRemoteImage = async (url) => {
+    isUploading.value = true;
+    toast.add({ severity: 'info', summary: 'Baixando...', detail: 'Tentando capturar imagem externa.' });
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Falha ao baixar imagem');
+        const blob = await response.blob();
+        
+        let filename = 'imagem-web.jpg';
+        try {
+            const urlObj = new URL(url);
+            const pathName = urlObj.pathname.split('/').pop();
+            if (pathName && pathName.includes('.')) filename = pathName;
+            else {
+                const ext = blob.type.split('/')[1] || 'jpg';
+                filename = `downloaded-image.${ext}`;
+            }
+        } catch (e) {}
+
+        const file = new File([blob], filename, { type: blob.type });
+        await uploadDroppedFiles([file]);
+
+    } catch (e) {
+        console.error("Erro ao processar imagem remota:", e);
+        toast.add({ severity: 'warn', summary: 'Bloqueio de Segurança', detail: 'Salve a imagem no computador e arraste depois.', life: 5000 });
     } finally {
         isUploading.value = false;
     }
@@ -224,7 +290,7 @@ const deleteItem = async (fileName, isDir) => {
   }
 };
 
-// --- RENOMEAR & MOVER (Mantido Igual) ---
+// --- RENOMEAR & MOVER ---
 const openRenameModal = (file) => {
   itemToRename.value = file;
   renameValue.value = file.name;
@@ -371,7 +437,7 @@ const handleMove = async (destinationSubFolder) => {
       </div>
 
       <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div v-for="file in files" :key="file.name" 
+        <div v-for="file in filteredFiles" :key="file.name" 
              class="bg-[#1a1d1c] p-2 rounded-xl border border-white/5 hover:border-[#6f942e] transition-all group relative overflow-hidden h-40 cursor-pointer"
              @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
         >
@@ -404,7 +470,7 @@ const handleMove = async (destinationSubFolder) => {
       </div>
 
       <div v-else class="flex flex-col gap-2">
-         <div v-for="file in files" :key="file.name" 
+         <div v-for="file in filteredFiles" :key="file.name" 
               class="flex items-center justify-between p-2 bg-[#1a1d1c] rounded-xl border border-white/5 hover:border-[#6f942e] hover:bg-white/5 transition-all group cursor-pointer"
               @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
          >
@@ -432,7 +498,7 @@ const handleMove = async (destinationSubFolder) => {
          </div>
       </div>
 
-      <div v-if="files && files.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
+      <div v-if="filteredFiles && filteredFiles.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
         <i class="pi pi-folder-open text-6xl mb-4 text-slate-600"></i>
         <p class="text-sm uppercase tracking-widest text-slate-500 font-bold">Pasta Vazia</p>
         <p class="text-[10px] text-slate-600 mt-2">Arraste imagens para cá</p>
