@@ -1,6 +1,7 @@
 <script setup>
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
+import { Icon } from '@iconify/vue'
 
 const toast = useToast();
 const confirm = useConfirm();
@@ -232,12 +233,14 @@ const formatDate = (dateString) => {
     </div>
 
     <div class="flex justify-end pt-2">
-        <Button 
-            label="CRIAR PONTO DE RESTAURAÇÃO" 
-            icon="pi pi-plus-circle" 
-            class="bg-[#6f942e] border-none text-black font-bold text-xs hover:scale-105 transition-transform"
-            @click="showCreateDialog = true"
-        />
+        <Button
+   class="bg-[#6f942e] border-none text-black font-black w-full hover:bg-[#5a7a25] h-12 transition-all active:scale-[0.98]"
+       
+  @click="showCreateDialog = true"
+>
+  <Icon icon="mdi:plus-circle-outline" class="w-4 h-4" />
+  <span>CRIAR PONTO DE RESTAURAÇÃO</span>
+</Button>
     </div>
 
     <Dialog v-model:visible="showCreateDialog" modal header="Novo Backup" :style="{ width: '350px' }" class="bg-[#141b18]" :appendTo="'body'">

@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
   // LISTA DE PRIORIDADES DE BUSCA
   const possiblePaths = [
     // 1. Prioridade Máxima: Configurações de Bloco (TOML/YAML)
+    join(STORAGE_DIR, `${slug}.json`),
     join(STORAGE_DIR, slug, '_index.toml'),
     join(STORAGE_DIR, slug, '_index.yml'),
     join(STORAGE_DIR, slug, '_index.yaml'),

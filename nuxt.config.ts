@@ -9,7 +9,8 @@ export default defineNuxtConfig({
       uploadPath: process.env.NUXT_PUBLIC_UPLOAD_PATH || "public/images",
     },
   },
-  css: ["primeicons/primeicons.css"],
+  // css: [
+  //   'primeicons/primeicons.css'],
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
   modules: [

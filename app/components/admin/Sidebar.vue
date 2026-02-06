@@ -224,35 +224,38 @@ const handleMove = async () => {
                 <span class="text-[16px] font-mono text-slate-300 truncate select-all leading-none mt-0.5">{{ currentFolderName }}</span>
             </div>
 
-            <div class="flex items-center bg-[#1a201d] border border-white/10 rounded overflow-hidden h-8 shrink-0">
-                
-                <Button 
-                    icon="pi pi-arrow-up"
-                    class="!w-8 !h-full !rounded-none !border-none !bg-transparent text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-                    :class="{ 'opacity-30 cursor-not-allowed': !currentFolder.includes('/') }"
-                    :disabled="!currentFolder.includes('/')"
-                    v-tooltip.bottom="'Subir nível'"
-                    @click="emit('back')"
-                />
-                
-                <div class="w-px h-4 bg-white/10"></div>
+            <div class="flex items-center bg-[#1a201d] border border-white/10 rounded overflow-hidden h-7 shrink-0 shadow-sm">
+    
+          <ButtonGroup class="bg-[#1a201d] border border-white/10 rounded overflow-hidden h-7 shadow-sm">
+    
+    <Button 
+       class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none" 
+        :class="{ '!opacity-30 !cursor-not-allowed': !currentFolder.includes('/') }"
+        :disabled="!currentFolder.includes('/')"
+        v-tooltip.bottom="'Subir nível'"
+        @click="emit('back')"
+    >
+        <i class="pi pi-arrow-up text-xs"></i>
+    </Button>
 
-                <Button 
-                    icon="pi pi-file-plus" 
-                    class="!w-8 !h-full !rounded-none !border-none !bg-transparent text-[#6f942e] hover:bg-white/5 transition-colors" 
-                    v-tooltip.bottom="'Novo Arquivo'" 
-                    @click="emit('create-file')" 
-                />
-                
-                <div class="w-px h-4 bg-white/10"></div>
+    <Button 
+        class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none" 
+        v-tooltip.bottom="'Novo Arquivo'" 
+        @click="emit('create-file')" 
+    >
+        <i class="pi pi-file-plus text-xs"></i>
+    </Button>
 
-                <Button 
-                    icon="pi pi-folder-plus" 
-                    class="!w-8 !h-full !rounded-none !border-none !bg-transparent text-slate-400 hover:text-white hover:bg-white/5 transition-colors" 
-                    v-tooltip.bottom="'Nova Pasta'" 
-                    @click="emit('create-folder')" 
-                />
-            </div>
+    <Button 
+        class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none" 
+        v-tooltip.bottom="'Nova Pasta'" 
+        @click="emit('create-folder')" 
+    >
+        <i class="pi pi-folder-plus text-xs"></i>
+    </Button>
+
+</ButtonGroup>
+</div>
 
         </div>
       </div>

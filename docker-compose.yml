@@ -12,4 +12,4 @@ services:
       - NUXT_HOST=0.0.0.0
     volumes:
       # Mapeia a pasta de dados para persistir imagens e banco
-      - ./server/data:/app/server/data
+      - ./data:/app/data
