@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join, dirname, relative, sep } from 'node:path';
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
+import { parse } from 'smol-toml'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
@@ -59,6 +60,7 @@ export default defineEventHandler(async (event) => {
     
     // Categoriza os arquivos
     const mdFiles = allFiles.filter(f => f.endsWith('.md'));
+    const tomlFiles = allFiles.filter(f => f.endsWith('.toml'));
     const orderFiles = allFiles.filter(f => f.endsWith('_order.yml'));
     const jsonFiles = allFiles.filter(f => f.endsWith('.json')); // JSONs manuais que já existiam
     
@@ -67,6 +69,31 @@ export default defineEventHandler(async (event) => {
         const ext = f.toLowerCase().slice(f.lastIndexOf('.'));
         return imageExtensions.includes(ext);
     });
+
+    // --- 3.5 COMPILAÇÃO (TOML -> JSON) ---
+    // Ideal para o settings.toml -> settings.json
+    for (const filePath of tomlFiles) {
+      try {
+        const rawContent = await fs.readFile(filePath, 'utf-8');
+        const parsedToml = parse(rawContent); // Transforma TOML em Objeto JS
+        
+        const relPath = relative(SOURCE_ROOT, filePath);
+        const destFile = join(DEST_ROOT, relPath.replace('.toml', '.json'));
+
+        // Versionamento
+        const fileStat = await fs.stat(filePath);
+        const keyName = relPath.replace('.toml', '').split(sep).join('/');
+        versions[keyName] = fileStat.mtime.getTime();
+
+        await fs.mkdir(dirname(destFile), { recursive: true });
+        await fs.writeFile(destFile, JSON.stringify(parsedToml, null, 2));
+
+        stats.processed++; // Ou crie um stats.tomlProcessed se preferir
+      } catch (err) {
+        console.error(`Erro compilando TOML ${filePath}:`, err);
+        stats.errors++;
+      }
+    }
 
     // --- 3. COMPILAÇÃO (MARKDOWN -> JSON) ---
     for (const filePath of mdFiles) {
