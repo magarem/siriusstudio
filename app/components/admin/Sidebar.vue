@@ -44,7 +44,7 @@ watch(() => props.files, async (newVal) => {
 
   // 1. LÓGICA DE INDEX INTELIGENTE
   // Procura, na ordem de prioridade, quem será a "Página Principal" desta pasta
-  const candidates = ['_index.md', 'index.md', '_index.toml', 'index.toml', '_index.yml', 'index.yml', '_index.yaml', 'index.yaml'];
+  const candidates = ['_index.md', 'index.md', '_index.json', '_index.toml', 'index.toml', '_index.yml', 'index.yml', '_index.yaml', 'index.yaml'];
   
   // Tenta achar o primeiro candidato que existe na lista de arquivos
   indexFile.value = allFiles.find(f => !f.isDirectory && candidates.includes(f.name.toLowerCase()));

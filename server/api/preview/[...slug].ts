@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const possiblePaths = [
     // 1. Prioridade Máxima: Configurações de Bloco (TOML/YAML)
     join(STORAGE_DIR, `${slug}.json`),
+    join(STORAGE_DIR, slug, '_index.json'),
     join(STORAGE_DIR, slug, '_index.toml'),
     join(STORAGE_DIR, slug, '_index.yml'),
     join(STORAGE_DIR, slug, '_index.yaml'),
@@ -43,7 +44,12 @@ export default defineEventHandler(async (event) => {
       let resultBody = {};
 
       // --- LÓGICA DE PARSE POR EXTENSÃO ---
-      if (ext === '.toml') {
+      if (ext === '.json') {
+          // JSON: É puramente dados, não tem "Body" (AST)
+          resultData = JSON.parse(rawContent);
+          resultBody = null; // Smart Blocks não têm corpo de texto rico
+      } 
+      else if (ext === '.toml') {
           // TOML: É puramente dados, não tem "Body" (AST)
           resultData = parseToml(rawContent);
           resultBody = null; // Smart Blocks não têm corpo de texto rico

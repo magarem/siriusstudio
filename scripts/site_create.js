@@ -1,153 +1,121 @@
 import { execSync } from 'child_process';
 import fs from 'fs-extra';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
-const CURRENT_DIR = process.cwd();
+// =====================================================================
+// CONFIGURAÇÕES
+// =====================================================================
+const VPS_HOST = "maga@siriusstudio.site";
+const VPS_BASE_PATH = "/home/maga"; 
+const LOCAL_TEMPLATE_PATH = path.join(process.cwd(), '..', 'sites', 'sirius_site_basedesigner'); 
+// =====================================================================
 
-// --- CONFIGURAÇÃO DE CAMINHOS ---
-const TEMPLATE_SITE = path.join(CURRENT_DIR, '../sites/sirius_site_basedesigner'); 
-const TEMPLATE_STORAGE = path.join(CURRENT_DIR, '../storage/sirius_site_basedesigner');
-const SERVER_CORE = path.join(CURRENT_DIR, 'server'); 
-const INFO_PATH = path.join(CURRENT_DIR, '../sites/info.json');
+const siteName = process.argv[2];
 
-const TARGET_NAME = process.argv[2];
+const C = {
+    reset: "\x1b[0m",
+    green: "\x1b[32m",
+    yellow: "\x1b[33m",
+    cyan: "\x1b[36m",
+    red: "\x1b[31m",
+};
 
-if (!TARGET_NAME) {
-  console.error('❌ Erro: Forneça o nome do novo site.');
+if (!siteName) {
+  console.error(`${C.red}❌ Erro: Forneça o nome do novo projeto.${C.reset}`);
   process.exit(1);
 }
 
-const DEST_SITE = path.join(CURRENT_DIR, '../sites', TARGET_NAME);
-const DEST_STORAGE = path.join(CURRENT_DIR, '../storage', TARGET_NAME);
+const localProjectPath = path.join(process.cwd(), '..', 'sites', siteName);
+const vpsAppsPath = `${VPS_BASE_PATH}/dev/apps`;
+const vpsRepoPath = `${vpsAppsPath}/repos/${siteName}.git`;
+const vpsStoragePath = `${vpsAppsPath}/storage/${siteName}`;
+const vpsHookPath = `${vpsRepoPath}/hooks/post-receive`;
+const gitRemoteUrl = `ssh://${VPS_HOST}${vpsRepoPath}`;
 
-async function generate() {
-  try {
-    console.log(`\n🚀 INICIANDO PROTOCOLO SIRIUS: ${TARGET_NAME}`);
-    console.log('---------------------------------------------------');
-
-    // 1. GESTÃO DE PORTA (info.json)
-    console.log('📝 [1/8] Gerenciando manifesto info.json...');
-    if (!await fs.pathExists(INFO_PATH)) {
-      await fs.writeJson(INFO_PATH, { project: "Sirius Eco", last_port: 3000, sites: [] }, { spaces: 2 });
-    }
-    const infoData = await fs.readJson(INFO_PATH);
-    const NEXT_PORT = infoData.last_port + 1;
-
-    // 2. CÓPIA DE STORAGE
-    console.log('🗄️  [2/8] Criando estrutura de Storage...');
-    await fs.copy(TEMPLATE_STORAGE, DEST_STORAGE);
-    
-    const configPath = path.join(DEST_STORAGE, '_config.json');
-    const storageConfig = {
-      url: `http://localhost:${NEXT_PORT}/`,
-      port: NEXT_PORT.toString(),
-      preview: `localhost:${NEXT_PORT}`,
-      urlprod: TARGET_NAME,
-      dominio: `${TARGET_NAME}.siriusstudio.site`,
-      name: TARGET_NAME,
-      theme: "dark"
-    };
-    await fs.writeJson(configPath, storageConfig, { spaces: 2 });
-
-    // 3. CÓPIA DO SITE
-    console.log('🌍 [3/8] Criando estrutura do Site (Nuxt)...');
-    await fs.copy(TEMPLATE_SITE, DEST_SITE, {
-      filter: (src) => !['node_modules', '.git', '.nuxt', '.output', 'dist'].some(el => src.includes(el))
-    });
-
-    // 4. IDENTIDADE E .ENV
-    console.log('🆔 [4/8] Configurando .env e Porta...');
-    const envPath = path.join(DEST_SITE, '.env');
-    const envContent = `NUXT_SITE_ID=${TARGET_NAME}\nPORT=${NEXT_PORT}\nNODE_ENV=production`;
-    await fs.writeFile(envPath, envContent);
-
-    // 5. LINKS SIMBÓLICOS
-    console.log('🔗 [5/8] Criando Links Simbólicos...');
-    const symlinks = [
-      { link: path.join(DEST_SITE, 'content'), real: path.join(DEST_STORAGE, 'content') },
-      { link: path.join(DEST_SITE, 'data'), real: path.join(DEST_STORAGE, 'data') },
-      { link: path.join(DEST_SITE, 'db'), real: path.join(DEST_STORAGE, 'db') },
-      { link: path.join(DEST_SITE, 'server'), real: SERVER_CORE }
-    ];
-    for (const { link, real } of symlinks) {
-      await fs.remove(link);
-      await fs.ensureSymlink(real, link);
-    }
-
-    // 6. INSTALAÇÃO E BUILD
-    console.log('📦 [6/8] Instalando dependências e Buildando (Aguarde)...');
-    execSync('npm install', { cwd: DEST_SITE, stdio: 'inherit' });
-    execSync('npm run build', { cwd: DEST_SITE, stdio: 'inherit' });
-
-    // 7. REGISTRO NO MANIFESTO
-    console.log('💾 [7/8] Atualizando info.json...');
-    infoData.sites.push({
-      id: TARGET_NAME,
-      port: NEXT_PORT,
-      created_at: new Date().toISOString(),
-      status: 'active'
-    });
-    infoData.last_port = NEXT_PORT;
-    await fs.writeJson(INFO_PATH, infoData, { spaces: 2 });
-
-    // ============================================================
-    // PASSO 8: GERAÇÃO DO ECOSYSTEM E ATIVAÇÃO PM2
-    // ============================================================
-    console.log(`⚡ [8/8] Criando ecosystem.config.cjs e ativando no PM2...`);
-
-    const pm2ProcessName = `${TARGET_NAME}:${NEXT_PORT}`;
-    
-    // Conteúdo do arquivo usando CommonJS (.cjs) para compatibilidade total com PM2
-    const ecosystemContent = `
-module.exports = {
-  apps: [{
-    name: "${pm2ProcessName}",
-    script: "./.output/server/index.mjs",
-    watch: false,
-    env: {
-      NODE_ENV: "production",
-      PORT: ${NEXT_PORT},
-      NUXT_SITE_ID: "${TARGET_NAME}"
-    }
-  }]
-};`;
-
-    // 1. Caminho onde o arquivo será salvo: dentro da pasta do novo site
-    const ecosystemPath = path.join(DEST_SITE, 'ecosystem.config.cjs');
-
-    // 2. Escreve o arquivo fisicamente
-    await fs.writeFile(ecosystemPath, ecosystemContent);
-
-    // 3. Comando PM2: Apontamos para o arquivo recém-criado
-    // A flag --update-env garante que, se você rodar o script de novo para o mesmo site, 
-    // o PM2 atualize as variáveis (como a porta) na memória.
+function run(command, cwd = process.cwd()) {
     try {
-        execSync(`pm2 start ecosystem.config.cjs --update-env`, { 
-            cwd: DEST_SITE, 
-            stdio: 'inherit' 
-        });
-        
-        execSync('pm2 save');
-        console.log(`\n✅ Site ativo via Ecosystem na porta: ${NEXT_PORT}`);
-    } catch (pm2Err) {
-        console.error('❌ Erro ao iniciar via ecosystem:', pm2Err);
+        execSync(command, { cwd, stdio: 'inherit' });
+    } catch (error) {
+        process.exit(1);
     }
-
-
-    console.log(`
-✅ PROCESSO FINALIZADO COM SUCESSO!
----------------------------------------------
-🌍 URL Local:   http://localhost:${NEXT_PORT}
-🆔 Site ID:    ${TARGET_NAME}
-📦 PM2 Name:   ${TARGET_NAME}
----------------------------------------------
-O site já está ONLINE e monitorado pelo PM2.
-    `);
-
-  } catch (err) {
-    console.error('❌ FALHA NO PROCESSO:', err);
-  }
 }
 
-generate();
+function runSSH(sshCommand) {
+    execSync(`ssh ${VPS_HOST} "${sshCommand}"`, { stdio: 'inherit' });
+}
+
+async function main() {
+    console.log(`\n${C.green}🚀 TURBO CREATE: ${siteName.toUpperCase()}${C.reset}`);
+
+    // --- FASE 1: CÓPIA ULTRA RÁPIDA ---
+    console.log(`\n${C.yellow}📦 [1/4] Preparando cópia local...${C.reset}`);
+
+    if (fs.existsSync(localProjectPath)) {
+        console.error(`${C.red}❌ A pasta já existe.${C.reset}`);
+        process.exit(1);
+    }
+
+    // Copia apenas o código fonte, ignorando TUDO que for pesado
+    fs.copySync(LOCAL_TEMPLATE_PATH, localProjectPath, {
+        filter: (src) => !['node_modules', '.nuxt', '.output', 'dist', '.git', '.log'].some(el => src.includes(el))
+    });
+
+    run('git init', localProjectPath);
+    run('git branch -M main', localProjectPath);
+    run('git add .', localProjectPath);
+    run('git commit -m "Turbo deploy initial"', localProjectPath);
+
+    
+    
+    // --- FASE 2: SETUP REMOTO (Versão Tanque) ---
+    console.log(`\n${C.yellow}☁️  [2/4] Setup robusto no VPS...${C.reset}`);
+    
+    // Usamos comandos individuais para identificar exatamente onde para
+    try {
+        console.log("   -> Criando diretórios...");
+        runSSH(`mkdir -p "${vpsRepoPath}" "${vpsStoragePath}"`);
+        
+        console.log("   -> Inicializando Git Bare...");
+        runSSH(`git init --bare "${vpsRepoPath}"`);
+        
+        console.log("   -> Instalando Hook...");
+        // Usamos aspas simples no printf para evitar que o Bash tente interpretar o $1 do script
+        const hookCmd = `printf '#!/bin/bash\\n${vpsAppsPath}/bin/deploy-master.sh ${siteName}' > "${vpsHookPath}"`;
+        runSSH(hookCmd);
+        
+        console.log("   -> Ativando permissões do Hook...");
+        runSSH(`chmod +x "${vpsHookPath}"`);
+        
+    } catch (e) {
+        console.error(`${C.red}❌ Falha no setup remoto.${C.reset}`);
+        console.error(`${C.red}Dica: Tente rodar 'rm -rf ${vpsRepoPath}' no servidor e tente de novo.${C.reset}`);
+        process.exit(1);
+    }
+
+
+
+
+
+    // --- FASE 3: DEPLOY ACELERADO ---
+    console.log(`\n${C.yellow}🔗 [3/4] Enviando código...${C.reset}`);
+    run(`git remote add origin ${gitRemoteUrl}`, localProjectPath);
+    
+    // O tempo aqui vai depender do seu deploy-master.sh usar o cache de node_modules
+    run('git push -u origin main', localProjectPath);
+
+    // --- FASE 4: FINALIZAÇÃO ---
+    console.log(`\n${C.yellow}🔒 [4/4] Ativando SSL e Rotas...${C.reset}`);
+    
+    try {
+        runSSH(`node ~/dev/apps/bin/refresh-caddy.mjs`);
+        console.log(`${C.green}✅ Caddy ok!${C.reset}`);
+    } catch (e) {
+        console.error(`${C.red}⚠️ Erro Caddy.${C.reset}`);
+    }
+
+    console.log(`\n${C.green}✨ PROJETO NO AR: https://${siteName}.siriusstudio.site${C.reset}\n`);
+}
+
+main().catch(err => {
+    process.exit(1);
+});

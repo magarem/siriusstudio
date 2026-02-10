@@ -22,19 +22,13 @@ console.log(`🔧 Configurando ambiente para: ${siteName}`);
 const links = [
   // Storage Links
   { dest: 'content', src: `storage/${siteName}/content` },
-  { dest: 'public/images', src: `storage/${siteName}/images` },
-  { dest: 'app/layouts', src: `storage/${siteName}/layouts` },
-  { dest: 'app/pages', src: `storage/${siteName}/pages` },
-  { dest: 'server/data', src: `storage/${siteName}/data` },
+  { dest: 'data', src: `storage/${siteName}/data` },
   
   // SiriusStudio Core Links
-  { dest: 'app/composables', src: 'siriusstudio/app/composables' },
   { dest: 'server/api', src: 'siriusstudio/server/api' },
-  { dest: 'server/routes', src: 'siriusstudio/server/routes' },
   { dest: 'server/utils', src: 'siriusstudio/server/utils' },
 
   // --- COMPONENTES ---
-  { dest: 'app/components', src: `storage/${siteName}/components` },
   { dest: 'app/components/content', src: 'siriusstudio/app/components/content' },
 ];
 

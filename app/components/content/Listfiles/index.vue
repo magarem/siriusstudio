@@ -47,7 +47,7 @@ const isPreview = computed(() => {
 // Endpoint para buscar o arquivo de configuração (.toml/.md)
 const sourceEndpoint = computed(() => {
   if (!props.source) return null;
-  const cleanPath = props.source.replace(/^\//, '').replace(/\.md$/, '').replace(/\.toml$/, '');
+  const cleanPath = props.source.replace(/^\//, '').replace(/\.json$/, '').replace(/\.md$/, '').replace(/\.toml$/, '');
   return isPreview.value ? `/api/preview/${cleanPath}` : `/api/page/${cleanPath}`;
 });
 

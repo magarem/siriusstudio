@@ -36,7 +36,8 @@ const fmSchema = ref("default");
 const isRawFile = computed(() => {
     if (!currentFile.value) return false;
     const lower = currentFile.value.toLowerCase();
-    return lower.endsWith('.yml') || 
+    return lower.endsWith('.json') || 
+           lower.endsWith('.yml') || 
            lower.endsWith('.yaml') || 
            lower.endsWith('.toml');
 });
@@ -151,7 +152,7 @@ const sortedFiles = computed(() => files.value || []);
 
 // --- HELPER: ENCONTRAR INDEX ALTERNATIVO ---
 const findAlternativeIndex = async (folderPath) => {
-    const candidates = ["_index.toml", "_index.yml", "_index.yaml", "_index.md"]; 
+    const candidates = ["_index.json", "_index.toml", "_index.yml", "_index.yaml", "_index.md"]; 
     for (const candidate of candidates) {
         try {
             await $fetch("/api/admin/storage", { 
