@@ -25,12 +25,14 @@ const onImageError = (event, fallback) => {
           :to="item.path"
           class="custom-card grid-card group relative flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
         >
+        {{ item.image }}
           <div class="card-image-wrapper relative w-full overflow-hidden bg-gray-100">
             
             <!-- <div v-if="item.isFolder" class="absolute top-2 right-2 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/20 backdrop-blur-md transition-colors group-hover:bg-blue-600/80">
               <i class="pi pi-folder text-white text-lg drop-shadow-sm"></i>
             </div>
              -->
+            
             <img 
               v-if="item.image" 
               :src="item.image" 

@@ -23,10 +23,10 @@ const links = [
   // Storage Links
   { dest: 'content', src: `storage/${siteName}/content` },
   { dest: 'data', src: `storage/${siteName}/data` },
+  { dest: 'db', src: `storage/${siteName}/db` },
   
   // SiriusStudio Core Links
-  { dest: 'server/api', src: 'siriusstudio/server/api' },
-  { dest: 'server/utils', src: 'siriusstudio/server/utils' },
+  { dest: 'server', src: 'siriusstudio/server' },
 
   // --- COMPONENTES ---
   { dest: 'app/components/content', src: 'siriusstudio/app/components/content' },

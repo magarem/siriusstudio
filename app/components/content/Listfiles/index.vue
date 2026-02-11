@@ -4,6 +4,7 @@ import ListfilesGrid from './Grid.vue';
 import ListfilesList from './List.vue';
 import Supergrid from './Supergrid.vue';
 import ListfilesRaw from './Raw.vue';
+import Carrosel from './Carrosel.vue';
 
 // --- PROPS ---
 const props = defineProps({
@@ -33,7 +34,7 @@ const props = defineProps({
 const config = useRuntimeConfig();
 const route = useRoute();
 const siteName = config.public.siteName;
-const { isEnabled } = usePreview(); // Hook de preview (se existir no seu projeto)
+// const { isEnabled } = usePreview(); // Hook de preview (se existir no seu projeto)
 
 // =============================================================================
 // 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE)
@@ -41,7 +42,7 @@ const { isEnabled } = usePreview(); // Hook de preview (se existir no seu projet
 
 // Detecta se estamos em modo preview
 const isPreview = computed(() => {
-  return route.query.preview === 'true' || (import.meta.client && window.location.hostname.startsWith('preview.'));
+  return route.query.preview === 'true';
 });
 
 // Endpoint para buscar o arquivo de configuração (.toml/.md)
@@ -143,7 +144,7 @@ const viewConfig = computed(() => {
   };
 });
 
-const isDiskMode = computed(() => isEnabled.value === true || config.public.liveContent === true);
+// const isDiskMode = computed(() => isEnabled.value === true || config.public.liveContent === true);
 
 // Determina a seção alvo
 const targetSection = computed(() => {
@@ -159,7 +160,7 @@ const timestamp = ref(Date.now());
 const queryParams = computed(() => ({
   site: siteName,
   section: targetSection.value, // Usa a seção calculada
-  mode: isDiskMode.value ? "preview" : "production",
+  mode: isPreview.value ? "preview" : "production",
   t: timestamp.value,
   nocache: 1,
 }));
@@ -175,7 +176,7 @@ const {
   query: queryParams,
   transform: (response) => (Array.isArray(response) ? response : []),
   default: () => [],
-  watch: [targetSection, isDiskMode], // Recarrega se a seção mudar (ex: carregou o TOML)
+  watch: [targetSection], // Recarrega se a seção mudar (ex: carregou o TOML)
 });
 
 const forceRefresh = () => {
@@ -291,7 +292,6 @@ const onImageError = (event) => {
     </div>
 
     <div v-else class="fade-in">
-  
       <ListfilesGrid 
         v-if="finalParams.view === 'grid'" 
         :items="displayedItems" 
@@ -319,6 +319,15 @@ const onImageError = (event) => {
         :items="displayedItems" 
         :fileIcon="fileIcon"
       />
+
+      <Carrosel
+        v-else-if="finalParams.view?.toLowerCase() === 'carrosel'"
+        :items="displayedItems"
+        :viewparams="finalParams.viewparams"
+        :fallbackImage="fallbackImage"
+        :fileIcon="fileIcon"
+      />
+      
     </div>
   </div>
 </template>
