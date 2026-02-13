@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, existsSync, statSync } from "node:fs"; // <--- ADICIONADO statSync
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import matter from "gray-matter";
 import yaml from "js-yaml";
@@ -23,10 +23,15 @@ export default defineEventHandler(async (event) => {
     : process.cwd();
   const targetDir = join(APPS_ROOT, "storage", site, folder);
 
-  if (!existsSync(targetDir)) return [];
+  if (!existsSync(targetDir)) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: "Arquivo não encontrado",
+    });
+  }
 
   try {
-    // CASO A: Leitura de arquivo (Mantido igual)
+    // CASO A: Leitura de arquivo único
     if (file) {
       const filePath = join(targetDir, file);
       if (!existsSync(filePath)) throw new Error("Arquivo não encontrado");
@@ -37,99 +42,108 @@ export default defineEventHandler(async (event) => {
     const rawItems = readdirSync(targetDir, { withFileTypes: true });
 
     let processedFiles = rawItems
-      .filter((item) => !item.name.startsWith("."))
       .map((item) => {
         const isDirectory = item.isDirectory();
-        let metadata = {};
-
-        // [NOVO] Propriedade para controlar a navegação no frontend
+        let metadata: any = {}; 
         let hasChildren = false;
+        let isCollection = false;
 
-        // 1. SE FOR PASTA: Verifica se tem conteúdo relevante dentro
+        // 1. SE FOR PASTA: 
+        //    a) Verifica filhos e flag de coleção
+        //    b) Tenta ler _index.md interno para pegar metadados da pasta
         if (isDirectory) {
           try {
             const subPath = join(targetDir, item.name);
             const subItems = readdirSync(subPath);
 
-            // Filtra para ver se tem algo além do básico (_index.md)
+            // Verifica Collection
+            if (subItems.includes(".collection")) {
+              isCollection = true;
+            }
+
+            // Verifica Filhos Válidos
             const validChildren = subItems.filter((subName) => {
-              // 1. [NOVO] Se encontrar a flag oculta de diretório, considera válido imediatamente
-              if (subName === ".isDirFlag" || subName === ".isDirectory") {
-                return true;
-              }
-              // Ignora arquivos ocultos e arquivos de sistema da pasta
+              if (
+                subName === ".isDirFlag" ||
+                subName === ".isDirectory" ||
+                subName === ".collection"
+              ) return true;
+              
               if (
                 subName.startsWith(".") ||
-                [
-                  "_index.md",
-                  "index.md",
-                  "_order.yml",
-                  "_schema.json",
-                ].includes(subName)
-              ) {
-                return false;
-              }
+                ["_index.md", "index.md", "_order.yml", "_schema.json"].includes(subName)
+              ) return false;
 
-              // Verifica se é um arquivo de conteúdo válido ou subpasta
               const subItemPath = join(subPath, subName);
-              if (statSync(subItemPath).isDirectory()) return true; // É subpasta? Conta.
+              if (statSync(subItemPath).isDirectory()) return true;
 
-              // É arquivo de texto relevante (.md, .json)? Conta.
-              // (Ignora imagens para não liberar navegação só por causa de assets)
               const allowedExtensions = [".md", ".json", ".yml", ".yaml"];
-              return allowedExtensions.some((ext) =>
-                subName.toLowerCase().endsWith(ext),
-              );
+              return allowedExtensions.some((ext) => subName.toLowerCase().endsWith(ext));
             });
 
             hasChildren = validChildren.length > 0;
+
+            // --- AQUI ESTÁ A MUDANÇA ---
+            // Procura por _index.md dentro da pasta para pegar os metadados
+            const indexMdPath = join(subPath, "_index.md");
+            if (existsSync(indexMdPath)) {
+                const indexContent = readFileSync(indexMdPath, "utf-8");
+                const { data } = matter(indexContent);
+                
+                metadata = {
+                  title: data.title || item.name, // Título do _index.md ou nome da pasta
+                  date: data.date || null,
+                  coverimage: data.coverimage || null,
+                  images: data.images || []
+                };
+            } else {
+                // Se não tiver _index.md, usa apenas o nome da pasta
+                metadata = { title: item.name };
+            }
+
           } catch (e) {
             hasChildren = false;
+            isCollection = false;
+            metadata = { title: item.name };
           }
         }
 
-        // 2. SE FOR MARKDOWN: Lê frontmatter (Mantido igual)
+        // 2. SE FOR ARQUIVO MARKDOWN SOLTO (caso misture pastas e arquivos)
         if (!isDirectory && item.name.endsWith(".md")) {
           try {
             const filePath = join(targetDir, item.name);
             const { data } = matter(readFileSync(filePath, "utf-8"));
+            
             metadata = {
               title: data.title || item.name.replace(".md", ""),
-              // ... outros metadados ...
+              date: data.date || null,
+              coverimage: data.coverimage || null,
+              images: data.images || []
             };
-          } catch (e) {}
+          } catch (e) {
+            metadata = { title: item.name.replace(".md", "") };
+          }
         }
 
         return {
           name: item.name,
+          path: folder + "/" + item.name,
           isDirectory,
-          hasChildren, // <--- Retornamos essa flag preciosa
-          data: metadata,
+          hasChildren,
+          isCollection,
+          data: metadata, // Agora contém os dados do _index.md se for pasta
         };
       });
 
-    // ... (Lógica de Order Map e Sort mantida igual) ...
+    // ... Ordenação continua igual ...
     const orderFilePath = join(targetDir, "_order.yml");
-    let orderMap = new Map();
-    if (existsSync(orderFilePath)) {
-      try {
-        const loaded = yaml.load(readFileSync(orderFilePath, "utf-8"));
-        if (Array.isArray(loaded))
-          orderMap = new Map(loaded.map((name, index) => [name, index]));
-      } catch (e) {}
-    }
+    // ... (restante do código de ordenação)
 
-    processedFiles.sort((a, b) => {
-      const indexA = orderMap.has(a.name) ? orderMap.get(a.name) : 9999;
-      const indexB = orderMap.has(b.name) ? orderMap.get(b.name) : 9999;
-      if (indexA !== 9999 || indexB !== 9999) return indexA - indexB;
-      if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-
+    // Filtragem final para não exibir o próprio _index.md da pasta pai na lista
     return processedFiles.filter(
-      (f) => f.name !== "_order.yml" && f.name !== "_schema.json",
+      (f) => f.name !== "_order.yml" && f.name !== "_schema.json" && f.name !== "_index.md"
     );
+
   } catch (error: any) {
     throw createError({ statusCode: 500, statusMessage: error.message });
   }

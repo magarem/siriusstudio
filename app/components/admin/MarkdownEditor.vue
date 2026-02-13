@@ -1,28 +1,46 @@
 <script setup>
-import { computed, ref, nextTick } from 'vue';
-import { useToast } from "primevue/usetoast"; // Importar Toast para feedback
+import { computed, ref, shallowRef, onMounted } from 'vue';
+import { useToast } from "primevue/usetoast";
+import { Codemirror } from 'vue-codemirror';
+
+// --- CodeMirror Imports ---
+import { markdown } from '@codemirror/lang-markdown';
+import { oneDark } from '@codemirror/theme-one-dark';
+import { EditorView } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+
+// --- Composable de Configuração ---
+import { useEditorSettings } from '~/composables/useEditorSettings';
 
 const props = defineProps({
   content: { type: String, default: '' },
-  currentFolder: { type: String, default: '' }, // Vamos usar isso para saber onde salvar a imagem
+  currentFolder: { type: String, default: '' },
   currentFile: { type: String, default: '' },
   isRawMode: { type: Boolean, default: false },
-  siteContext: { type: String, default: 'default' } // Necessário para a API
+  siteContext: { type: String, default: 'default' }
 });
 
 const emit = defineEmits(['update:content', 'open-image', 'toggle-raw']);
 
 const toast = useToast();
-const textareaRef = ref(null);
+const { settings, editorStyles, loadSettings } = useEditorSettings();
+
+// Referência rasa para a instância da View do CodeMirror
+const editorView = shallowRef(null);
 const isDragging = ref(false);
 const isUploading = ref(false);
 
-// Computada para v-model
+onMounted(() => {
+  loadSettings();
+});
+
+// --- V-MODEL PROXY ---
 const localContent = computed({
   get() { return props.content; },
   set(newValue) { emit('update:content', newValue); }
 });
 
+// --- ESTATÍSTICAS ---
 const stats = computed(() => {
     const text = localContent.value || '';
     return {
@@ -32,186 +50,182 @@ const stats = computed(() => {
     };
 });
 
-// --- FUNÇÃO PÚBLICA PARA INSERIR NO CURSOR ---
-const insertAtCursor = (insertion) => {
-    const el = textareaRef.value;
-    if (!el) return;
+// --- CONFIGURAÇÃO DO CODEMIRROR ---
+const extensions = computed(() => {
+  const plugins = [
+    markdown(), 
+    EditorView.lineWrapping,
+    // Listener para eventos do DOM (Paste/Drop)
+    EditorView.domEventHandlers({
+        paste: handlePaste,
+        drop: handleDrop,
+        dragover: (e) => { isDragging.value = true; },
+        dragleave: (e) => { isDragging.value = false; }
+    })
+  ];
 
-    const scrollTop = el.scrollTop;
-    const start = el.selectionStart || el.value.length; 
-    const end = el.selectionEnd || el.value.length;
-    const text = el.value;
+  if (settings.value.theme === 'one-dark') plugins.push(oneDark);
+  if (settings.value.tabSize) plugins.push(EditorState.tabSize.of(settings.value.tabSize));
 
-    const newText = text.substring(0, start) + insertion + text.substring(end);
+  return plugins;
+});
+
+const handleReady = (payload) => {
+  editorView.value = payload.view;
+};
+
+// =============================================================================
+// MANIPULAÇÃO DE TEXTO (TOOLBAR) - Adaptado para CodeMirror
+// =============================================================================
+
+// 1. Inserir ou Envolver Texto (Bold, Italic, Link)
+const insertFormat = (prefix, suffix = '', placeholder = 'texto') => {
+  const view = editorView.value;
+  if (!view) return;
+
+  const { from, to } = view.state.selection.main;
+  const selectedText = view.state.sliceDoc(from, to);
+  
+  const textToInsert = selectedText || placeholder;
+  const insertion = `${prefix}${textToInsert}${suffix}`;
+
+  view.dispatch({
+    changes: { from, to, insert: insertion },
+    selection: { anchor: from + prefix.length, head: from + prefix.length + textToInsert.length },
+    scrollIntoView: true
+  });
+  
+  view.focus();
+};
+
+// 2. Alternar Prefixo de Linha (H1, H2, Listas)
+const toggleLinePrefix = (prefix) => {
+  const view = editorView.value;
+  if (!view) return;
+
+  const { from, to } = view.state.selection.main;
+  const lineStart = view.state.doc.lineAt(from);
+  const lineEnd = view.state.doc.lineAt(to);
+  
+  const changes = [];
+  
+  // Itera sobre todas as linhas da seleção
+  for (let i = lineStart.number; i <= lineEnd.number; i++) {
+    const line = view.state.doc.line(i);
+    const lineText = line.text;
     
-    emit('update:content', newText);
+    if (lineText.startsWith(prefix)) {
+        // Remove prefixo
+        changes.push({ from: line.from, to: line.from + prefix.length, insert: '' });
+    } else {
+        // Adiciona prefixo
+        changes.push({ from: line.from, to: line.from, insert: prefix });
+    }
+  }
 
-    nextTick(() => {
-        el.focus();
-        const newCursorPos = start + insertion.length;
-        el.setSelectionRange(newCursorPos, newCursorPos);
-        el.scrollTop = scrollTop;
+  view.dispatch({ changes, scrollIntoView: true });
+  view.focus();
+};
+
+// 3. Inserir Bloco (Tabela, Code Block, HR)
+const insertBlock = (template) => {
+    const view = editorView.value;
+    if (!view) return;
+
+    const { from } = view.state.selection.main;
+    const line = view.state.doc.lineAt(from);
+    
+    // Se não estiver no começo da linha, adiciona quebras
+    const prefix = (from > line.from) ? '\n\n' : '';
+    const insertion = prefix + template;
+
+    view.dispatch({
+        changes: { from, insert: insertion },
+        selection: { anchor: from + insertion.length },
+        scrollIntoView: true
     });
+    view.focus();
+};
+
+// 4. Inserir na posição do cursor (API Pública para o Upload)
+const insertAtCursor = (text) => {
+    const view = editorView.value;
+    if (!view) return;
+    const transaction = view.state.replaceSelection(text);
+    view.dispatch(transaction);
+    view.focus();
 };
 
 defineExpose({ insertAtCursor });
 
 // =============================================================================
-// DRAG & DROP + PASTE (Colar Imagem)
+// UPLOAD DE IMAGEM (Drag & Drop / Paste)
 // =============================================================================
-
-// Dentro de components/admin/MarkdownEditor.vue
 
 const uploadImage = async (file) => {
     if (!file.type.startsWith('image/')) {
-        toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens são permitidas.', life: 2000 });
+        toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens.', life: 2000 });
         return;
     }
 
     isUploading.value = true;
+    isDragging.value = false; // Garante que o overlay some
     
     try {
         const formData = new FormData();
         formData.append('file', file);
         
-        // Define a pasta de destino
         let targetFolder = props.currentFolder;
         if (!targetFolder || targetFolder === '.') targetFolder = 'content';
 
-        // [CORREÇÃO] Envia site e folder na URL (Query String) para bater com a API
         const response = await $fetch('/api/admin/upload', {
             method: 'POST',
             body: formData,
             params: {
                 site: props.siteContext,
-                folder: props.currentFile.replace(/\/[^\/]*$/, '') // Pasta do arquivo atual
+                folder: props.currentFile.replace(/\/[^\/]*$/, '') 
             }
         });
 
         if (response && response.path) {
-            // Insere o markdown usando o caminho retornado pela API
-            const imageMarkdown = `\n![${file.name}](${response.path})`;
+            const imageMarkdown = `![${file.name}](${response.path})`;
             insertAtCursor(imageMarkdown);
-            toast.add({ severity: 'success', summary: 'Imagem Inserida', life: 2000 });
-        } else {
-            throw new Error('Caminho não retornado pela API');
+            toast.add({ severity: 'success', summary: 'Imagem enviada', life: 2000 });
         }
-
     } catch (e) {
         console.error(e);
-        toast.add({ severity: 'error', summary: 'Erro no Upload', detail: 'Não foi possível enviar a imagem.' });
+        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha no upload.' });
     } finally {
         isUploading.value = false;
-        isDragging.value = false;
     }
 };
 
-const handleDrop = (e) => {
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
+// Handlers passados para o CodeMirror DOM Events
+function handleDrop(event) {
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+        event.preventDefault();
         uploadImage(files[0]);
     }
     isDragging.value = false;
-};
+}
 
-const handlePaste = (e) => {
-    // Verifica se há arquivos na área de transferência (ex: Print Screen)
-    const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+function handlePaste(event) {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
     for (const item of items) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
-            const file = item.getAsFile();
-            uploadImage(file);
-            // Previne que o navegador cole o "objeto" imagem (comportamento padrão bugado em textarea)
-            e.preventDefault(); 
-            return; 
+            event.preventDefault(); // Impede colar o binário
+            uploadImage(item.getAsFile());
+            return;
         }
     }
-    // Se for texto normal, deixa colar nativamente
-};
-
-
-// --- HELPERS DE FORMATAÇÃO ---
-const insertFormat = (prefix, suffix = '', placeholder = 'texto') => {
-  const el = textareaRef.value;
-  if (!el) return;
-  const scrollTop = el.scrollTop;
-  const start = el.selectionStart;
-  const end = el.selectionEnd;
-  const text = el.value;
-  const selection = text.substring(start, end) || placeholder;
-  const insertion = prefix + selection + suffix;
-  const newText = text.substring(0, start) + insertion + text.substring(end);
-  emit('update:content', newText);
-  nextTick(() => {
-    el.focus();
-    if (start === end) {
-        const newCursorStart = start + prefix.length;
-        const newCursorEnd = newCursorStart + placeholder.length;
-        el.setSelectionRange(newCursorStart, newCursorEnd);
-    } else {
-        el.setSelectionRange(start, start + insertion.length);
-    }
-    el.scrollTop = scrollTop;
-  });
-};
-
-const toggleLinePrefix = (prefix) => {
-    const el = textareaRef.value;
-    if (!el) return;
-    const scrollTop = el.scrollTop;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const text = el.value;
-    let startLineIndex = text.lastIndexOf('\n', start - 1) + 1;
-    let endLineIndex = text.indexOf('\n', end);
-    if (endLineIndex === -1) endLineIndex = text.length;
-    const selectedText = text.substring(startLineIndex, endLineIndex);
-    const lines = selectedText.split('\n');
-    const allHavePrefix = lines.every(line => line.startsWith(prefix));
-    const newLines = lines.map(line => allHavePrefix ? line.substring(prefix.length) : prefix + line);
-    const newBlock = newLines.join('\n');
-    const newText = text.substring(0, startLineIndex) + newBlock + text.substring(endLineIndex);
-    emit('update:content', newText);
-    nextTick(() => {
-        el.focus();
-        el.setSelectionRange(startLineIndex, startLineIndex + newBlock.length);
-        el.scrollTop = scrollTop;
-    });
-};
-
-const insertBlock = (template) => {
-    const el = textareaRef.value;
-    const scrollTop = el.scrollTop;
-    const start = el.selectionStart;
-    const text = el.value;
-    const prefix = (start > 0 && text[start - 1] !== '\n') ? '\n\n' : '';
-    const insertion = prefix + template;
-    const newText = text.substring(0, start) + insertion + text.substring(el.selectionEnd);
-    emit('update:content', newText);
-    nextTick(() => {
-        el.focus();
-        const cursorPosition = start + insertion.length;
-        el.setSelectionRange(cursorPosition, cursorPosition);
-        el.scrollTop = scrollTop;
-    });
-};
-
-const handleTab = (e) => {
-  const textarea = e.target;
-  const scrollTop = textarea.scrollTop;
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  const newValue = localContent.value.substring(0, start) + "  " + localContent.value.substring(end);
-  emit('update:content', newValue);
-  nextTick(() => { 
-      textarea.selectionStart = textarea.selectionEnd = start + 2; 
-      textarea.scrollTop = scrollTop; 
-  });
-};
+}
 
 const actions = [
-  { icon: 'pi pi-bold', title: 'Negrito (Ctrl+B)', action: () => insertFormat('**', '**', 'texto') },
-  { icon: 'pi pi-italic', title: 'Itálico (Ctrl+I)', action: () => insertFormat('*', '*', 'texto') },
+  { icon: 'pi pi-bold', title: 'Negrito (Ctrl+B)', action: () => insertFormat('**', '**') },
+  { icon: 'pi pi-italic', title: 'Itálico (Ctrl+I)', action: () => insertFormat('*', '*') },
   { separator: true },
   { label: 'H1', title: 'Título 1', action: () => toggleLinePrefix('# ') },
   { label: 'H2', title: 'Título 2', action: () => toggleLinePrefix('## ') },
@@ -221,9 +235,9 @@ const actions = [
   { icon: 'pi pi-check-square', title: 'Lista de Tarefas', action: () => toggleLinePrefix('- [ ] ') },
   { icon: 'pi pi-align-right', title: 'Citação', action: () => toggleLinePrefix('> ') },
   { separator: true },
-  { icon: 'pi pi-link', title: 'Link', action: () => insertFormat('[', '](url)', 'texto') },
-  { icon: 'pi pi-code', title: 'Bloco de Código', action: () => insertFormat('```\n', '\n```', 'código') },
-  { icon: 'pi pi-table', title: 'Inserir Tabela', action: () => insertBlock('| Coluna 1 | Coluna 2 |\n|---|---|\n| Dado 1 | Dado 2 |') },
+  { icon: 'pi pi-link', title: 'Link', action: () => insertFormat('[', '](url)') },
+  { icon: 'pi pi-code', title: 'Bloco de Código', action: () => insertFormat('```\n', '\n```', 'code') },
+  { icon: 'pi pi-table', title: 'Inserir Tabela', action: () => insertBlock('| Col 1 | Col 2 |\n|---|---|\n| A | B |') },
   { icon: 'pi pi-minus', title: 'Linha Horizontal', action: () => insertBlock('---\n') },
   { separator: true },
   { icon: 'pi pi-image', title: 'Inserir Imagem', action: () => emit('open-image') },
@@ -243,11 +257,11 @@ const actions = [
         </template>
     </div>
 
-    <div class="flex-1 relative overflow-hidden bg-[#0a0f0d] min-h-0">
+    <div class="flex-1 relative overflow-hidden bg-[#0a0f0d] min-h-0 group/editor">
         
         <div 
             v-if="isDragging" 
-            class="absolute inset-0 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] z-20 flex items-center justify-center pointer-events-none backdrop-blur-sm"
+            class="absolute inset-0 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] z-30 flex items-center justify-center pointer-events-none backdrop-blur-sm"
         >
             <div class="bg-[#141b18] px-6 py-3 rounded-full border border-[#6f942e] text-[#6f942e] font-bold shadow-xl flex items-center gap-3">
                 <i class="pi pi-cloud-upload text-xl"></i>
@@ -255,25 +269,24 @@ const actions = [
             </div>
         </div>
 
-        <div v-if="isUploading" class="absolute inset-0 bg-black/50 z-30 flex items-center justify-center backdrop-blur-sm">
+        <div v-if="isUploading" class="absolute inset-0 bg-black/50 z-40 flex items-center justify-center backdrop-blur-sm">
              <div class="flex flex-col items-center gap-3">
                 <i class="pi pi-spin pi-spinner text-4xl text-[#6f942e]"></i>
                 <span class="text-white font-mono text-sm">ENVIANDO IMAGEM...</span>
              </div>
         </div>
 
-        <textarea 
-            ref="textareaRef"
-            v-model="localContent"
-            @keydown.tab.prevent="handleTab"
-            @dragover.prevent="isDragging = true"
-            @dragleave.prevent="isDragging = false"
-            @drop.prevent="handleDrop"
-            @paste="handlePaste"
-            class="w-full h-full p-6 bg-transparent text-slate-200 font-mono text-[14px] leading-[1.8] outline-none resize-none custom-scrollbar selection:bg-[#6f942e]/30 placeholder-white/10"
-            spellcheck="false" 
-            placeholder="Comece a escrever seu conteúdo markdown... (Arraste imagens ou cole prints aqui)"
-        ></textarea>
+        <div class="h-full w-full" :style="editorStyles">
+            <Codemirror
+                v-model="localContent"
+                :extensions="extensions"
+                :autofocus="true"
+                :indent-with-tab="true"
+                placeholder="Comece a escrever..."
+                :style="{ height: '100%', width: '100%' }"
+                @ready="handleReady"
+            />
+        </div>
     </div>
 
     <footer class="h-6 bg-[#141b18] border-t border-white/5 flex items-center justify-end px-4 gap-4 text-[10px] text-zinc-500 font-mono select-none shrink-0">
@@ -284,9 +297,23 @@ const actions = [
   </div>
 </template>
 
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.1); border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,0.2); }
+<style>
+/* Estilização interna do CodeMirror para ficar bonito */
+.cm-scroller::-webkit-scrollbar { width: 6px; height: 6px; }
+.cm-scroller::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.cm-scroller::-webkit-scrollbar-track { background: transparent; }
+
+.cm-content {
+    padding: 24px !important;
+    font-family: var(--font-family, monospace);
+}
+
+/* Cores específicas de Markdown do tema OneDark (para garantir contraste) */
+.cm-header { color: #e5c07b; font-weight: bold; }
+.cm-link { color: #61afef; text-decoration: underline; }
+.cm-url { color: #56b6c2; }
+.cm-strong { color: #d19a66; font-weight: bold; }
+.cm-emphasis { font-style: italic; color: #c678dd; }
+.cm-quote { color: #5c6370; font-style: italic; }
+.cm-list { color: #e06c75; }
 </style>
