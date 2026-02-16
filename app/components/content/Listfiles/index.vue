@@ -1,32 +1,32 @@
 <script setup>
 import { computed, ref, watch } from "vue";
-import ListfilesGrid from './Grid.vue';
-import ListfilesList from './List.vue';
-import Supergrid from './Supergrid.vue';
-import ListfilesRaw from './Raw.vue';
-import Carrosel from './Carrosel.vue';
+import ListfilesGrid from "./Grid.vue";
+import ListfilesList from "./List.vue";
+import Supergrid from "./Supergrid.vue";
+import ListfilesRaw from "./Raw.vue";
+import Carrosel from "./Carrosel.vue";
 
 // --- PROPS ---
 const props = defineProps({
-  // --- MODO SOURCE (NOVO) ---
+  // --- MODO SOURCE ---
   // Caminho para um arquivo .toml/.md que contém os parametros
   source: { type: String, default: null },
 
   // --- PARÂMETROS DIRETOS ---
-  title: { type: String, default: null }, // Null para diferenciar de vazio
+  title: { type: String, default: null },
   icon: { type: String, default: null },
   section: { type: String, default: null },
   view: { type: String, default: null },
-  
+
   // Pode vir como String (do Markdown) ou Objeto (do TOML/JS)
   viewparams: {
     type: [Object, String],
-    default: null
+    default: null,
   },
-  
+
   limit: { type: Number, default: null },
   columns: { type: Number, default: null },
-  subfolders: { type: Boolean, default: null }, // Null para permitir override
+  subfolders: { type: Boolean, default: null },
   fallbackImage: { type: String, default: "/images/generic_image.png" },
   fileIcon: { type: String, default: "pi pi-file" },
 });
@@ -34,7 +34,6 @@ const props = defineProps({
 const config = useRuntimeConfig();
 const route = useRoute();
 const siteName = config.public.siteName;
-// const { isEnabled } = usePreview(); // Hook de preview (se existir no seu projeto)
 
 // =============================================================================
 // 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE)
@@ -42,29 +41,34 @@ const siteName = config.public.siteName;
 
 // Detecta se estamos em modo preview
 const isPreview = computed(() => {
-  return route.query.preview === 'true';
+  return route.query.preview === "true";
 });
 
 // Endpoint para buscar o arquivo de configuração (.toml/.md)
 const sourceEndpoint = computed(() => {
   if (!props.source) return null;
-  const cleanPath = props.source.replace(/^\//, '').replace(/\.json$/, '').replace(/\.md$/, '').replace(/\.toml$/, '');
-  return isPreview.value ? `/api/preview/${cleanPath}` : `/api/page/${cleanPath}`;
+  const cleanPath = props.source
+    .replace(/^\//, "")
+    .replace(/\.json$/, "")
+    .replace(/\.md$/, "")
+    .replace(/\.toml$/, "");
+  return isPreview.value
+    ? `/api/preview/${cleanPath}`
+    : `/api/page/${cleanPath}`;
 });
 
-// Busca os dados do arquivo de configuração
+// Busca os dados do arquivo de configuração (se source for definido)
 const { data: fetchedConfig } = await useFetch(sourceEndpoint, {
   key: `listfiles-config-${props.source}`,
   immediate: !!props.source,
   watch: [sourceEndpoint],
-  lazy: true
+  lazy: true,
 });
 
 // =============================================================================
 // 2. MERGE DE PARÂMETROS (FINAL PARAMS)
 // =============================================================================
 
-// Valores Padrão do Componente
 const defaults = {
   title: "",
   icon: "pi pi-images",
@@ -74,33 +78,34 @@ const defaults = {
   subfolders: false,
   viewparams: {
     columns: 4,
-    card_layout: 'vertical',
+    card_layout: "vertical",
     card_showtextbox: false,
     card_showtitle: true,
     card_showdescription: true,
     card_showbody: true,
-    card_img_aspectratio: '3/4',
-    gap: '24px',
-    card_border_radius: '12px',
+    card_img_aspectratio: "3/4",
+    gap: "24px",
+    card_border_radius: "12px",
     card_showaction: false,
     card_showbadges: true,
-    card_minwidth: '200px'
-  }
+    card_minwidth: "200px",
+  },
 };
 
 const finalParams = computed(() => {
-  // 1. Dados vindos do arquivo (TOML/MD)
   const rawFile = fetchedConfig.value?.data || fetchedConfig.value || {};
-  
-  // 2. Tratamento do viewparams (pode vir string JSON ou Objeto)
+
   let fileViewParams = rawFile.viewparams || {};
   let propViewParams = props.viewparams || {};
-  
-  if (typeof propViewParams === 'string') {
-    try { propViewParams = JSON.parse(propViewParams); } catch { propViewParams = {}; }
+
+  if (typeof propViewParams === "string") {
+    try {
+      propViewParams = JSON.parse(propViewParams);
+    } catch {
+      propViewParams = {};
+    }
   }
 
-  // 3. Merge: Defaults < File Data < Props (Props têm prioridade máxima se passadas)
   return {
     title: props.title ?? rawFile.title ?? defaults.title,
     icon: props.icon ?? rawFile.icon ?? defaults.icon,
@@ -108,21 +113,18 @@ const finalParams = computed(() => {
     view: props.view ?? rawFile.view ?? defaults.view,
     limit: props.limit ?? rawFile.limit ?? defaults.limit,
     subfolders: props.subfolders ?? rawFile.subfolders ?? defaults.subfolders,
-    
-    // Merge profundo para viewparams
     viewparams: {
       ...defaults.viewparams,
       ...fileViewParams,
-      ...propViewParams
-    }
+      ...propViewParams,
+    },
   };
 });
 
 // =============================================================================
-// 3. LÓGICA INTERNA (AGORA USANDO finalParams)
+// 3. LÓGICA INTERNA E SELEÇÃO DE SEÇÃO
 // =============================================================================
 
-// Configurações Visuais derivadas
 const viewConfig = computed(() => {
   const vp = finalParams.value.viewparams;
   return {
@@ -144,80 +146,103 @@ const viewConfig = computed(() => {
   };
 });
 
-// const isDiskMode = computed(() => isEnabled.value === true || config.public.liveContent === true);
-
-// Determina a seção alvo
+// --- CORREÇÃO DO TARGET SECTION ---
 const targetSection = computed(() => {
-  if (finalParams.value.section) return finalParams.value.section;
-  // Fallback para rota atual
-  const currentPath = route.path === "/" ? "" : route.path;
-  return `content${currentPath}`.replace('//', '/');
+  let sec = "";
+  
+  if (finalParams.value.section) {
+    sec = finalParams.value.section;
+  } else {
+    // Fallback para rota atual se não houver section definida
+    const currentPath = route.path === "/" ? "" : route.path;
+    sec = `content${currentPath}`;
+  }
+
+  // Normalização: remove barras duplas
+  sec = sec.replace(/\/+/g, "/");
+  
+  // Opcional: Garante que comece com content/ se sua API exigir
+  if (!sec.startsWith('content')) {
+      sec = sec.startsWith('/') ? `content${sec}` : `content/${sec}`;
+  }
+  
+  return sec;
 });
 
-// --- DATA FETCHING (ITENS) ---
+// =============================================================================
+// 4. DATA FETCHING (ITENS) - CORRIGIDO
+// =============================================================================
+
 const timestamp = ref(Date.now());
 
+// Incluímos o timestamp e section na query
 const queryParams = computed(() => ({
   site: siteName,
-  section: targetSection.value, // Usa a seção calculada
+  section: targetSection.value, 
   mode: isPreview.value ? "preview" : "production",
   t: timestamp.value,
   nocache: 1,
 }));
 
-// Fetch dos itens reais (Posts, Eventos, etc)
-const {
-  data: items,
-  status,
-  refresh,
-} = await useFetch("/api/admin/superList", {
+// Fetch dos itens reais
+const { data: items, status, refresh } = await useFetch("/api/admin/superList", {
   lazy: true,
   server: false,
   query: queryParams,
-  transform: (response) => (Array.isArray(response) ? response : []),
+  // --- CORREÇÃO: Assistir queryParams garante refresh no clique do botão ---
+  watch: [queryParams], 
+  
+  // --- CORREÇÃO: Transform robusto para evitar erros se vier objeto ---
+  transform: (response) => {
+    const list = Array.isArray(response) 
+      ? response 
+      : (response?.data || response?.files || []);
+    return Array.isArray(list) ? list : [];
+  },
   default: () => [],
-  watch: [targetSection], // Recarrega se a seção mudar (ex: carregou o TOML)
 });
+
+const loading = computed(() => status.value === "pending");
 
 const forceRefresh = () => {
   timestamp.value = Date.now();
-  refresh();
+  // O watch em queryParams cuidará de chamar o refresh automaticamente
 };
-
-const loading = computed(() => status.value === "pending");
 
 // --- HELPERS DE IMAGEM E LINK ---
 const resolveSmartImage = (itemPath, imgName) => {
   if (!imgName) return props.fallbackImage;
-  if (imgName.startsWith('http') || imgName.startsWith('/')) return imgName;
-  
-  let folderPath = itemPath.substring(0, itemPath.lastIndexOf('/'));
-  folderPath = folderPath.replace(/^content\//, '').replace(/^content/, '');
-  return `/assets/${folderPath}/${imgName}`.replace('//', '/');
+  if (imgName.startsWith("http") || imgName.startsWith("/")) return imgName;
+
+  let folderPath = itemPath.substring(0, itemPath.lastIndexOf("/"));
+  folderPath = folderPath.replace(/^content\//, "").replace(/^content/, "");
+  const a_ = `/assets/${folderPath}/${imgName}`.replace("//", "/")
+  console.log("🚀 ~ resolveSmartImage ~ a_:", a_)
+  return a_ + "?preview="+isPreview.value;
 };
 
 const resolveLink = (itemPath) => {
   return itemPath
-    .replace(/^content/, '')
-    .replace('/_index.md', '')
-    .replace('/index', '')
-    .replace('/index.md', '')
-    .replace('.md', '');
+    .replace(/^content/, "")
+    .replace("/_index.md", "")
+    .replace("/index", "")
+    .replace("/index.md", "")
+    .replace(".md", "");
 };
 
 // --- PROCESSAMENTO FINAL DOS ITENS ---
 const displayedItems = computed(() => {
   const rawItems = items.value || [];
-  const limit = finalParams.value.limit; // Usa o limit do merge
+  const limit = finalParams.value.limit; 
   const useSubfolders = finalParams.value.subfolders;
 
-  // MODO 1: Lista Plana
+  // MODO 1: Lista Plana (Arquivos)
   if (!useSubfolders) {
-    return rawItems.slice(0, limit).map(item => ({
+    return rawItems.slice(0, limit).map((item) => ({
       ...item,
       image: resolveSmartImage(item.path, item.image),
       path: resolveLink(item.path),
-      _path: resolveLink(item.path)
+      _path: resolveLink(item.path),
     }));
   }
 
@@ -230,20 +255,33 @@ const displayedItems = computed(() => {
 
     if (parts.length > 0) {
       const folderName = parts[0];
+      // Ignora arquivos na raiz se estiver em modo subfolders
       if (!folderName || folderName.includes(".")) return;
 
       if (!foldersMap[folderName]) {
         foldersMap[folderName] = {
-          title: folderName.charAt(0).toUpperCase() + folderName.slice(1).replace(/-/g, " "),
-          _path: `${targetSection.value}/${folderName}`.replace(/^content/, '').replace("//", "/").replace("/index",""),
+          title:
+            folderName.charAt(0).toUpperCase() +
+            folderName.slice(1).replace(/-/g, " "),
+          _path: `${targetSection.value}/${folderName}`
+            .replace(/^content/, "")
+            .replace(/\/+/g, "/")
+            .replace("/index", ""),
           image: resolveSmartImage(item.path, item.image),
           isFolder: true,
           count: 1,
         };
       } else {
         foldersMap[folderName].count++;
-        if (!foldersMap[folderName].image || foldersMap[folderName].image === props.fallbackImage) {
-           foldersMap[folderName].image = resolveSmartImage(item.path, item.image);
+        // Tenta achar uma imagem melhor se a atual for fallback
+        if (
+          !foldersMap[folderName].image ||
+          foldersMap[folderName].image === props.fallbackImage
+        ) {
+          foldersMap[folderName].image = resolveSmartImage(
+            item.path,
+            item.image,
+          );
         }
       }
     }
@@ -251,26 +289,17 @@ const displayedItems = computed(() => {
 
   return Object.values(foldersMap).slice(0, limit);
 });
-
-const onImageError = (event) => {
-  if (props.fallbackImage && event.target.src.indexOf(props.fallbackImage) === -1) {
-    event.target.src = props.fallbackImage;
-  } else {
-    event.target.style.display = "none";
-    const placeholder = event.target.parentElement.querySelector(".placeholder");
-    if (placeholder) placeholder.style.display = "flex";
-  }
-};
 </script>
 
 <template>
   <div class="list-container">
     <h3 v-if="finalParams.title" class="list-title">
-      <i v-if="finalParams.icon" :class="finalParams.icon"></i> {{ finalParams.title }}
+      <i v-if="finalParams.icon" :class="finalParams.icon"></i>
+      {{ finalParams.title }}
     </h3>
-    
+
     <div
-      v-if="loading && items.length === 0"
+      v-if="loading && (!items || items.length === 0)"
       class="w-full h-20 flex items-center justify-center text-gray-400"
     >
       <i class="pi pi-spin pi-spinner text-2xl"></i>
@@ -292,18 +321,18 @@ const onImageError = (event) => {
     </div>
 
     <div v-else class="fade-in">
-      <ListfilesGrid 
-        v-if="finalParams.view === 'grid'" 
-        :items="displayedItems" 
-        :viewConfig="viewConfig" 
+      <ListfilesGrid
+        v-if="finalParams.view === 'grid'"
+        :items="displayedItems"
+        :viewConfig="viewConfig"
         :fallbackImage="fallbackImage"
         :fileIcon="fileIcon"
       />
 
-      <ListfilesList 
-        v-else-if="finalParams.view?.toLowerCase() === 'list'" 
-        :items="displayedItems" 
-        :viewConfig="viewConfig" 
+      <ListfilesList
+        v-else-if="finalParams.view?.toLowerCase() === 'list'"
+        :items="displayedItems"
+        :viewConfig="viewConfig"
         :fallbackImage="fallbackImage"
         :fileIcon="fileIcon"
       />
@@ -314,9 +343,9 @@ const onImageError = (event) => {
         :viewparams="finalParams.viewparams"
       />
 
-      <ListfilesRaw 
-        v-else-if="finalParams.view?.toLowerCase() === 'rawlist'" 
-        :items="displayedItems" 
+      <ListfilesRaw
+        v-else-if="finalParams.view?.toLowerCase() === 'rawlist'"
+        :items="displayedItems"
         :fileIcon="fileIcon"
       />
 
@@ -327,7 +356,6 @@ const onImageError = (event) => {
         :fallbackImage="fallbackImage"
         :fileIcon="fileIcon"
       />
-      
     </div>
   </div>
 </template>
@@ -337,8 +365,14 @@ const onImageError = (event) => {
   animation: fadeIn 0.4s ease-in-out;
 }
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .list-title {
@@ -355,5 +389,7 @@ const onImageError = (event) => {
   width: 100%;
   margin-bottom: 30px;
 }
-.hidden { display: none !important; }
+.hidden {
+  display: none !important;
+}
 </style>

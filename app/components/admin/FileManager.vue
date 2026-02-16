@@ -1,128 +1,132 @@
 <script setup>
-import { ref, watch, computed, nextTick } from "vue";
+import { ref, computed, watch, nextTick } from "vue";
 import { VueDraggable } from "vue-draggable-plus";
 import { useToast } from "primevue/usetoast";
 
 const props = defineProps({
-  visible: Boolean,
-  files: Array,
-  currentFolder: String,
-  currentFile: String,
+  files: { type: Array, default: () => [] },
+  currentFolder: { type: String, default: "content" },
+  currentFile: { type: String, default: "" },
+  isCollectionFolder: { type: Boolean, default: false },
   siteContext: String,
-  isCollectionFolder: Boolean,
 });
 
 const emit = defineEmits([
-  "update:visible",
   "navigate",
-  "enterCollectionDir",
   "select",
-  "back",
-  "change-root",
+  "refresh",
   "create-file",
   "create-folder",
-  "refresh",
-  "delete",
+  "create-collection",
+  "back",
 ]);
 
 const toast = useToast();
-
-// --- STATE ---
-const localFiles = ref([]);
-const contextMenu = ref();
-const activeMenuFile = ref(null);
-const indexFile = ref(null);
-
-// Controla o ciclo de vida da lista
 const showDraggable = ref(true);
+const showHiddenFiles = ref(false);
+// --- ESTADO LOCAL ---
+const localFiles = ref([]);
+const indexFile = ref(null);
 
 const removeExtension = (filename) => filename.replace(/\.[^/.]+$/, "");
 
-// Pega apenas o nome da pasta atual (ex: 'blog' em vez de 'content/blog')
-const currentFolderName = computed(() => {
-  if (!props.currentFolder) return "Content";
-  const parts = props.currentFolder.split("/");
-  return parts[parts.length - 1];
+const filteredFiles = computed(() => {
+  if (showHiddenFiles.value) return props.files;
+
+  // Filtra arquivos e pastas que começam com "_"
+  return props.files.filter(
+    (file) => !file.name.startsWith("_") && !file.name.startsWith("."),
+  );
 });
 
-// --- WATCHER OTIMIZADO ---
+const handleBreadcrumbClick = (crumb) => {
+  if (crumb.isLast) return;
+  // Navegação absoluta via URL
+  emit("navigate", { path: crumb.path, absolute: true });
+};
+
+// --- WATCHER & FILTRO (FileManager.vue) ---
 watch(
   () => props.files,
-  async (newVal) => {
+  async (newFiles) => {
     showDraggable.value = false;
+    const allFiles = [...(newFiles || [])];
 
-    // Se for uma coleção, não executamos a lógica de busca de Index
-    // e podemos decidir se limpamos as listas ou apenas ignoramos o processamento
+    const candidates = ["_index.md", "index.md", "_index.json", "_index.yml"];
 
-    console.log("🚀 ~ props.isCollectionFolder:", props.isCollectionFolder)
-    if (!props.isCollectionFolder) {
-      const allFiles = newVal || [];
+    // 1. Identifica o Index (Sempre mostramos ele, pois é a "Capa" da pasta/coleção)
+    indexFile.value = allFiles.find(
+      (f) => !f.isDirectory && candidates.includes(f.name.toLowerCase()),
+    );
 
-      // 1. LÓGICA DE INDEX INTELIGENTE
-      const candidates = [
-       
-        "index.md",
-        "_index.json",
-        "_index.toml",
-        "index.toml",
-        "_index.yml",
-        "index.yml",
-        "_index.yaml",
-        "index.yaml",
-      ];
-
-      indexFile.value = allFiles.find(
-        (f) => !f.isDirectory && candidates.includes(f.name.toLowerCase()),
-      );
-
-      // 2. FILTRO DA LISTA (Arquivos que sobram)
+    // 2. Lógica de Filtragem da Lista
+    if (props.isCollectionFolder) {
+      // === MODO COLEÇÃO ===
+      // Se estamos numa coleção, a lista principal já está na tela central.
+      // Então, na sidebar, ESCONDEMOS a lista de filhos para limpar a visão.
+      localFiles.value = [];
+    } else {
+      // === MODO PASTA COMUM ===
+      // Mostra os arquivos normalmente na sidebar
       localFiles.value = allFiles.filter((f) => {
+        // Remove o indexFile da lista (já está no topo)
         if (indexFile.value && f.name === indexFile.value.name) return false;
 
         if (f.isDirectory) return true;
-        const allowedExtensions = [".md", ".json", ".yml", ".yaml", ".toml"];
-        return allowedExtensions.some((ext) =>
+        return [".md", ".json", ".yml", ".toml", ".yaml"].some((ext) =>
           f.name.toLowerCase().endsWith(ext),
         );
       });
-    } else {
-      // Caso seja uma coleção, podemos zerar o indexFile para não mostrar nada no topo da Sidebar
-      indexFile.value = null;
-      // E talvez manter localFiles vazio ou apenas com o que for relevante
-      localFiles.value = []; 
+
+      // Ordenação: Pastas > Arquivos
+      localFiles.value.sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
     }
 
     await nextTick();
     showDraggable.value = true;
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 );
 
-// --- HANDLERS ---
+// components/admin/FileManager.vue
+
 const handleItemClick = (file) => {
+  // Pega o caminho atual da pasta onde estamos listando (ex: "content" ou "content/institucional")
+  // Remove barras extras no final para evitar "content//file"
+  const baseFolder = props.currentFolder.replace(/\/$/, "");
+
   if (file.isDirectory) {
-    // CORREÇÃO: Não tentamos adivinhar o _index.md aqui.
-    // Enviamos o caminho da pasta simulando um arquivo de index padrão.
-    // O "Smart Resolve" do editor.vue vai interceptar e corrigir se for .toml ou .yml
-    // const indexPath = `${props.currentFolder}/${file.name}/_index.md`;
-    const indexPath = `${props.currentFolder}/${file.name}`;
+    // === É UMA PASTA ===
 
-    emit("select", indexPath);
-
-    if (file.hasChildren) {
-      // if (props.isCollectionFolder){
-        // alert(1)
-        // emit("enterCollectionDir", file.name);
-      // }else{
-        emit("navigate", file.name);
-      // }
-      
+    // Verifica se é Pasta Estrutural (.isDirFlag existe)
+    if (file.data?.isDir) {
+      // Navega para dentro (mantemos relativo aqui, pois o navigate soma ao folder atual)
+      emit("navigate", file.name);
+    } else {
+      // É uma Pasta-Página: Abre o _index.md
+      // CORREÇÃO: Montamos o caminho COMPLETO aqui
+      const fullPath = `${baseFolder}/${file.name}/_index.md`;
+      emit("select", fullPath);
     }
   } else {
-    emit("select", file.name);
+    // === É UM ARQUIVO SOLTO ===
+    // CORREÇÃO: Montamos o caminho COMPLETO aqui
+    const fullPath = `${baseFolder}/${file.name}`;
+    emit("select", fullPath);
   }
 };
 
+const handleIndexClick = () => {
+  if (indexFile.value) {
+    emit("select", indexFile.value.name);
+  }
+};
+
+// --- DRAG AND DROP ---
 const onDragEnd = async () => {
   const orderedNames = localFiles.value.map((f) => f.name);
   try {
@@ -132,10 +136,14 @@ const onDragEnd = async () => {
     });
     emit("refresh");
   } catch (error) {
-    localFiles.value = [...(props.files || [])];
+    console.error("Erro ao reordenar");
   }
 };
 
+// --- MENU DE CONTEXTO ---
+const contextMenu = ref();
+const activeMenuFile = ref(null);
+// Itens básicos do menu (implementar lógica real conforme necessidade)
 // --- MENUS ---
 const menuItems = ref([
   {
@@ -158,6 +166,11 @@ const menuItems = ref([
 ]);
 
 const toggleMenu = (event, file) => {
+  // BLOQUEIO: Não abre menu para arquivos de índice (_index ou index)
+  if (/^(_?index)\.(md|json|yml|yaml|toml)$/i.test(file.name)) {
+      return;
+  }
+
   activeMenuFile.value = file;
   contextMenu.value.toggle(event);
 };
@@ -334,189 +347,179 @@ const handleMove = async () => {
 </script>
 
 <template>
-  <aside
-    class="w-80 h-full bg-[#141b18] border-r border-white/5 flex flex-col shrink-0 transition-all duration-300"
-    :class="{ hidden: !visible }"
+  <div
+    class="flex flex-col h-full bg-[#141b18] border-r border-white/5 w-full overflow-hidden"
   >
-    <div class="flex flex-col flex-1 min-h-0 w-full overflow-hidden relative">
-      <div
-        class="p-3 border-b border-white/5 bg-[#141b18] shrink-0 z-10 flex flex-col gap-2"
-      >
-        <span
-          class="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1"
-          >Páginas</span
+    <div
+      class="p-3 border-b border-white/5 shrink-0 flex items-center justify-between bg-[#141b18] z-10"
+    >
+      <div class="flex items-center gap-1 overflow-hidden select-none">
+        <button
+          @click="emit('navigate', { path: 'content', absolute: true })"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-500 hover:text-[#6f942e] transition-colors shrink-0"
+          title="Ir para a Raiz"
         >
+          <i class="pi pi-home text-xs"></i>
+        </button>
 
-        <div class="flex items-center gap-2">
-          <div
-            class="flex-1 bg-black/40 border border-white/5 rounded px-2 py-1.5 flex items-center gap-2 overflow-hidden h-8"
-            :title="currentFolder"
-          >
-            <i
-              class="pi pi-folder-open text-[#6f942e] text-[10px] shrink-0"
-            ></i>
-           
-            <span
-              class="text-[16px] font-mono text-slate-300 truncate select-all leading-none mt-0.5"
-              >{{ currentFolderName }}</span
-            >
-          </div>
+        <div class="w-[1px] h-3 bg-white/10 mx-0.5 shrink-0"></div>
 
-          <div
-            class="flex items-center bg-[#1a201d] border border-white/10 rounded overflow-hidden h-7 shrink-0 shadow-sm"
-          >
-            <ButtonGroup
-              class="bg-[#1a201d] border border-white/10 rounded overflow-hidden h-7 shadow-sm"
-            >
-              <Button
-                class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none"
-                :class="{
-                  '!opacity-30 !cursor-not-allowed':
-                    !currentFolder.includes('/'),
-                }"
-                :disabled="!currentFolder.includes('/')"
-                v-tooltip.bottom="'Subir nível'"
-                @click="emit('back')"
-              >
-                <i class="pi pi-arrow-up text-xs"></i>
-              </Button>
-
-              <Button
-                class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none"
-                v-tooltip.bottom="'Novo Arquivo'"
-                @click="emit('create-file')"
-              >
-                <i class="pi pi-file-plus text-xs"></i>
-              </Button>
-
-              <Button
-                class="!bg-transparent !border-none !rounded-none !p-0 !w-8 !text-slate-300 !bg-white/5 transition-colors focus:!shadow-none"
-                v-tooltip.bottom="'Nova Pasta'"
-                @click="emit('create-folder')"
-              >
-                <i class="pi pi-folder-plus text-xs"></i>
-              </Button>
-            </ButtonGroup>
-          </div>
+        <div
+          class="flex items-center gap-1 text-xs font-mono text-slate-400 max-w-[120px]"
+        >
+          <span class="truncate" :title="currentFolder">{{
+            currentFolder.split("/").pop()
+          }}</span>
         </div>
       </div>
 
-      <div class="flex-1 overflow-y-auto custom-scrollbar p-2 relative">
-        <div
-          v-if="indexFile"
-          @click="emit('select', `${currentFolder}/${indexFile.name}`)"
-          @contextmenu.prevent="toggleMenu($event, indexFile)"
-          class="group flex items-center justify-between p-2.5 mb-1 rounded-md transition-all border border-transparent select-none cursor-pointer"
-          :class="[
-            currentFile === `${currentFolder}/${indexFile.name}`
-              ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-sm'
-              : 'hover:bg-white/5 text-slate-300',
-          ]"
+      <div class="flex items-center gap-0.5">
+        <button
+          @click="emit('back')"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+          :disabled="
+            !currentFolder.includes('/') || currentFolder === 'content'
+          "
+          :class="{
+            'opacity-30 cursor-not-allowed':
+              !currentFolder.includes('/') || currentFolder === 'content',
+          }"
+          title="Subir nível"
         >
-          <div class="flex items-center gap-3 overflow-hidden flex-1">
-            <i class="pi pi-file text-lg text-[#6f942e]"></i>
-            <span class="text-base font-bold truncate text-[#6f942e]">
-              Página principal
-              <span
-                v-if="!indexFile.name.endsWith('.md')"
-                class="text-[9px] opacity-60 ml-1 uppercase border border-[#6f942e]/30 px-1 rounded"
-              >
-                {{ indexFile.name.split(".").pop() }}
-              </span>
-            </span>
-          </div>
+          <i class="pi pi-arrow-up text-xs"></i>
+        </button>
 
-          <div
-            class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pl-2"
-          >
-            <i
-              class="pi pi-thumbtack text-[9px] text-slate-600 rotate-45 mr-2 opacity-50"
-              title="Fixo"
-            ></i>
-            <Button
-              icon="pi pi-ellipsis-v"
-              text
-              rounded
-              class="!w-6 !h-6 !p-0 text-slate-500 hover:text-white hover:bg-white/10"
-              @click.stop="toggleMenu($event, indexFile)"
-            />
-          </div>
-        </div>
+        <div class="w-[1px] h-3 bg-white/10 mx-1"></div>
 
-        <VueDraggable
-          v-if="showDraggable"
-          v-model="localFiles"
-          :animation="150"
-          @end="onDragEnd"
-          class="flex flex-col gap-1 min-h-[50px]"
-          ghost-class="ghost-card"
-          handle=".drag-handle"
+        <button
+          @click="emit('create-file')"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+          title="Nova Página"
         >
-       
-          <div
-            v-for="file in localFiles"
-            :key="file.name"
-            @click="handleItemClick(file)"
-            @contextmenu.prevent="toggleMenu($event, file)"
-            class="group flex items-center justify-between p-2.5 rounded-md transition-all border border-transparent pr-2 select-none cursor-pointer"
-            :class="[
-              currentFile === `${currentFolder}/${file.name}` ||
-              (file.isDirectory &&
-                currentFile.includes(`${currentFolder}/${file.name}/`)) // Highlight se estiver dentro da pasta
-                ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white shadow-sm'
-                : 'hover:bg-white/5 text-slate-300',
-            ]"
-          >
-            <div class="flex items-center gap-3 overflow-hidden flex-1">
-              <i
-                class="drag-handle cursor-grab active:cursor-grabbing hover:scale-110 transition-transform"
-                :class="[
-                  file.hasChildren
-                    ? 'pi pi-folder text-amber-600'
-                    : 'pi pi-file text-slate-500',
-                  currentFile === `${currentFolder}/${file.name}` ||
-                  (file.isDirectory &&
-                    currentFile.includes(`${currentFolder}/${file.name}/`))
-                    ? '!text-[#6f942e]'
-                    : '',
-                  'text-lg',
-                ]"
-              ></i>
-              <span class="text-base font-medium truncate tracking-tight">
-                {{ file.isDirectory ? file.name : removeExtension(file.name) }}
-              </span>
-            </div>
-
-            <div
-              class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity pl-2"
-            >
-              <Button
-                icon="pi pi-ellipsis-v"
-                text
-                rounded
-                class="!w-6 !h-6 !p-0 text-slate-500 hover:text-white hover:bg-white/10"
-                @click.stop="toggleMenu($event, file)"
-              />
-            </div>
-          </div>
-        </VueDraggable>
-
-        <div
-          v-if="localFiles.length === 0 && !indexFile"
-          class="text-center py-10 opacity-30"
+          <i class="pi pi-file-plus text-xs"></i>
+        </button>
+        <button
+          @click="emit('create-folder')"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+          title="Nova Pasta"
         >
-          <i class="pi pi-folder-open text-4xl mb-2"></i>
-          <p class="text-xs">Pasta vazia</p>
-        </div>
+          <i class="pi pi-folder-plus text-xs"></i>
+        </button>
+        <button
+          @click="emit('create-collection')"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+          title="Nova Coleção"
+        >
+          <i class="pi pi-database text-xs"></i>
+        </button>
+
+        <div class="w-[1px] h-3 bg-white/10 mx-1"></div>
+
+        <button
+          @click="emit('refresh')"
+          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+          title="Atualizar"
+        >
+          <i class="pi pi-refresh text-xs"></i>
+        </button>
       </div>
     </div>
 
-    <Menu
-      ref="contextMenu"
-      :model="menuItems"
-      :popup="true"
-      class="custom-context-menu"
-    />
+    <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+     <div
+        v-if="indexFile"
+        @contextmenu.prevent
+        @click="handleIndexClick"
+        class="group flex items-center justify-between p-2 mb-2 rounded border border-transparent cursor-pointer transition-all select-none"
+        :class="
+          currentFile.endsWith(indexFile.name)
+            ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white'
+            : 'hover:bg-white/5 text-slate-400'
+        "
+      >
+        <div class="flex items-center gap-2 overflow-hidden">
+          <i class="pi pi-home text-xs" :class="currentFile.endsWith(indexFile.name) ? 'text-[#6f942e]' : 'text-slate-500'"></i>
+          <span class="text-sm font-bold truncate">Página Principal</span>
+        </div>
+        
+        </div>
+
+      <VueDraggable
+        v-if="showDraggable"
+        v-model="localFiles"
+        :animation="150"
+        @end="onDragEnd"
+        class="flex flex-col gap-0.5"
+        ghost-class="ghost-card"
+        handle=".drag-handle"
+      >
+        <div
+          v-for="file in filteredFiles"
+          :key="file.name"
+          @click="handleItemClick(file)"
+          @contextmenu.prevent="toggleMenu($event, file)"
+          class="group flex items-center gap-2 p-2 rounded border border-transparent cursor-pointer select-none transition-all"
+          :class="[
+            currentFile.includes(`${currentFolder}/${file.name}`) ||
+            currentFile.endsWith(`/${file.name}`)
+              ? 'bg-white/10 text-white'
+              : 'hover:bg-white/5 text-slate-300',
+          ]"
+        >
+          <i
+            @click.stop="emit('navigate', file.name)"
+            class="drag-handle pi text-sm cursor-pointer hover:scale-110 transition-transform"
+            :class="[
+              file.data?.isCollection
+                ? 'pi-database text-cyan-500'
+                : file.isDirectory
+                  ? file.data?.isDir
+                    ? 'pi-folder text-amber-500/80'
+                    : 'pi-file-edit text-[#6f942e]'
+                  : 'pi-file text-slate-600',
+            ]"
+          ></i>
+          <span class="text-sm truncate flex-1">{{
+            file.name.replace(/\.(md|json|yml)$/, "")
+          }}</span>
+          <i
+            class="pi pi-chevron-right text-[10px] text-slate-600 opacity-50"
+            v-if="file.isDirectory"
+          ></i>
+        </div>
+      </VueDraggable>
+
+      <div
+        v-if="localFiles.length === 0 && !indexFile"
+        class="text-center py-10 opacity-30"
+      >
+        <p class="text-xs font-mono">Pasta vazia</p>
+      </div>
+    </div>
+
+    <div
+      class="p-2 border-t border-white/5 bg-black/20 flex items-center justify-between text-[10px] uppercase tracking-widest text-slate-500 font-bold select-none shrink-0"
+    >
+      <div class="pl-1">{{ filteredFiles.length }} Itens</div>
+      <button
+        @click="showHiddenFiles = !showHiddenFiles"
+        class="flex items-center gap-1.5 px-2 py-1 rounded transition-all"
+        :class="
+          showHiddenFiles
+            ? 'text-cyan-400 bg-cyan-400/5'
+            : 'hover:bg-white/5 hover:text-slate-300'
+        "
+      >
+        <i
+          class="pi"
+          :class="showHiddenFiles ? 'pi-eye' : 'pi-eye-slash'"
+          style="font-size: 10px"
+        ></i>
+        <span>Sistema</span>
+      </button>
+    </div>
+
+    <Menu ref="contextMenu" :model="menuItems" :popup="true" />
     <Dialog
       v-model:visible="renameDialogVisible"
       modal
@@ -657,90 +660,25 @@ const handleMove = async () => {
         </div>
       </template>
     </Dialog>
-  </aside>
+  </div>
 </template>
 
 <style scoped>
-/* Removemos os estilos do dropdown pois ele não existe mais */
-
-/* Menu de Contexto Customizado */
-:deep(.custom-context-menu) {
-  background: #1a201d;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+.ghost-card {
+  opacity: 0.5;
+  background: #6f942e20;
 }
-:deep(.custom-context-menu .p-menuitem-link) {
-  background: transparent;
-  padding: 0.6rem 1rem;
-}
-:deep(.custom-context-menu .p-menuitem-link .p-menuitem-text) {
-  color: #cbd5e1;
-  font-size: 0.85rem;
-}
-:deep(.custom-context-menu .p-menuitem-link .p-menuitem-icon) {
-  color: #94a3b8;
-  font-size: 0.85rem;
-}
-:deep(.custom-context-menu .p-menuitem-link:hover) {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* Árvore (Tree) Dark Mode */
-:deep(.custom-tree .p-treenode-label) {
-  color: #e2e8f0;
-  font-size: 0.85rem;
-}
-:deep(.custom-tree .p-treenode-icon) {
-  color: #d97706; /* Ícone de pasta âmbar */
-}
-:deep(.custom-tree .p-treenode-content) {
-  padding: 0.2rem;
-  border-radius: 4px;
-}
-:deep(.custom-tree .p-treenode-content:hover) {
-  background: rgba(255, 255, 255, 0.05);
-}
-:deep(.custom-tree .p-treenode-content.p-highlight) {
-  background: rgba(111, 148, 46, 0.2);
-  color: #6f942e;
-}
-:deep(.custom-tree .p-tree-toggler) {
-  color: #64748b;
-  width: 1.5rem;
-  height: 1.5rem;
-}
-
-/* Dialogs */
-:deep(.p-dialog-header),
-:deep(.p-dialog-content),
-:deep(.p-dialog-footer) {
-  background: #141b18;
-  border-color: rgba(255, 255, 255, 0.05);
-  color: white;
-}
-:deep(.p-dialog-header) {
-  padding: 1rem;
-}
-
-/* Scrollbar Customizada */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
 }
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  background: #ffffff20;
+  border-radius: 4px;
 }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(111, 148, 46, 0.5);
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-
-/* Drag Ghost */
-.ghost-card {
-  opacity: 0.5;
-  background: rgba(111, 148, 46, 0.1);
-  border: 1px dashed #6f942e;
+.mask-gradient {
+  mask-image: linear-gradient(to right, black 90%, transparent 100%);
 }
 </style>

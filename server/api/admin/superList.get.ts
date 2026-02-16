@@ -2,6 +2,7 @@ import { promises as fs, existsSync, readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import matter from 'gray-matter';
 import yaml from 'js-yaml';
+import { getCookie, getQuery, createError, defineEventHandler } from "h3";
 
 export default defineEventHandler(async (event) => {
   // --- 0. HEADERS & CONFIG ---
@@ -9,9 +10,15 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const query = getQuery(event);
 
+  const site =
+    getCookie(event, "cms_site_context") ||
+    config.public?.siteName 
+
+  console.log("🚀 ~ site:", site)
+
   // --- 1. PREPARAÇÃO DA SEÇÃO ---
   const mode = query.mode === 'preview' ? 'preview' : 'production';
-  const site = query.site ? String(query.site) : null;
+  // const site = query.site ? String(query.site) : null;
   const includeIndex = query.includeIndex === 'true';
   // Limpa a string da seção para evitar caminhos duplos
   // Ex: "atrativos/alimentacao"
@@ -20,6 +27,7 @@ export default defineEventHandler(async (event) => {
 
   if (!section) return [];
 
+  
   if (mode === 'preview' && !site) {
     throw createError({ statusCode: 400, message: 'Site é obrigatório no modo preview.' });
   }

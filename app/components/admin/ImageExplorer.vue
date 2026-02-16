@@ -4,7 +4,6 @@ import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 
 // --- PROPS & EMITS ---
 const props = defineProps({
-  // A pasta onde o editor está aberto (ex: "content/atrativos/bistro")
   initialFolder: { type: String, default: 'content' } 
 });
 
@@ -14,58 +13,50 @@ const toast = useToast();
 const siteContext = useCookie('cms_site_context');
 const viewMode = useCookie('cms_media_view_mode', { default: () => 'grid' });
 
-// Estado da pasta atual (começa na pasta do arquivo sendo editado)
 const folder = ref(props.initialFolder); 
+console.log("🚀 ~ folder:", folder)
 
 // Estado de UI
 const loadingAction = ref(false);
 const showRename = ref(false);
 const renameValue = ref('');
 const itemToRename = ref(null);
-
 const showMove = ref(false);
 const itemToMove = ref(null);
-
 const showZoom = ref(false);
 const zoomedFileIndex = ref(0);
-
-// --- DRAG AND DROP STATES ---
 const isDragging = ref(false);
 const isUploading = ref(false);
 
-// --- DATA FETCHING ---
-const { data: files, refresh } = await useFetch('/api/admin/storage', {
-  query: { site: siteContext, folder: folder },
-  watch: [folder]
+// --- DATA FETCHING (CORREÇÃO: REMOVIDO O AWAIT) ---
+// Adicionamos 'pending' para mostrar loading enquanto busca
+const { data: files, refresh, pending } = await useFetch('/api/admin/storage', {
+  query: { folder: folder.value },
+  watch: [folder],
+  transform: (input) => input.files || []
 });
+console.log("🚀 ~ files:--", files.value)
 
-// --- COMPUTEDS AUXILIARES (LÓGICA DE FILTRO CORRIGIDA) ---
-
-// 1. LISTA DE EXIBIÇÃO NA TELA (Pastas + Imagens Válidas)
+// --- COMPUTEDS AUXILIARES ---
 const filteredFiles = computed(() => {
-  if (!files.value) return [];
+  console.log("🚀 ~ Array.isArray(files.value):", Array.isArray(files.value))
+  if (!files.value || !Array.isArray(files.value)) return []; // Proteção contra null
   
   const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
 
   return files.value.filter(f => {
-    // A. Sempre mostrar pastas
     if (f.isDirectory) return true;
-
-    // B. Bloquear explicitamente arquivos de sistema/conteúdo
     if (f.name === '_index.md' || f.name === 'index.md' || f.name === '.DS_Store') return false;
-
-    // C. Só mostrar se for imagem válida
     const lowerName = f.name.toLowerCase();
     return validExtensions.some(ext => lowerName.endsWith(ext));
   });
 });
+console.log("🚀 ~ filteredFiles:", filteredFiles.value)
 
-// 2. LISTA APENAS DE IMAGENS (Para o Zoom funcionar)
 const imageFiles = computed(() => {
   return filteredFiles.value.filter(f => !f.isDirectory);
 });
 
-// 3. LISTA APENAS DE PASTAS (Para o modal de Mover)
 const subDirectories = computed(() => {
   return files.value ? files.value.filter(f => f.isDirectory && f.name !== itemToMove.value?.name) : [];
 });
@@ -113,11 +104,10 @@ const goBack = () => {
 
 // --- AÇÃO PRINCIPAL: SELECIONAR IMAGEM ---
 const selectImage = (name) => {
-  if (folder.value === props.initialFolder) {
-      emit('select', name);
-  } else {
-      emit('select', getPublicUrl(name));
-  }
+  // Se estivermos na mesma pasta inicial, retornamos apenas o nome do arquivo
+  // Se navegamos para subpastas, retornamos o caminho relativo assets/...
+  const cleanName = folder.value === props.initialFolder ? name : getPublicUrl(name);
+  emit('select', cleanName);
   toast.add({ severity: 'success', summary: 'Imagem Selecionada', life: 1000 });
 };
 
@@ -172,21 +162,16 @@ const onUpload = () => {
   toast.add({ severity: 'success', summary: 'Upload concluído!', life: 2000 });
 };
 
-// --- LÓGICA DE DRAG & DROP COMPLETA ---
+// --- DRAG & DROP ---
 const handleDrop = async (e) => {
     isDragging.value = false;
-    
-    // 1. TENTA PEGAR ARQUIVOS LOCAIS
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
         await uploadDroppedFiles(files);
         return;
     }
-
-    // 2. SE NÃO TEM ARQUIVO, TENTA PEGAR URL (DE OUTRA ABA)
     const html = e.dataTransfer.getData('text/html');
     const uri = e.dataTransfer.getData('text/uri-list'); 
-
     let src = null;
     if (html) {
         const parser = new DOMParser();
@@ -195,10 +180,7 @@ const handleDrop = async (e) => {
         if (img) src = img.src;
     }
     if (!src && uri) src = uri;
-
-    if (src) {
-        await processRemoteImage(src);
-    }
+    if (src) await processRemoteImage(src);
 };
 
 const uploadDroppedFiles = async (fileList) => {
@@ -213,19 +195,14 @@ const uploadDroppedFiles = async (fileList) => {
                 hasImage = true;
             }
         }
-
         if (!hasImage) {
             toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens são permitidas.' });
             return;
         }
-
         await $fetch('/api/admin/upload', {
             method: 'POST',
             body: formData,
-            params: {
-                site: siteContext.value,
-                folder: folder.value 
-            }
+            params: { site: siteContext.value, folder: folder.value }
         });
         toast.add({ severity: 'success', summary: 'Upload concluído', life: 2000 });
         refresh();
@@ -237,16 +214,13 @@ const uploadDroppedFiles = async (fileList) => {
     }
 };
 
-// Tenta baixar imagem de URL externa (Drag de outra aba)
 const processRemoteImage = async (url) => {
     isUploading.value = true;
     toast.add({ severity: 'info', summary: 'Baixando...', detail: 'Tentando capturar imagem externa.' });
-
     try {
         const response = await fetch(url);
         if (!response.ok) throw new Error('Falha ao baixar imagem');
         const blob = await response.blob();
-        
         let filename = 'imagem-web.jpg';
         try {
             const urlObj = new URL(url);
@@ -257,10 +231,8 @@ const processRemoteImage = async (url) => {
                 filename = `downloaded-image.${ext}`;
             }
         } catch (e) {}
-
         const file = new File([blob], filename, { type: blob.type });
         await uploadDroppedFiles([file]);
-
     } catch (e) {
         console.error("Erro ao processar imagem remota:", e);
         toast.add({ severity: 'warn', summary: 'Bloqueio de Segurança', detail: 'Salve a imagem no computador e arraste depois.', life: 5000 });
@@ -290,7 +262,6 @@ const deleteItem = async (fileName, isDir) => {
   }
 };
 
-// --- RENOMEAR & MOVER ---
 const openRenameModal = (file) => {
   itemToRename.value = file;
   renameValue.value = file.name;
@@ -303,10 +274,7 @@ const handleRename = async () => {
   try {
     await $fetch('/api/admin/rename', {
       method: 'POST',
-      body: { 
-          oldname: `${folder.value}/${itemToRename.value.name}`, 
-          newname: `${folder.value}/${renameValue.value}` 
-      }
+      body: { oldname: `${folder.value}/${itemToRename.value.name}`, newname: `${folder.value}/${renameValue.value}` }
     });
     showRename.value = false;
     toast.add({ severity: 'success', summary: 'Renomeado!', life: 2000 });
@@ -327,7 +295,6 @@ const handleMove = async (destinationSubFolder) => {
   const fileName = itemToMove.value.name;
   const oldPathFull = `${folder.value}/${fileName}`;
   let newPathFull = '';
-
   if (destinationSubFolder === '..') {
     const parts = folder.value.split('/');
     parts.pop(); 
@@ -336,7 +303,6 @@ const handleMove = async (destinationSubFolder) => {
   } else {
     newPathFull = `${folder.value}/${destinationSubFolder}/${fileName}`;
   }
-
   try {
     await $fetch('/api/admin/rename', {
       method: 'POST',
@@ -380,54 +346,34 @@ const handleMove = async (destinationSubFolder) => {
 
       <div class="flex items-center gap-3 shrink-0">
         <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
-           <Button 
-             icon="pi pi-th-large" text rounded size="small"
-             class="!w-7 !h-7"
-             :class="viewMode === 'grid' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" 
-             @click="viewMode = 'grid'" v-tooltip.bottom="'Grade'"
-           />
-           <Button 
-             icon="pi pi-list" text rounded size="small"
-             class="!w-7 !h-7"
-             :class="viewMode === 'list' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" 
-             @click="viewMode = 'list'" v-tooltip.bottom="'Lista'"
-           />
+           <Button icon="pi pi-th-large" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'grid' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'grid'" />
+           <Button icon="pi pi-list" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'list' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'list'" />
         </div>
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-        <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" v-tooltip.bottom="'Nova Pasta'" />
+        <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" />
         
         <div class="relative overflow-hidden group">
-            <FileUpload 
-              mode="basic" name="demo[]" :url="uploadUrl" :key="folder"
-              accept="image/*" :auto="true" @upload="onUpload" 
-              chooseLabel="UPLOAD" class="p-button-sm custom-upload-btn" 
-            />
+            <FileUpload mode="basic" name="demo[]" :url="uploadUrl" :key="folder" accept="image/*" :auto="true" @upload="onUpload" chooseLabel="UPLOAD" class="p-button-sm custom-upload-btn" />
         </div>
         <div class="w-px h-6 bg-white/10 mx-1"></div>
-        <Button 
-            icon="pi pi-times" 
-            text rounded size="small" 
-            @click="$emit('close')" 
-            class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" 
-            v-tooltip.bottom="'Fechar'"
-        />
+        <Button icon="pi pi-times" text rounded size="small" @click="$emit('close')" class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" />
       </div>
     </header>
 
     <section 
-        class="flex-1 overflow-y-auto custom-scrollbar p-4 content-start relative h-[60vh]"
+        class="flex-1 overflow-y-auto custom-scrollbar p-4 content-start relative"
         @dragover.prevent="isDragging = true"
         @dragleave.prevent="isDragging = false"
         @drop.prevent="handleDrop"
     >
-      
-      <div 
-        v-if="isDragging" 
-        class="absolute inset-0 z-50 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] flex items-center justify-center backdrop-blur-sm m-2 rounded-xl pointer-events-none"
-      >
+      <div v-if="pending" class="absolute inset-0 z-40 bg-[#0a0c0b]/80 flex flex-col items-center justify-center">
+          <i class="pi pi-spin pi-spinner text-3xl text-[#6f942e] mb-2"></i>
+          <span class="text-[10px] uppercase tracking-widest text-slate-500">Carregando...</span>
+      </div>
+
+      <div v-if="isDragging" class="absolute inset-0 z-50 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] flex items-center justify-center backdrop-blur-sm m-2 rounded-xl pointer-events-none">
         <div class="bg-[#141b18] px-6 py-3 rounded-full border border-[#6f942e] text-[#6f942e] font-bold shadow-xl flex items-center gap-3 animate-bounce">
-            <i class="pi pi-cloud-upload text-xl"></i>
-            SOLTE ARQUIVOS AQUI
+            <i class="pi pi-cloud-upload text-xl"></i> SOLTE ARQUIVOS AQUI
         </div>
       </div>
 
@@ -436,7 +382,7 @@ const handleMove = async (destinationSubFolder) => {
          <span class="text-white font-mono text-sm tracking-widest animate-pulse">ENVIANDO...</span>
       </div>
 
-      <div v-if="viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div v-if="!pending && viewMode === 'grid'" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div v-for="file in filteredFiles" :key="file.name" 
              class="bg-[#1a1d1c] p-2 rounded-xl border border-white/5 hover:border-[#6f942e] transition-all group relative overflow-hidden h-40 cursor-pointer"
              @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
@@ -457,19 +403,18 @@ const handleMove = async (destinationSubFolder) => {
           
           <div class="absolute inset-0 bg-[#0f1110]/90 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity duration-300 gap-2">
               <div v-if="!file.isDirectory" class="flex gap-2">
-                 <Button icon="pi pi-eye" severity="secondary" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openZoom(file)" v-tooltip.top="'Zoom'" />
-                 <Button icon="pi pi-check" severity="success" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="selectImage(file.name)" v-tooltip.top="'Selecionar'" />
+                 <Button icon="pi pi-eye" severity="secondary" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openZoom(file)" />
+                 <Button icon="pi pi-check" severity="success" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="selectImage(file.name)" />
               </div>
               <div class="flex gap-2 mt-1">
                  <Button icon="pi pi-pencil" severity="warning" text rounded size="small" class="!w-7 !h-7 !p-0" @click.stop="openRenameModal(file)" />
-                 <Button icon="pi pi-arrow-right-arrow-left" severity="help" text rounded size="small" class="!w-7 !h-7 !p-0" @click.stop="openMoveModal(file)" />
                  <Button icon="pi pi-trash" severity="danger" text rounded size="small" class="!w-7 !h-7 !p-0" @click.stop="deleteItem(file.name, file.isDirectory)" />
               </div>
           </div>
         </div>
       </div>
 
-      <div v-else class="flex flex-col gap-2">
+      <div v-else-if="!pending" class="flex flex-col gap-2">
          <div v-for="file in filteredFiles" :key="file.name" 
               class="flex items-center justify-between p-2 bg-[#1a1d1c] rounded-xl border border-white/5 hover:border-[#6f942e] hover:bg-white/5 transition-all group cursor-pointer"
               @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
@@ -479,26 +424,21 @@ const handleMove = async (destinationSubFolder) => {
                   <i v-if="file.isDirectory" class="pi pi-folder text-xl text-amber-500"></i>
                   <img v-else :src="getPublicUrl(file.name)" class="w-full h-full object-cover" loading="lazy" />
                </div>
-               
                <div class="flex flex-col truncate">
                   <span class="text-sm font-bold text-slate-200 truncate group-hover:text-[#6f942e] transition-colors">{{ file.name }}</span>
                </div>
             </div>
-
             <div class="flex items-center gap-2 opacity-40 group-hover:opacity-100 transition-opacity">
                <template v-if="!file.isDirectory">
                   <Button icon="pi pi-eye" severity="secondary" text rounded class="!w-8 !h-8" @click.stop="openZoom(file)" />
                   <Button icon="pi pi-check" severity="success" text rounded class="!w-8 !h-8" @click.stop="selectImage(file.name)" />
-                  <div class="w-px h-4 bg-white/20 mx-1"></div>
                </template>
-               
-               <Button icon="pi pi-pencil" severity="warning" text rounded class="!w-8 !h-8" @click.stop="openRenameModal(file)" />
                <Button icon="pi pi-trash" severity="danger" text rounded class="!w-8 !h-8" @click.stop="deleteItem(file.name, file.isDirectory)" />
             </div>
          </div>
       </div>
 
-      <div v-if="filteredFiles && filteredFiles.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
+      <div v-if="!pending && filteredFiles && filteredFiles.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
         <i class="pi pi-folder-open text-6xl mb-4 text-slate-600"></i>
         <p class="text-sm uppercase tracking-widest text-slate-500 font-bold">Pasta Vazia</p>
         <p class="text-[10px] text-slate-600 mt-2">Arraste imagens para cá</p>
@@ -506,107 +446,39 @@ const handleMove = async (destinationSubFolder) => {
 
     </section>
 
-    <Dialog 
-      v-model:visible="showZoom" 
-      modal 
-      :dismissableMask="true" 
-      :showHeader="false" 
-      :style="{ width: '100vw', height: '100vh', maxHeight: '100vh', margin: 0, overflow: 'hidden' }" 
-      class="bg-transparent shadow-none p-0" 
-      :contentStyle="{ padding: 0, background: 'transparent', height: '100%', width: '100%' }"
-    >
+    <Dialog v-model:visible="showZoom" modal :dismissableMask="true" :showHeader="false" :style="{ width: '100vw', height: '100vh', margin: 0 }" class="bg-transparent" :contentStyle="{ padding: 0 }">
       <div class="relative flex flex-col items-center justify-center bg-[#020302]/95 backdrop-blur-md w-full h-full p-4 overflow-hidden select-none" v-if="currentZoomedFile">
-        
-        <Button icon="pi pi-times" text rounded class="!absolute top-4 right-4 text-white/60 hover:text-white z-50 !w-12 !h-12 !text-xl" @click="showZoom = false" />
-        
-        <div class="flex items-center justify-between w-full gap-4 h-full relative max-w-7xl mx-auto">
-          <div class="h-full flex items-center px-4 absolute left-0 z-10 cursor-pointer group" @click="prevImage">
-             <Button icon="pi pi-chevron-left" text rounded class="text-white/40 group-hover:text-[#6f942e] !w-16 !h-16 !text-4xl transition-all scale-90 group-hover:scale-105" />
-          </div>
-          
-          <div class="relative flex-1 flex flex-col items-center justify-center h-full w-full px-16">
-            <img :src="getPublicUrl(currentZoomedFile.name)" class="max-h-[80vh] max-w-full object-contain animate-fade-in shadow-2xl rounded-sm" />
-            
-            <div class="absolute bottom-6 flex flex-col items-center gap-3 bg-[#1a1d1c] border border-white/10 p-4 rounded-2xl shadow-xl">
-               <div class="text-slate-400 font-mono text-xs flex items-center gap-2">
-                  <i class="pi pi-image text-[#6f942e]"></i>
-                  <span class="opacity-70">{{ getPublicUrl(currentZoomedFile.name) }}</span>
-               </div>
-               <div class="flex gap-2">
-                  <Button label="Inserir Imagem" size="small" icon="pi pi-check" class="bg-[#6f942e] border-none text-black font-bold hover:brightness-110" @click="selectImage(currentZoomedFile.name); showZoom = false" />
-                  <Button label="Copiar Link" size="small" severity="secondary" icon="pi pi-copy" @click="copyImageUrl(currentZoomedFile.name)" />
-               </div>
-            </div>
-          </div>
-          
-          <div class="h-full flex items-center px-4 absolute right-0 z-10 cursor-pointer group" @click="nextImage">
-            <Button icon="pi pi-chevron-right" text rounded class="text-white/40 group-hover:text-[#6f942e] !w-16 !h-16 !text-4xl transition-all scale-90 group-hover:scale-105" />
-          </div>
-        </div>
+         <Button icon="pi pi-times" text rounded class="!absolute top-4 right-4 text-white/60 hover:text-white z-50 !w-12 !h-12 !text-xl" @click="showZoom = false" />
+         <div class="flex items-center justify-between w-full gap-4 h-full relative max-w-7xl mx-auto">
+             <div class="h-full flex items-center px-4 cursor-pointer" @click="prevImage"><Button icon="pi pi-chevron-left" text rounded class="text-white/40 !w-16 !h-16 !text-4xl" /></div>
+             <div class="relative flex-1 flex flex-col items-center justify-center h-full w-full">
+                <img :src="getPublicUrl(currentZoomedFile.name)" class="max-h-[80vh] max-w-full object-contain shadow-2xl rounded-sm" />
+                <div class="absolute bottom-6 flex gap-2">
+                    <Button label="Inserir" icon="pi pi-check" class="bg-[#6f942e] border-none text-black font-bold" @click="selectImage(currentZoomedFile.name); showZoom = false" />
+                </div>
+             </div>
+             <div class="h-full flex items-center px-4 cursor-pointer" @click="nextImage"><Button icon="pi pi-chevron-right" text rounded class="text-white/40 !w-16 !h-16 !text-4xl" /></div>
+         </div>
       </div>
     </Dialog>
 
-    <Dialog v-model:visible="showRename" modal header="Renomear Item" :style="{ width: '350px' }" class="bg-[#141b18]">
-      <div class="flex flex-col gap-4 pt-2">
-        <label class="text-xs font-bold uppercase text-slate-500">Novo Nome</label>
+    <Dialog v-model:visible="showRename" modal header="Renomear" :style="{ width: '350px' }" class="bg-[#141b18]">
+       <div class="flex flex-col gap-4 pt-2">
         <InputText v-model="renameValue" class="w-full bg-[#0a0f0d] border border-white/10 text-white focus:border-[#6f942e]" autofocus @keyup.enter="handleRename" />
         <Button label="Salvar" @click="handleRename" :loading="loadingAction" class="bg-[#6f942e] border-none text-black font-bold w-full" />
-      </div>
+       </div>
     </Dialog>
 
-    <Dialog v-model:visible="showMove" modal header="Mover Para" :style="{ width: '350px' }" class="bg-[#141b18]">
-      <div class="flex flex-col gap-4 pt-2">
-         <p class="text-xs text-slate-400">Movendo: <span class="text-white font-bold">{{ itemToMove?.name }}</span></p>
-         <div class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar">
+     <Dialog v-model:visible="showMove" modal header="Mover Para" :style="{ width: '350px' }" class="bg-[#141b18]">
+      <div class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pt-2">
             <div v-if="folder !== 'content'" @click="handleMove('..')" class="p-3 bg-white/5 hover:bg-[#6f942e]/20 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
                 <i class="pi pi-level-up text-[#6f942e]"></i><span class="text-sm font-bold text-slate-300">.. (Pasta Anterior)</span>
             </div>
             <div v-for="dir in subDirectories" :key="dir.name" @click="handleMove(dir.name)" class="p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
                 <i class="pi pi-folder text-amber-600"></i><span class="text-sm text-slate-300">{{ dir.name }}</span>
             </div>
-            <div v-if="subDirectories.length === 0" class="text-center text-xs text-slate-500 py-2">Sem subpastas aqui</div>
-         </div>
       </div>
     </Dialog>
 
   </div>
 </template>
-
-<style scoped>
-/* Scrollbar Customizada */
-.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.1); border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(111, 148, 46, 0.5); }
-
-/* Customização do Botão de Upload do PrimeVue */
-:deep(.custom-upload-btn .p-fileupload-choose) {
-  background: #6f942e !important;
-  border-color: #6f942e !important;
-  color: #000 !important;
-  font-weight: 800 !important;
-  font-size: 10px !important;
-  padding: 0 16px !important;
-  border-radius: 9999px !important; /* Rounded Full */
-  height: 32px !important;
-  display: flex;
-  align-items: center;
-}
-
-:deep(.custom-upload-btn .p-fileupload-choose:hover) {
-    background: #5a7a23 !important;
-}
-
-/* Modais sem estilo padrão */
-:deep(.p-dialog-header), :deep(.p-dialog-content) {
-  background: #141b18;
-  color: white;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.animate-fade-in { animation: fadeIn 0.3s ease-in-out; }
-@keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.98); }
-    to { opacity: 1; transform: scale(1); }
-}
-</style>

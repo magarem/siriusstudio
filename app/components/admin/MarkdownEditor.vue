@@ -55,7 +55,6 @@ const extensions = computed(() => {
   const plugins = [
     markdown(), 
     EditorView.lineWrapping,
-    // Listener para eventos do DOM (Paste/Drop)
     EditorView.domEventHandlers({
         paste: handlePaste,
         drop: handleDrop,
@@ -75,70 +74,51 @@ const handleReady = (payload) => {
 };
 
 // =============================================================================
-// MANIPULAÇÃO DE TEXTO (TOOLBAR) - Adaptado para CodeMirror
+// MANIPULAÇÃO DE TEXTO (TOOLBAR)
 // =============================================================================
 
-// 1. Inserir ou Envolver Texto (Bold, Italic, Link)
 const insertFormat = (prefix, suffix = '', placeholder = 'texto') => {
   const view = editorView.value;
   if (!view) return;
-
   const { from, to } = view.state.selection.main;
   const selectedText = view.state.sliceDoc(from, to);
-  
   const textToInsert = selectedText || placeholder;
   const insertion = `${prefix}${textToInsert}${suffix}`;
-
   view.dispatch({
     changes: { from, to, insert: insertion },
     selection: { anchor: from + prefix.length, head: from + prefix.length + textToInsert.length },
     scrollIntoView: true
   });
-  
   view.focus();
 };
 
-// 2. Alternar Prefixo de Linha (H1, H2, Listas)
 const toggleLinePrefix = (prefix) => {
   const view = editorView.value;
   if (!view) return;
-
   const { from, to } = view.state.selection.main;
   const lineStart = view.state.doc.lineAt(from);
   const lineEnd = view.state.doc.lineAt(to);
-  
   const changes = [];
-  
-  // Itera sobre todas as linhas da seleção
   for (let i = lineStart.number; i <= lineEnd.number; i++) {
     const line = view.state.doc.line(i);
     const lineText = line.text;
-    
     if (lineText.startsWith(prefix)) {
-        // Remove prefixo
         changes.push({ from: line.from, to: line.from + prefix.length, insert: '' });
     } else {
-        // Adiciona prefixo
         changes.push({ from: line.from, to: line.from, insert: prefix });
     }
   }
-
   view.dispatch({ changes, scrollIntoView: true });
   view.focus();
 };
 
-// 3. Inserir Bloco (Tabela, Code Block, HR)
 const insertBlock = (template) => {
     const view = editorView.value;
     if (!view) return;
-
     const { from } = view.state.selection.main;
     const line = view.state.doc.lineAt(from);
-    
-    // Se não estiver no começo da linha, adiciona quebras
     const prefix = (from > line.from) ? '\n\n' : '';
     const insertion = prefix + template;
-
     view.dispatch({
         changes: { from, insert: insertion },
         selection: { anchor: from + insertion.length },
@@ -147,7 +127,6 @@ const insertBlock = (template) => {
     view.focus();
 };
 
-// 4. Inserir na posição do cursor (API Pública para o Upload)
 const insertAtCursor = (text) => {
     const view = editorView.value;
     if (!view) return;
@@ -159,25 +138,21 @@ const insertAtCursor = (text) => {
 defineExpose({ insertAtCursor });
 
 // =============================================================================
-// UPLOAD DE IMAGEM (Drag & Drop / Paste)
+// UPLOAD DE IMAGEM
 // =============================================================================
 
 const uploadImage = async (file) => {
     if (!file.type.startsWith('image/')) {
-        toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens.', life: 2000 });
+        toast.add({ severity: 'warn', summary: 'Apenas imagens', life: 2000 });
         return;
     }
-
     isUploading.value = true;
-    isDragging.value = false; // Garante que o overlay some
-    
+    isDragging.value = false;
     try {
         const formData = new FormData();
         formData.append('file', file);
-        
         let targetFolder = props.currentFolder;
         if (!targetFolder || targetFolder === '.') targetFolder = 'content';
-
         const response = await $fetch('/api/admin/upload', {
             method: 'POST',
             body: formData,
@@ -186,21 +161,18 @@ const uploadImage = async (file) => {
                 folder: props.currentFile.replace(/\/[^\/]*$/, '') 
             }
         });
-
         if (response && response.path) {
-            const imageMarkdown = `![${file.name}](${response.path})`;
-            insertAtCursor(imageMarkdown);
+            insertAtCursor(`![${file.name}](${response.path})`);
             toast.add({ severity: 'success', summary: 'Imagem enviada', life: 2000 });
         }
     } catch (e) {
         console.error(e);
-        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha no upload.' });
+        toast.add({ severity: 'error', summary: 'Erro no upload' });
     } finally {
         isUploading.value = false;
     }
 };
 
-// Handlers passados para o CodeMirror DOM Events
 function handleDrop(event) {
     const files = event.dataTransfer?.files;
     if (files && files.length > 0) {
@@ -213,10 +185,9 @@ function handleDrop(event) {
 function handlePaste(event) {
     const items = event.clipboardData?.items;
     if (!items) return;
-
     for (const item of items) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
-            event.preventDefault(); // Impede colar o binário
+            event.preventDefault();
             uploadImage(item.getAsFile());
             return;
         }
@@ -241,7 +212,17 @@ const actions = [
   { icon: 'pi pi-minus', title: 'Linha Horizontal', action: () => insertBlock('---\n') },
   { separator: true },
   { icon: 'pi pi-image', title: 'Inserir Imagem', action: () => emit('open-image') },
+  
+  // --- BOTÕES DE SISTEMA ---
+  { separator: true },
+  { 
+      icon: 'pi pi-file-edit', 
+      title: 'Ver Fonte Completo (Raw)', 
+      action: () => emit('toggle-raw'),
+      isActive: () => props.isRawMode 
+  }
 ];
+
 </script>
 
 <template>
@@ -250,7 +231,19 @@ const actions = [
     <div class="flex items-center gap-1 p-2 bg-[#141b18] border-b border-white/5 overflow-x-auto custom-scrollbar shrink-0 select-none z-10">
         <template v-for="(btn, idx) in actions" :key="idx">
             <div v-if="btn.separator" class="w-[1px] h-5 bg-white/10 mx-1 shrink-0"></div>
-            <button v-else @click="btn.action" :title="btn.title" type="button" class="flex items-center justify-center min-w-[28px] h-[28px] px-2 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors focus:outline-none shrink-0">
+            
+            <button 
+                v-else 
+                @click="btn.action" 
+                :title="btn.title" 
+                type="button" 
+                class="flex items-center justify-center min-w-[28px] h-[28px] px-2 rounded transition-colors focus:outline-none shrink-0"
+                :class="[
+                    (btn.isActive && btn.isActive()) 
+                        ? 'bg-[#6f942e]/20 text-[#6f942e]' 
+                        : 'hover:bg-white/10 text-zinc-400 hover:text-white'
+                ]"
+            >
                 <i v-if="btn.icon" :class="[btn.icon, 'text-[14px]']"></i>
                 <span v-if="btn.label" class="text-[12px] font-bold font-mono">{{ btn.label }}</span>
             </button>
@@ -259,13 +252,9 @@ const actions = [
 
     <div class="flex-1 relative overflow-hidden bg-[#0a0f0d] min-h-0 group/editor">
         
-        <div 
-            v-if="isDragging" 
-            class="absolute inset-0 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] z-30 flex items-center justify-center pointer-events-none backdrop-blur-sm"
-        >
+        <div v-if="isDragging" class="absolute inset-0 bg-[#6f942e]/10 border-2 border-dashed border-[#6f942e] z-30 flex items-center justify-center pointer-events-none backdrop-blur-sm">
             <div class="bg-[#141b18] px-6 py-3 rounded-full border border-[#6f942e] text-[#6f942e] font-bold shadow-xl flex items-center gap-3">
-                <i class="pi pi-cloud-upload text-xl"></i>
-                SOLTE A IMAGEM AQUI
+                <i class="pi pi-cloud-upload text-xl"></i> SOLTE A IMAGEM AQUI
             </div>
         </div>
 
@@ -298,17 +287,10 @@ const actions = [
 </template>
 
 <style>
-/* Estilização interna do CodeMirror para ficar bonito */
 .cm-scroller::-webkit-scrollbar { width: 6px; height: 6px; }
 .cm-scroller::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 .cm-scroller::-webkit-scrollbar-track { background: transparent; }
-
-.cm-content {
-    padding: 24px !important;
-    font-family: var(--font-family, monospace);
-}
-
-/* Cores específicas de Markdown do tema OneDark (para garantir contraste) */
+.cm-content { padding: 24px !important; font-family: var(--font-family, monospace); }
 .cm-header { color: #e5c07b; font-weight: bold; }
 .cm-link { color: #61afef; text-decoration: underline; }
 .cm-url { color: #56b6c2; }

@@ -108,7 +108,8 @@ const onItemClick = (item, event) => {
       }"
       @click="onItemClick(item, $event)"
     >
-   
+    
+ 
       <NuxtLink
         v-if="item.path"
         :to="item.path"
@@ -125,7 +126,6 @@ const onItemClick = (item, event) => {
             >
               <i class="pi pi-folder"></i>
             </div> -->
-
             <!-- Imagem principal -->
             <img
               v-if="item.image"
