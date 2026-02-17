@@ -23,12 +23,60 @@ const props = defineProps({
 
 const emit = defineEmits(['select', 'create-item']);
 
+const localFiles = ref<FileItem[]>([]);
+const toast = useToast(); // Certifique-se de importar useToast
+
 const showSystemFiles = ref(false);
 const extraFiles = ref<FileItem[]>([]); 
 const isLoadingSchemas = ref(false);
 
 const first = ref(0);
 const rows = ref(10);
+
+const displayedFiles = computed(() => {
+    if (showSystemFiles.value) return extraFiles.value;
+    return localFiles.value;
+});
+
+const isIndexFile = (file: FileItem) => file.name.toLowerCase().startsWith('_index');
+
+
+watch([() => props.files, showSystemFiles], ([newFiles, isSystem]) => {
+  if (isSystem) return;
+
+  const list = newFiles.filter((file: FileItem) => {
+    const name = file.name;
+    if (name.startsWith('.')) return false;
+    if (name === '_schemas') return false; 
+    if (name.startsWith('_') && !isIndexFile(file)) return false;
+    return true;
+  });
+
+  // Apenas garante que o Index (Capa) fique no topo, o resto mantém a ordem da API
+  list.sort((a, b) => {
+    if (isIndexFile(a)) return -1;
+    if (isIndexFile(b)) return 1;
+    return 0; 
+  });
+
+  localFiles.value = list;
+}, { immediate: true, deep: true });
+
+// 3. Função que salva a nova ordem ao soltar
+const onRowReorder = async (event: any) => {
+  localFiles.value = event.value; // Atualiza visual
+  const orderedNames = localFiles.value.map((f: { name: any; }) => f.name);
+
+  try {
+    await $fetch("/api/admin/reorder", {
+      method: "POST",
+      body: { folder: props.currentFolder, files: orderedNames },
+    });
+  } catch (error) {
+    console.error("Erro ao salvar ordem", error);
+    toast.add({ severity: 'error', summary: 'Erro ao reordenar' });
+  }
+};
 
 watch(() => props.currentFolder, () => {
   first.value = 0;
@@ -69,7 +117,6 @@ watch(showSystemFiles, async (isActive) => {
   }
 });
 
-const isIndexFile = (file: FileItem) => file.name.toLowerCase().startsWith('_index');
 
 const filteredFiles = computed(() => {
   if (showSystemFiles.value) {
@@ -162,8 +209,11 @@ const formatDate = (dateString?: string) => {
 
     <div class="flex-1 overflow-hidden relative">
       <DataTable 
-        :value="filteredFiles" 
-        selectionMode="single" 
+       :value="displayedFiles" 
+  :reorderableRows="!showSystemFiles"
+  @rowReorder="onRowReorder"
+  
+  selectionMode="single"
         :metaKeySelection="false"
         @rowSelect="onRowSelect"
         dataKey="name"
@@ -202,6 +252,7 @@ const formatDate = (dateString?: string) => {
             }
         }"
       >
+      <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
         <Column style="width: 4rem">
             <template #body="slotProps">
             <div class="w-10 h-10 rounded overflow-hidden flex items-center justify-center border transition-all"
@@ -281,6 +332,8 @@ const formatDate = (dateString?: string) => {
 </template>
 
 <style scoped>
+:deep(.p-row-reorder-icon) { color: #64748b; cursor: grab; }
+:deep(.p-row-reorder-icon:hover) { color: #6f942e; }
 :deep(.p-datatable-header-cell) { background: #141b18 !important; border: none; padding: 10px 16px; color: #64748b; }
 :deep(.p-datatable-tbody > tr) { background: transparent; transition: background-color 0.2s;}
 :deep(.p-datatable-tbody > tr:nth-child(even)) { background: rgba(255, 255, 255, 0.03) !important; }

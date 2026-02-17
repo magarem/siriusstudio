@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   // Ajuste os nomes 'preview' e 'page' conforme as rotas que você criou em server/api/
   const apiFolder = isPreview ? 'preview' : 'page'; 
   const targetUrl = `/api/${apiFolder}/${slug}`;
+  console.log("🚀 ~ targetUrl:", targetUrl)
 
   try {
     // 4. Executa a API interna
@@ -22,18 +23,19 @@ export default defineEventHandler(async (event) => {
     const data = await $fetch(targetUrl, {
         query: query 
     });
+    console.log("🚀 ~ data:", data)
 
     return data;
 
   } catch (e) {
     // Lógica de Fallback (Opcional): Se falhar no preview, tenta a produção
-    if (isPreview) {
-        try {
-            return await $fetch(`/api/page/${slug}`);
-        } catch (err) {
-            // Se falhar nos dois, erro 404 real
-        }
-    }
+    // if (isPreview) {
+    //     try {
+    //         return await $fetch(`/api/page/${slug}`);
+    //     } catch (err) {
+    //         // Se falhar nos dois, erro 404 real
+    //     }
+    // }
 
     throw createError({ 
       statusCode: e.statusCode || 500, 

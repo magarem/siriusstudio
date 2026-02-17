@@ -2,56 +2,66 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-// Aponta para a pasta onde o Sirius salvou os JSONs
+// Aponta para a pasta onde o Sirius salvou os JSONs compilados
+// Geralmente em produção/build, isso fica em 'data' ou '.output/data'
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 
 export default defineEventHandler(async (event) => {
-  // Pega o slug da URL (ex: 'atrativos/bistro' ou undefined para home)
+  // 1. Pega o slug da URL
   let slug = getRouterParam(event, 'slug') || 'index';
   
-  // Normaliza: remove barras extras e garante segurança
-  // Se vier array (Nuxt behavior), junta com /
+  // 2. Normalização do Slug
   if (Array.isArray(slug)) slug = slug.join('/');
-  
   slug = slug.replace(/\/+$/, ''); // Remove barra final
-
-  // Se o slug for vazio (rota raiz), assume 'index'
   if (slug === '') slug = 'index';
 
-  // Estratégia de Resolução de Arquivo:
-  // Como o Compiler converteu "_index.md" para "index.json",
-  // a lógica padrão de pastas funciona.
+  // 3. Estratégia de Resolução de Arquivo
+  // O compilador do CMS deve ter gerado arquivos .json para tudo
   const possiblePaths = [
-    // 1. Tenta slug direto (ex: data/contato.json)
-    path.join(DATA_DIR, `${slug}.json`),
-    
-    // 2. Tenta index dentro da pasta (ex: data/atrativos/index.json)
-    // Isso resolve o caso de pastas como "atrativos/_index.md" que virou "index.json"
-    path.join(DATA_DIR, slug, 'index.json'),
-
-    // 3. (Fallback de segurança) Tenta _index.json caso algo tenha passado sem renomear
-    path.join(DATA_DIR, slug, '_index.json')
+    path.join(DATA_DIR, `${slug}.json`),          // ex: data/contato.json
+    path.join(DATA_DIR, slug, 'index.json'),      // ex: data/blog/index.json
+    path.join(DATA_DIR, slug, '_index.json')      // ex: data/blog/_index.json (fallback)
   ];
 
   for (const p of possiblePaths) {
     try {
-      // Verifica se o caminho está dentro de DATA_DIR para segurança (evitar ../../)
+      // Segurança: garante que não sai da pasta DATA_DIR
       if (!p.startsWith(DATA_DIR)) continue;
 
       // Tenta ler o arquivo
       const content = await fs.readFile(p, 'utf-8');
       
-      // Se leu com sucesso, parseia e retorna
-      const json = JSON.parse(content);
-      return json;
+      // Parseia o JSON
+      const jsonContent = JSON.parse(content);
+
+      // =====================================================================
+      // 4. PADRONIZAÇÃO DE RESPOSTA (A Correção da "Questão Intrigante")
+      // =====================================================================
       
+      // Cenário A: O arquivo já é um Markdown compilado pelo CMS?
+      // (Geralmente Markdowns compilados já salvam com { data: ..., body: ... })
+      if (jsonContent.data && (jsonContent.body || jsonContent._path)) {
+          // Retorna como está, pois já está no padrão Nuxt Content
+          return jsonContent;
+      }
+
+      // Cenário B: O arquivo é um JSON Puro / Configuração (Raw Data)?
+      // Se for apenas { "titulo": "Olá" }, nós encapsulamos manualmente 
+      // para o front-end não quebrar esperando um .data
+      return {
+        data: jsonContent,   // O conteúdo vira o Frontmatter
+        body: null,          // Não tem corpo de texto (AST)
+        _path: slug === 'index' ? '/' : `/${slug}`,
+        _source: 'json-api'
+      };
+
     } catch (e) {
-      // Arquivo não existe neste path, tenta o próximo
+      // Arquivo não existe neste path, tenta o próximo da lista
       continue;
     }
   }
 
-  // Se percorreu todas as opções e não achou
-  console.warn(`[Page API] 404 Not Found for slug: ${slug}`);
+  // 5. Se percorreu todas as opções e não achou nada
+  // console.warn(`[Page API] 404 Not Found for slug: ${slug}`);
   throw createError({ statusCode: 404, message: 'Página não encontrada' });
 });

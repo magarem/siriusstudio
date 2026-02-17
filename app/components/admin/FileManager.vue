@@ -64,46 +64,43 @@ const handleRefresh = () => {
   setTimeout(() => { isRefreshing.value = false; }, 500);
 };
 
-
-// --- WATCHER & FILTRO (FileManager.vue) ---
+// --- WATCHER & FILTRO ---
 watch(
-  () => props.files,
-  async (newFiles) => {
+  [() => props.files, showHiddenFiles], // Observa arquivos E o toggle de ocultos
+  async ([newFiles]) => {
     showDraggable.value = false;
     const allFiles = [...(newFiles || [])];
 
     const candidates = ["_index.md", "index.md", "_index.json", "_index.yml"];
 
-    // 1. Identifica o Index (Sempre mostramos ele, pois é a "Capa" da pasta/coleção)
+    // 1. Identifica o Index
     indexFile.value = allFiles.find(
       (f) => !f.isDirectory && candidates.includes(f.name.toLowerCase()),
     );
 
-    // 2. Lógica de Filtragem da Lista
+    // 2. Popula localFiles (que será usado no Drag & Drop)
     if (props.isCollectionFolder) {
-      // === MODO COLEÇÃO ===
-      // Se estamos numa coleção, a lista principal já está na tela central.
-      // Então, na sidebar, ESCONDEMOS a lista de filhos para limpar a visão.
       localFiles.value = [];
     } else {
-      // === MODO PASTA COMUM ===
-      // Mostra os arquivos normalmente na sidebar
       localFiles.value = allFiles.filter((f) => {
-        // Remove o indexFile da lista (já está no topo)
+        // Remove Index
         if (indexFile.value && f.name === indexFile.value.name) return false;
+        
+        // Remove arquivos de sistema (se a flag estiver desligada)
+        if (!showHiddenFiles.value && (f.name.startsWith("_") || f.name.startsWith("."))) return false;
 
+        // Mantém pastas
         if (f.isDirectory) return true;
+
+        // Mantém extensões permitidas
         return [".md", ".json", ".yml", ".toml", ".yaml"].some((ext) =>
           f.name.toLowerCase().endsWith(ext),
         );
       });
 
-      // Ordenação: Pastas > Arquivos
-      localFiles.value.sort((a, b) => {
-        if (a.isDirectory && !b.isDirectory) return -1;
-        if (!a.isDirectory && b.isDirectory) return 1;
-        return a.name.localeCompare(b.name);
-      });
+      // --- IMPORTANTE: REMOVIDO O .sort() ---
+      // Se ordenarmos aqui, perdemos a ordem salva (drag & drop).
+      // Assumimos que a props.files JÁ VEM ordenada do backend (/api/admin/storage).
     }
 
     await nextTick();
@@ -484,17 +481,17 @@ const handleMove = async () => {
   </div>
 </div>
 
-      <VueDraggable
+     <VueDraggable
         v-if="showDraggable"
-        v-model="localFiles"
+        v-model="localFiles" 
         :animation="150"
         @end="onDragEnd"
         class="flex flex-col gap-0.5"
         ghost-class="ghost-card"
         handle=".drag-handle"
       >
-        <div
-          v-for="file in filteredFiles"
+       <div
+          v-for="file in localFiles" 
           :key="file.name"
           @click="handleItemClick(file)"
           @contextmenu.prevent="toggleMenu($event, file)"
@@ -503,7 +500,7 @@ const handleMove = async () => {
             currentFile.includes(`${currentFolder}/${file.name}`) ||
             currentFile.endsWith(`/${file.name}`)
               ? 'bg-white/10 text-white'
-              : 'hover:bg-white/5 text-slate-300',
+              : 'hover:bg-white/5 text-slate-300'
           ]"
         >
           <i
@@ -519,7 +516,7 @@ const handleMove = async () => {
                   : 'pi-file text-slate-600',
             ]"
           ></i>
-          <span class="text-sm truncate flex-1">{{
+          <span class="drag-handle text-sm truncate flex-1">{{
             file.name.replace(/\.(md|json|yml)$/, "")
           }}</span>
           <i

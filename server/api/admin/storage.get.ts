@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import matter from "gray-matter";
 import { getCookie, getQuery, createError, defineEventHandler } from "h3";
+import yaml from "js-yaml";
 
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
@@ -35,7 +36,7 @@ export default defineEventHandler(async (event) => {
     const rawItems = readdirSync(targetDir, { withFileTypes: true });
 
     // 1. Identificar o TIPO da pasta atual (onde estamos navegando)
-    const hasCollectionMarker = rawItems.some(i => i.name === '.collection' || i.name === '.collection.json');
+    const hasCollectionMarker = rawItems.some(i => i.name === '.collection');
     const subDirectories = rawItems.filter(i => i.isDirectory());
 
     let folderType = 'folder'; // Padrão
@@ -84,11 +85,7 @@ export default defineEventHandler(async (event) => {
           isDir: isCommonDir,
           isCollection: isCollection
         };
-      } else {
-        // Se for arquivo (não diretório), podemos tentar pegar o título se for .md, 
-        // ou manter o nome do arquivo.
-        // Aqui mantemos simples para não ler todos os arquivos de uma vez.
-      }
+      } 
 
       return {
         name: item.name,
@@ -98,13 +95,47 @@ export default defineEventHandler(async (event) => {
       };
     });
 
-    // Filtros finais (Ocultar arquivos de sistema se necessário)
+    // 3. Filtros finais (Ocultar arquivos de sistema)
+    // Adicionei _order.json aqui para ele não aparecer na lista visual
     const cleanFiles = processedFiles.filter(f => 
-       !['.DS_Store', '_order.yml', '_schema.json'].includes(f.name)
+       !['.DS_Store', '_order.yml', '_order.json', '_schema.json'].includes(f.name)
     );
 
-    // Ordenação: Pastas primeiro, depois arquivos
+    // 4. Lógica de Ordenação Persistente
+    let orderList: string[] = [];
+   // Procura por _order.yml (prioridade) ou _order.json
+    const ymlOrderPath = join(targetDir, "_order.yml");
+    const jsonOrderPath = join(targetDir, "_order.json");
+
+    try {
+      if (existsSync(ymlOrderPath)) {
+        const fileContent = readFileSync(ymlOrderPath, "utf-8");
+        const parsed = yaml.load(fileContent); // Lê YAML
+        if (Array.isArray(parsed)) orderList = parsed;
+      } else if (existsSync(jsonOrderPath)) {
+        const fileContent = readFileSync(jsonOrderPath, "utf-8");
+        orderList = JSON.parse(fileContent);
+      }
+    } catch (e) {
+      console.warn("Erro ao ler ordem:", e);
+    }
+
     cleanFiles.sort((a, b) => {
+        const indexA = orderList.indexOf(a.name);
+        const indexB = orderList.indexOf(b.name);
+
+        // CASO 1: Ambos estão na lista de ordem personalizada -> Respeita a ordem salva
+        if (indexA !== -1 && indexB !== -1) {
+            return indexA - indexB;
+        }
+
+        // CASO 2: Apenas A está na lista -> A sobe (ganha prioridade)
+        if (indexA !== -1) return -1;
+
+        // CASO 3: Apenas B está na lista -> B sobe
+        if (indexB !== -1) return 1;
+
+        // CASO 4: Nenhum está na lista -> Fallback para o padrão (Pastas > Arquivos > Alfabético)
         if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
         return a.isDirectory ? -1 : 1;
     });

@@ -422,7 +422,8 @@ const folderBreadcrumbs = computed(() => {
             parentName = parentName.charAt(0).toUpperCase() + parentName.slice(1);
         }
 
-        label = `Capa`;
+        // label = `Capa`;
+        label = ``;
     }
 
     // Caminho acumulado para o link funcionar
