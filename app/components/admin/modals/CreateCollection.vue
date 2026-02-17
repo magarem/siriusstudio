@@ -5,22 +5,25 @@ import { useToast } from "primevue/usetoast";
 const props = defineProps({
   visible: { type: Boolean, default: false },
   siteContext: { type: String, required: true },
-  currentFolder: { type: String, default: "content" }
+  currentFolder: { type: String, default: "content" },
 });
 
-const emit = defineEmits(['update:visible', 'success']);
+const emit = defineEmits(["update:visible", "success"]);
 const toast = useToast();
 const loading = ref(false);
 const collectionName = ref("");
 
 // Reseta o form ao abrir
-watch(() => props.visible, (val) => {
-    if(val) collectionName.value = "";
-});
+watch(
+  () => props.visible,
+  (val) => {
+    if (val) collectionName.value = "";
+  },
+);
 
 const handleCreate = async () => {
   if (loading.value || !collectionName.value) return;
-  
+
   loading.value = true;
 
   try {
@@ -33,16 +36,24 @@ const handleCreate = async () => {
       },
     });
 
-    toast.add({ severity: "success", summary: "Coleção Criada", detail: "Estrutura e schemas gerados.", life: 2000 });
-    
-    emit('update:visible', false);
-    
-    // Retorna o path da nova coleção para o editor navegar até lá
-    emit('success', res.path);
+    toast.add({
+      severity: "success",
+      summary: "Coleção Criada",
+      detail: "Estrutura e schemas gerados.",
+      life: 2000,
+    });
 
+    emit("update:visible", false);
+
+    // Retorna o path da nova coleção para o editor navegar até lá
+    emit("success", res.path);
   } catch (e) {
     console.error(e);
-    toast.add({ severity: "error", summary: "Erro", detail: e.statusMessage || "Falha ao criar coleção." });
+    toast.add({
+      severity: "error",
+      summary: "Erro",
+      detail: e.statusMessage || "Falha ao criar coleção.",
+    });
   } finally {
     loading.value = false;
   }
@@ -60,14 +71,18 @@ const handleCreate = async () => {
     :appendTo="'body'"
   >
     <div class="flex flex-col gap-6 pt-4">
-      
-      <div class="bg-blue-500/10 border border-blue-500/20 p-3 rounded text-xs text-blue-200">
+      <div
+        class="bg-blue-500/10 border border-blue-500/20 p-3 rounded text-xs text-blue-200"
+      >
         <i class="pi pi-info-circle mr-1"></i>
-        Uma coleção gera uma pasta dedicada com schemas próprios, ideal para Blogs, Portfólios ou Produtos.
+        Uma coleção gera uma pasta dedicada com schemas próprios, ideal para
+        Blogs, Portfólios ou Produtos.
       </div>
 
       <div class="flex flex-col gap-2">
-        <label class="text-[10px] uppercase font-black text-[#6f942e]">Nome da Coleção</label>
+        <label class="text-[10px] uppercase font-black text-[#6f942e]"
+          >Nome da Coleção</label
+        >
         <InputText
           v-model="collectionName"
           class="bg-[#0a0f0d] border border-white/10 text-white focus:border-[#6f942e] transition-colors"

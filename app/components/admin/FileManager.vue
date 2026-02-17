@@ -24,6 +24,7 @@ const emit = defineEmits([
 const toast = useToast();
 const showDraggable = ref(true);
 const showHiddenFiles = ref(false);
+const isRefreshing = ref(false);
 // --- ESTADO LOCAL ---
 const localFiles = ref([]);
 const indexFile = ref(null);
@@ -39,11 +40,30 @@ const filteredFiles = computed(() => {
   );
 });
 
-const handleBreadcrumbClick = (crumb) => {
-  if (crumb.isLast) return;
-  // Navegação absoluta via URL
-  emit("navigate", { path: crumb.path, absolute: true });
+// --- NOME AMIGÁVEL PARA O INDEX (CAPA) ---
+const indexLabel = computed(() => {
+  // Se estiver na raiz do conteúdo
+  if (!props.currentFolder || props.currentFolder === 'content') {
+    return 'Home do Site';
+  }
+
+  // Pega o nome da pasta (ex: "quem-somos")
+  const folderName = props.currentFolder.split('/').pop();
+  
+  // Formata: "quem-somos" -> "Quem Somos"
+  const formatted = folderName
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, l => l.toUpperCase());
+    
+  return `Capa de ${formatted}`;
+});
+
+const handleRefresh = () => {
+  isRefreshing.value = true;
+  emit("refresh");
+  setTimeout(() => { isRefreshing.value = false; }, 500);
 };
+
 
 // --- WATCHER & FILTRO (FileManager.vue) ---
 watch(
@@ -180,6 +200,21 @@ const renameDialogVisible = ref(false);
 const renameLoading = ref(false);
 const targetFile = ref(null);
 const newFileName = ref("");
+
+
+const isIndexActive = computed(() => {
+  if (!indexFile.value || !props.currentFile) return false;
+  
+  // Caminho EXATO do index (ex: content/blog/_index.md)
+  const expectedIndex = `${props.currentFolder}/${indexFile.value.name}`.replace(/\/+/g, '/');
+  
+  // Caminho do arquivo atual
+  const current = props.currentFile.replace(/\/+/g, '/');
+
+  // A COMPARAÇÃO DEVE SER EXATA (===)
+  // Antes podia estar usando includes() ou endsWith() de forma solta
+  return current === expectedIndex;
+});
 
 const openRenameDialog = (file) => {
   targetFile.value = file;
@@ -416,33 +451,38 @@ const handleMove = async () => {
         <div class="w-[1px] h-3 bg-white/10 mx-1"></div>
 
         <button
-          @click="emit('refresh')"
-          class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
-          title="Atualizar"
-        >
-          <i class="pi pi-refresh text-xs"></i>
-        </button>
+  @click="handleRefresh"
+  class="p-1.5 rounded hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+  title="Atualizar"
+>
+  <i class="pi pi-refresh text-xs" :class="{ 'pi-spin': isRefreshing }"></i>
+</button>
       </div>
     </div>
 
     <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
-     <div
-        v-if="indexFile"
-        @contextmenu.prevent
-        @click="handleIndexClick"
-        class="group flex items-center justify-between p-2 mb-2 rounded border border-transparent cursor-pointer transition-all select-none"
-        :class="
-          currentFile.endsWith(indexFile.name)
-            ? 'bg-[#6f942e]/10 border-[#6f942e]/30 text-white'
-            : 'hover:bg-white/5 text-slate-400'
-        "
-      >
-        <div class="flex items-center gap-2 overflow-hidden">
-          <i class="pi pi-home text-xs" :class="currentFile.endsWith(indexFile.name) ? 'text-[#6f942e]' : 'text-slate-500'"></i>
-          <span class="text-sm font-bold truncate">Página Principal</span>
-        </div>
-        
-        </div>
+ 
+    <div
+  v-if="indexFile"
+  @click="handleIndexClick"
+  class="group flex items-center justify-between p-2 mb-2 rounded border border-transparent cursor-pointer transition-all select-none"
+  :class="[
+    isIndexActive
+      ? 'bg-white/10 text-white' 
+      : 'hover:bg-white/5 text-slate-400'
+  ]"
+>
+  <div class="flex items-center gap-2 overflow-hidden">
+    <i class="pi" 
+       :class="currentFolder === 'content' ? 'pi-home' : 'pi-id-card'" 
+       :style="{ color: isIndexActive ? '#6f942e' : '#64748b' }">
+    </i>
+    
+    <span class="text-sm truncate" :class="{ 'font-bold': isIndexActive }">
+      {{ indexLabel }}
+    </span>
+  </div>
+</div>
 
       <VueDraggable
         v-if="showDraggable"

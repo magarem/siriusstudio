@@ -4,6 +4,7 @@ import { useToast } from "primevue/usetoast";
 import { Codemirror } from 'vue-codemirror';
 
 // --- CodeMirror Imports ---
+import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
@@ -52,8 +53,10 @@ const stats = computed(() => {
 
 // --- CONFIGURAÇÃO DO CODEMIRROR ---
 const extensions = computed(() => {
+  // Detecta se é arquivo JSON
+  const isJson = props.currentFile.toLowerCase().endsWith('.json');
+
   const plugins = [
-    markdown(), 
     EditorView.lineWrapping,
     EditorView.domEventHandlers({
         paste: handlePaste,
@@ -62,6 +65,13 @@ const extensions = computed(() => {
         dragleave: (e) => { isDragging.value = false; }
     })
   ];
+
+  // Alterna a linguagem baseada no arquivo
+  if (isJson) {
+    plugins.push(json()); 
+  } else {
+    plugins.push(markdown());
+  }
 
   if (settings.value.theme === 'one-dark') plugins.push(oneDark);
   if (settings.value.tabSize) plugins.push(EditorState.tabSize.of(settings.value.tabSize));
@@ -287,10 +297,13 @@ const actions = [
 </template>
 
 <style>
+/* --- Configuração Geral --- */
 .cm-scroller::-webkit-scrollbar { width: 6px; height: 6px; }
 .cm-scroller::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 .cm-scroller::-webkit-scrollbar-track { background: transparent; }
 .cm-content { padding: 24px !important; font-family: var(--font-family, monospace); }
+
+/* --- MARKDOWN STYLES --- */
 .cm-header { color: #e5c07b; font-weight: bold; }
 .cm-link { color: #61afef; text-decoration: underline; }
 .cm-url { color: #56b6c2; }
@@ -298,4 +311,23 @@ const actions = [
 .cm-emphasis { font-style: italic; color: #c678dd; }
 .cm-quote { color: #5c6370; font-style: italic; }
 .cm-list { color: #e06c75; }
+
+/* --- JSON SPECIFIC COLORS (Override ou Add-on) --- */
+/* Estes seletores dependem do parser JSON do CodeMirror 6 */
+
+/* Propriedades (Chaves) - Azul Ciano Brilhante */
+.cm-json-property, .cm-propertyName { color: #56b6c2 !important; }
+
+/* Strings (Valores de Texto) - Verde Suave */
+.cm-json-string, .cm-string { color: #98c379 !important; }
+
+/* Números - Laranja */
+.cm-json-number, .cm-number { color: #d19a66 !important; }
+
+/* Booleanos e Null (Atoms) - Roxo/Magenta */
+.cm-json-atom, .cm-atom, .cm-keyword { color: #c678dd !important; }
+
+/* Pontuação (Chaves, Colchetes, Vírgulas) - Cinza Claro */
+.cm-punctuation { color: #abb2bf !important; }
+
 </style>

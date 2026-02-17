@@ -47,8 +47,8 @@ const collectionPanelVisible = ref(false);
 const editArea = ref(true);
 const showFileManager = ref(true);
 const showCreateModal = ref(false);
-const showFolderModal = ref(false);
-const showCollectionModal = ref(false);
+const showFolderCreateModal = ref(false);
+const showCollectionCreateModal = ref(false);
 const showBackupModal = ref(false);
 const showImageModal = ref(false);
 const creationTargetFolder = ref("content");
@@ -143,7 +143,6 @@ watch(currentFile, () => {
 // =============================================================================
 
 const syncStateFromUrl = async () => {
-
   const path = currentPath.value;
   
   if (!path) return;
@@ -151,6 +150,7 @@ const syncStateFromUrl = async () => {
   const isFile = /\.(md|json|yml|yaml|toml)$/i.test(path);
 
   if (isFile) {
+    // === LÓGICA PARA ARQUIVO ESPECÍFICO (Mantida igual) ===
     const itemFolder = path.substring(0, path.lastIndexOf("/"));
     const parentOfItem = itemFolder.substring(0, itemFolder.lastIndexOf("/"));
 
@@ -184,32 +184,63 @@ const syncStateFromUrl = async () => {
     currentFolderType.value = "page";
     collectionPanelVisible.value = false;
     editArea.value = true;
-  } else {
-    currentFile.value = "";
-    mainFolder.value = path;
 
+  } else {
+    // === LÓGICA PARA DIRETÓRIO (ALTERADA) ===
+    // 1. Define a pasta principal e carrega o conteúdo dela (lista de arquivos)
+    mainFolder.value = path;
     await fetchMainContent(path);
 
+    // 2. Define Sidebar
+    // Se for collection, sidebar sobe um nível. Se for pasta comum, sidebar é a própria pasta.
     if (isCollectionFolder.value) {
-      const parentOfCollection = path.includes("/")
-        ? path.substring(0, path.lastIndexOf("/"))
-        : "content";
-      sidebarFolder.value = parentOfCollection || "content";
-      sidebarHighlightFile.value = path;
-
-      currentFolderType.value = "collection";
-      collectionPanelVisible.value = true;
-      editArea.value = false;
+       const parentOfCollection = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "content";
+       sidebarFolder.value = parentOfCollection || "content";
+       sidebarHighlightFile.value = path;
+       
+       currentFolderType.value = "collection";
+       collectionPanelVisible.value = true;
+       // Nota: Mesmo em coleção, podemos querer editar o _index (Capa) se ele existir,
+       // mas geralmente mantemos a lista visível. Se quiser forçar edição, mude editArea = true.
+       editArea.value = false; 
     } else {
-      sidebarFolder.value = path;
-      sidebarHighlightFile.value = "";
-
-      currentFolderType.value = "folder";
-      collectionPanelVisible.value = false;
-      editArea.value = true;
-      fileData.value = { frontmatter: {}, content: "" };
+       sidebarFolder.value = path;
+       sidebarHighlightFile.value = "";
+       
+       currentFolderType.value = "folder";
+       collectionPanelVisible.value = false;
+       editArea.value = true;
     }
 
+    // 3. TENTATIVA DE AUTO-LOAD DO INDEX (A Mágica acontece aqui)
+    // Verifica na lista carregada (mainFiles) se existe um _index na ordem de prioridade
+    const candidates = ["_index.md", "_index.json", "_index.yml", "_index.toml"];
+    let foundIndex = null;
+
+    // Itera na ordem de prioridade para achar o primeiro que existe
+    for (const ext of candidates) {
+        const match = mainFiles.value.find(f => f.name.toLowerCase() === ext);
+        if (match) {
+            foundIndex = match;
+            break; 
+        }
+    }
+
+    if (foundIndex) {
+        // Se achou, monta o caminho e carrega o conteúdo
+        const fullIndexPath = `${path}/${foundIndex.name}`.replace(/\/+/g, "/");
+        currentFile.value = fullIndexPath;
+        sidebarHighlightFile.value = fullIndexPath;
+        await getFileContent(fullIndexPath);
+        
+        console.log(`📂 Pasta aberta. Index carregado: ${foundIndex.name}`);
+    } else {
+        // Se não achou nenhum index, limpa o editor
+        currentFile.value = "";
+        fileData.value = { frontmatter: {}, content: "" };
+    }
+
+    // Carrega a sidebar
     await fetchSidebarContent(sidebarFolder.value);
   }
 };
@@ -360,16 +391,49 @@ const mapToBreadcrumb = (part, index, allParts) => {
 };
 
 const folderBreadcrumbs = computed(() => {
-  const path = currentPath.value;
-  if (!path) return [];
-  const originalParts = path.split("/").filter(Boolean);
-  const isIndexFile = originalParts[originalParts.length - 1]
-    .toLowerCase()
-    .startsWith("_index");
-  const displayParts = isIndexFile ? originalParts.slice(0, -1) : originalParts;
-  return displayParts.map((part, index) =>
-    mapToBreadcrumb(part, index, displayParts),
-  );
+  // 1. Fonte da Verdade:
+  // Se houver um arquivo aberto (ex: _index.md carregado automaticamente), usamos ele.
+  // Se não, usamos o caminho da URL (navegação de pastas).
+  const rawPath = currentFile.value || currentPath.value;
+  
+  if (!rawPath) return [];
+
+  const parts = rawPath.split("/").filter(Boolean);
+
+  return parts.map((part, index) => {
+    let label = part.replace(/-/g, " ");
+    const isLastItem = index === parts.length - 1;
+    
+    // --- REGRA 1: HOME ---
+    if (part === "content") {
+        label = "Home";
+    }
+
+    // --- REGRA 2: CAPA / INDEX ---
+    // Se o arquivo for _index, transformamos em "Capa de [Pasta Anterior]"
+    if (part.toLowerCase().startsWith("_index")) {
+        // Pega a pasta anterior (ex: 'blog' em 'content/blog/_index.md')
+        const parentPart = parts[index - 1];
+        
+        let parentName = "Site";
+        if (parentPart && parentPart !== 'content') {
+            parentName = parentPart.replace(/-/g, " ");
+            // Capitaliza a primeira letra (ex: "quem somos" -> "Quem somos")
+            parentName = parentName.charAt(0).toUpperCase() + parentName.slice(1);
+        }
+
+        label = `Capa`;
+    }
+
+    // Caminho acumulado para o link funcionar
+    const accumulator = parts.slice(0, index + 1).join("/");
+
+    return {
+      label: label,
+      path: accumulator,
+      disabled: isLastItem, // O último item (onde estamos) não é clicável
+    };
+  });
 });
 
 const navigateToBreadcrumb = (crumb) => {
@@ -416,10 +480,11 @@ const handleNavigate = {
     const targetPath = item.isDirectory ? `${item.path}/_index.md` : item.path;
     router.push({ query: { ...route.query, path: targetPath } });
   },
-  refreshRes: async () => {
+  refresh: async () => {
     await syncStateFromUrl();
   },
-  refresh: async () => {
+  refresh_: async () => {
+ 
     // Recarrega tudo baseado no estado atual
     await fetchSidebarContent(sidebarFolder.value);
     
@@ -441,10 +506,10 @@ const createActions = {
   },
   openFolder: () => {
     creationTargetFolder.value = sidebarFolder.value;
-    showFolderModal.value = true;
+    showFolderCreateModal.value = true;
   },
   openCollection: () => {
-    showCollectionModal.value = true;
+    showCollectionCreateModal.value = true;
   },
   onFileCreated: (filename) => {
     handleNavigate.refresh();
@@ -494,6 +559,18 @@ const isRawFile = computed(() => {
     lower.endsWith(".yaml") ||
     lower.endsWith(".toml")
   );
+});
+
+// --- CONTROLE DE VISIBILIDADE DO SIDEBAR DIREITO ---
+const showMetaSidebar = computed(() => {
+  // Se não tem arquivo selecionado, mantém a lógica original (mostra placeholder se não for coleção)
+  if (!currentFile.value) {
+    return !collectionPanelVisible.value;
+  }
+  
+  // Se tem arquivo, SÓ mostra se for Markdown (.md)
+  // Arquivos .json, .yml, .toml vão esconder a barra lateral
+  return currentFile.value.toLowerCase().endsWith(".md");
 });
 
 const saveFile = async () => {
@@ -609,16 +686,32 @@ const handlePreview = () => {
     });
     return;
   }
-  let cleanPath = currentFile.value || "";
-  cleanPath = cleanPath.replace(/^content\/?/, "");
-  cleanPath = cleanPath.replace(/\/_index\.(md|toml|yaml|yml)$/, "").replace(/\/_index$/, "");
-  cleanPath = cleanPath.replace(/\/index\.(md|toml|yaml|yml)$/, "").replace(/\/index$/, "");
-  cleanPath = cleanPath.replace(/\.(md|toml|yaml|yml)$/, "");
 
+  let cleanPath = currentFile.value || "";
+
+  // 1. Remove a pasta raiz 'content'
+  cleanPath = cleanPath.replace(/^content\/?/, "");
+
+  // 2. Remove o arquivo de índice da URL (Markdown, JSON, YAML, TOML)
+  // O Regex pega:
+  // (\/|^) -> Uma barra OU o início da string (caso seja raiz)
+  // (_?index) -> _index ou index
+  // \.(...) -> As extensões possíveis
+  cleanPath = cleanPath.replace(/(\/|^)(_?index)\.(md|json|yml|yaml|toml)$/i, "");
+  
+  // 3. Limpeza final de extensão (caso seja um arquivo normal, ex: sobre.json -> sobre)
+  cleanPath = cleanPath.replace(/\.(md|json|yml|yaml|toml)$/i, "");
+
+  // 4. Garante que se ficou vazio, vire a raiz "/"
   if (cleanPath === "") cleanPath = "/";
+  
+  // 5. Garante a barra inicial
   if (!cleanPath.startsWith("/")) cleanPath = "/" + cleanPath;
 
   const finalUrl = `${userSiteUrl.value}${cleanPath}?preview=true`;
+  
+  console.log("🔗 Gerando Preview para:", finalUrl); // Debug útil
+  
   previewUrl.value = finalUrl;
   isPreviewMode.value = true;
 };
@@ -841,7 +934,7 @@ onUnmounted(() => {
               <nav class="flex items-center gap-2 text-xs font-mono px-2 py-1 bg-black/20 rounded-md">
                 <template v-for="(crumb, index) in folderBreadcrumbs" :key="crumb.path">
                   <span v-if="index > 0" class="text-slate-600">/</span>
-                  <button @click="navigateToBreadcrumb(crumb)" :disabled="crumb.disabled" :class="['transition-colors truncate max-w-[120px] capitalize', crumb.disabled ? 'text-[#6f942e] font-bold cursor-default' : 'text-slate-500 hover:text-white cursor-pointer hover:underline']">
+                  <button @click="navigateToBreadcrumb(crumb)" :disabled="crumb.disabled" :class="['transition-colors max-w-[320px]', crumb.disabled ? 'text-[#6f942e] font-bold cursor-default' : 'text-slate-500 hover:text-white cursor-pointer hover:underline']">
                     {{ crumb.label }}
                   </button>
                 </template>
@@ -886,7 +979,7 @@ onUnmounted(() => {
                 />
               </div>
 
-              <div v-if="currentFile || !collectionPanelVisible" class="flex flex-row h-full shrink-0">
+              <div v-if="showMetaSidebar" class="flex flex-row h-full shrink-0">
                 <div class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] bg-black/40 z-20 shrink-0 flex items-center justify-center group relative" @mousedown.prevent="startResizeFrontmatter">
                   <div class="w-[1px] h-8 bg-white/20 group-hover:bg-white/80 rounded-full"></div>
                 </div>
@@ -936,8 +1029,8 @@ onUnmounted(() => {
     </Dialog>
 
     <CreateFileModal v-model:visible="showCreateModal" :site-context="siteContext" :current-folder="creationTargetFolder" @success="createActions.onFileCreated" />
-    <CreateFolderModal v-model:visible="showFolderModal" :site-context="siteContext" :current-folder="sidebarFolder" @success="createActions.onFolderCreated" />
-    <CreateCollectionModal v-model:visible="showCollectionModal" :site-context="siteContext" :current-folder="sidebarFolder" @success="createActions.onCollectionCreated" />
+    <CreateFolderModal v-model:visible="showFolderCreateModal" :site-context="siteContext" :current-folder="sidebarFolder" @success="createActions.onFolderCreated" />
+    <CreateCollectionModal v-model:visible="showCollectionCreateModal" :site-context="siteContext" :current-folder="sidebarFolder" @success="createActions.onCollectionCreated" />
     <Dialog v-model:visible="showBackupModal" modal header="Backups" :style="{ width: '800px' }" class="bg-[#141b18]"><BackupManager /></Dialog>
 
     <div class="fixed bottom-8 right-4 z-[9999] w-172 bg-black/80 border border-white/10 rounded-lg p-2 font-mono text-[10px] pointer-events-none opacity-50 hidden">

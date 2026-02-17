@@ -43,7 +43,7 @@ export default defineEventHandler(async (event) => {
     writeFileSync(join(targetDir, ".isDirFlag"), JSON.stringify({ created: new Date() }, null, 2));
 
     // 5. Cria o _index.md (Capa da Coleção)
-    const indexContent = `---\ntitle: ${name}\n---\n\n# ${name}`;
+    const indexContent = `---\ntitle: ${name}\n---\n\n <Listfiles></Listfiles>`;
     writeFileSync(join(targetDir, "_index.md"), indexContent);
 
     // 6. Lógica de Schema Local

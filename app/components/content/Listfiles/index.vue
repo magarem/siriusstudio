@@ -232,7 +232,8 @@ const resolveLink = (itemPath) => {
 
 // --- PROCESSAMENTO FINAL DOS ITENS ---
 const displayedItems = computed(() => {
-  const rawItems = items.value || [];
+  const rawItems = items.value.filter(x=>x.title[0]!=="_");
+  console.log("🚀 ~ rawItems:", rawItems)
   const limit = finalParams.value.limit; 
   const useSubfolders = finalParams.value.subfolders;
 
