@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
   const site =
     getCookie(event, "cms_site_context") ||
     config.public?.siteName 
+    console.log("🚀 ~ config.public?.siteName:", config.public?.siteName)
 
   console.log("🚀 ~ site:", site)
 
@@ -37,8 +38,8 @@ export default defineEventHandler(async (event) => {
 
   if (mode === 'preview') {
     // Caminho no modo Preview (Disk)
-    const APPS_ROOT = config.storagePath ? resolve(config.storagePath) : process.cwd();
-    targetDir = join(APPS_ROOT, 'storage', site!, 'content', section);
+    const APPS_ROOT = process.cwd();
+    targetDir = join(APPS_ROOT, 'content', section);
   } else {
     // Caminho no modo Produção/Build
     const DATA_ROOT = resolve(process.cwd(), 'data');

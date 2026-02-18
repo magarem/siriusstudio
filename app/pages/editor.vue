@@ -65,8 +65,36 @@ const previewIframe = ref(null);
 // --- MENU & CONFIG ---
 const userMenu = ref();
 const settingsMenu = ref();
+// --- LÓGICA DE LOGOUT ---
+const handleLogout = async () => {
+  try {
+    // 1. Chama a API para limpar o cookie de sessão no servidor
+    await $fetch('/api/auth/logout', { method: 'POST' });
+
+    // 2. Feedback visual (Opcional)
+    toast.add({ 
+      severity: 'info', 
+      summary: 'Até logo', 
+      detail: 'Sessão encerrada com sucesso.', 
+      life: 2000 
+    });
+
+    // 3. Redireciona para o login ou home
+    // Usamos window.location.href para forçar um refresh total e limpar estados de memória do Vue
+    window.location.href = '/login'; 
+    
+  } catch (error) {
+    console.error("Erro ao fazer logout:", error);
+    // Mesmo com erro, forçamos a saída visualmente
+    router.push('/');
+  }
+};
 const userMenuItems = ref([
-  { label: "Sair", icon: "pi pi-power-off", command: () => router.push("/") },
+  { 
+    label: "Sair", 
+    icon: "pi pi-power-off", 
+    command: handleLogout // <--- Agora chama a função dedicada
+  },
 ]);
 const settingsItems = ref([
   {

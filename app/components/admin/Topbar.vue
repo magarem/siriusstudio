@@ -12,11 +12,11 @@ const props = defineProps({
   isRawMode: Boolean
 });
 
-// Definindo explicitamente todos os eventos que o componente dispara
+// Definindo explicitamente todos os eventos
 const emit = defineEmits([
   'toggle-sidebar', 'toggle-meta', 'toggle-raw', 
   'save', 'publish', 'logout', 'open-media', 'go-dashboard', 'preview',
-  'open-backup' // [NOVO EVENTO]
+  'open-backup'
 ]);
 
 // --- MENU DE USUÁRIO ---
@@ -45,9 +45,12 @@ const goToBackup = () => {
       <div class="absolute inset-0 overflow-hidden z-0 pointer-events-none">
           <div class="absolute -top-10 -left-10 w-32 h-32 bg-[#6f942e]/10 rounded-full blur-3xl"></div>
       </div>
+
       <div class="relative z-10 flex justify-between items-center h-full px-6">
+        
         <div class="flex items-center gap-4">
-           <div class="flex items-center gap-2 pr-4 border-r border-white/5 h-8">
+           <div class="flex items-center gap-3 pr-4 border-r border-white/5 h-10">
+            
             <Button 
                 icon="pi pi-bars" 
                 text 
@@ -55,19 +58,27 @@ const goToBackup = () => {
                 class="!w-8 !h-8 !p-0 text-[#6f942e] hover:bg-[#6f942e]/10 cursor-pointer" 
                 v-tooltip.bottom="'Explorer'" 
             />
+
             <div 
-              class="flex items-center gap-3 select-none pl-2 cursor-pointer hover:opacity-80 transition-opacity"
+              class="flex items-center gap-3 select-none pl-1 cursor-pointer group"
               @click="emit('go-dashboard')"
               title="Voltar ao Dashboard"
             >
-              <h1 class="text-[20px] font-black text-white leading-none tracking-tighter flex items-center gap-2">
-                <i class="pi pi-star-fill text-[#6f942e] text-[15px]"></i> Sirius Studio
+              <h1 class="text-[20px] font-black text-white leading-none tracking-tighter flex items-center gap-2 opacity-60 group-hover:opacity-100 transition-opacity">
+                <i class="pi pi-star-fill text-[#6f942e] text-[15px]"></i> 
+                <span class="hidden sm:inline">Sirius Studio</span>
               </h1>
-              <div class="h-3 w-px bg-white/20"></div>
-              <span class="text-[10px] font-bold uppercase tracking-widest text-[#6f942e] leading-none pt-0.5">
-                {{ siteContext }}
-              </span>
+
+              <div class="h-5 w-px bg-white/10 mx-1"></div>
+
+              <div class="flex flex-col justify-center">
+                 <span class="text-[9px] uppercase tracking-widest text-slate-500 font-bold leading-none mb-0.5">Projeto</span>
+                 <span class="text-sm font-bold text-[#6f942e] leading-none tracking-wide">
+                    {{ siteContext }}
+                 </span>
+              </div>
             </div>
+
           </div>
         </div>
 
@@ -115,29 +126,30 @@ const goToBackup = () => {
               <span class="hidden lg:inline ml-2 font-bold text-xs tracking-widest">PUBLICAR</span>
           </Button>
 
-          <Button 
-            text 
-            rounded
-            @click="goToBackup"
-            class="!w-10 !h-10 !p-0 text-slate-400 hover:text-white hover:bg-white/10 transition-colors ml-1 cursor-pointer"
-            v-tooltip.bottom="'Configurações e Backup'"
-          >
-            <i class="pi pi-cog text-lg"></i>
-          </Button>
-
           <div class="w-px h-6 bg-white/10 mx-2"></div>
 
-          <div class="relative">
-            <Button 
-              type="button" 
-              @click="toggleUserMenu" 
-              class="!p-1 !w-auto !h-auto !bg-transparent !border-none hover:!bg-white/5 rounded-full flex gap-2 items-center transition-colors cursor-pointer"
+          <div class="flex items-center gap-1">
+             <Button 
+              text 
+              rounded
+              @click="goToBackup"
+              class="!w-9 !h-9 !p-0 text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              v-tooltip.bottom="'Configurações'"
             >
-              <Avatar icon="pi pi-user" shape="circle" class="!bg-indigo-500/20 !text-indigo-400 border border-indigo-500/30" />
-              <i class="pi pi-angle-down text-slate-500 text-xs mr-1"></i>
+              <i class="pi pi-cog text-lg"></i>
             </Button>
-            
-            <Menu ref="menu" :model="userMenuItems" :popup="true" class="!bg-[#1a211e] !border-white/10 !min-w-[180px]" />
+
+            <div class="relative">
+              <Button 
+                type="button" 
+                @click="toggleUserMenu" 
+                class="!p-1 !w-auto !h-auto !bg-transparent !border-none hover:!bg-white/5 rounded-full flex gap-2 items-center transition-colors cursor-pointer"
+              >
+                <Avatar icon="pi pi-user" shape="circle" class="!bg-indigo-500/20 !text-indigo-400 border border-indigo-500/30" />
+                <i class="pi pi-angle-down text-slate-500 text-xs mr-1"></i>
+              </Button>
+              <Menu ref="menu" :model="userMenuItems" :popup="true" class="!bg-[#1a211e] !border-white/10 !min-w-[180px]" />
+            </div>
           </div>
 
         </div>
@@ -146,12 +158,13 @@ const goToBackup = () => {
 </template>
 
 <style scoped>
+/* Estilos mantidos iguais, apenas garantindo override do PrimeVue */
 :deep(.p-menu) {
   padding: 0.5rem;
   border-radius: 12px;
   background: #1a211e;
   border: 1px solid rgba(255,255,255,0.1);
-  z-index: 9999; /* Garante que o menu flutue sobre tudo */
+  z-index: 9999;
 }
 :deep(.p-menu .p-menuitem-content) {
   background: transparent !important;
@@ -166,20 +179,6 @@ const goToBackup = () => {
   background: rgba(255,255,255,0.05) !important;
   color: #fff;
 }
-:deep(.p-menu .p-menuitem-icon) {
-  color: inherit;
-  font-size: 0.9rem;
-}
-:deep(.p-menu .p-menuitem-text) {
-  color: inherit;
-  font-weight: 500;
-  font-size: 0.85rem;
-}
-:deep(.p-menu .p-menuitem-separator) {
-  border-top: 1px solid rgba(255,255,255,0.05);
-  margin: 0.5rem 0;
-}
-/* Força o botão a aceitar cliques e centralizar conteúdo */
 :deep(.p-button) {
     display: flex;
     align-items: center;
