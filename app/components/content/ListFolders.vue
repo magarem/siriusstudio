@@ -17,7 +17,7 @@ const { data: items, status } = await useFetch('/api/admin/superList', {
   lazy: true,
   server: false,
   query: {
-    site: config.public.siteName,
+    site: config.siteId,
     section: props.section,
     mode: 'production',
     nocache: 1

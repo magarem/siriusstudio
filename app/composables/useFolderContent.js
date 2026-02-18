@@ -23,7 +23,7 @@ export const useFolderContent = (props) => {
   // Parâmetros da Query.
   // O Nuxt assiste esse objeto. Se qualquer valor aqui mudar, ele refaz o fetch.
   const queryParams = computed(() => ({
-    site: config.public.siteName,
+    site: config.siteId,
     section: targetSection.value, // <--- O segredo está aqui
     mode: isDiskMode.value ? "preview" : "production",
     t: timestamp.value,           // <--- E aqui (para force refresh)

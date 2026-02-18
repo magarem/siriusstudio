@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch } from "vue";
 
 interface FileItem {
   name: string;
   path: string;
   isDirectory: boolean;
   isSchema?: boolean;
-  data?: { 
+  data?: {
     title?: string;
     date?: string;
     draft?: boolean;
@@ -17,55 +17,59 @@ interface FileItem {
 
 const props = defineProps({
   files: { type: Array as () => FileItem[], default: () => [] },
-  currentFolder: { type: String, default: '' },
-  siteContext: { type: String, default: '' } 
+  currentFolder: { type: String, default: "" },
+  siteContext: { type: String, default: "" },
 });
 
-const emit = defineEmits(['select', 'create-item']);
+const emit = defineEmits(["select", "create-item"]);
 
 const localFiles = ref<FileItem[]>([]);
 const toast = useToast(); // Certifique-se de importar useToast
 
 const showSystemFiles = ref(false);
-const extraFiles = ref<FileItem[]>([]); 
+const extraFiles = ref<FileItem[]>([]);
 const isLoadingSchemas = ref(false);
 
 const first = ref(0);
 const rows = ref(10);
 
 const displayedFiles = computed(() => {
-    if (showSystemFiles.value) return extraFiles.value;
-    return localFiles.value;
+  if (showSystemFiles.value) return extraFiles.value;
+  return localFiles.value;
 });
 
-const isIndexFile = (file: FileItem) => file.name.toLowerCase().startsWith('_index');
+const isIndexFile = (file: FileItem) =>
+  file.name.toLowerCase().startsWith("_index");
 
+watch(
+  [() => props.files, showSystemFiles],
+  ([newFiles, isSystem]) => {
+    if (isSystem) return;
 
-watch([() => props.files, showSystemFiles], ([newFiles, isSystem]) => {
-  if (isSystem) return;
+    const list = newFiles.filter((file: FileItem) => {
+      const name = file.name;
+      if (name.startsWith(".")) return false;
+      if (name === "_schemas") return false;
+      if (name.startsWith("_") && !isIndexFile(file)) return false;
+      return true;
+    });
 
-  const list = newFiles.filter((file: FileItem) => {
-    const name = file.name;
-    if (name.startsWith('.')) return false;
-    if (name === '_schemas') return false; 
-    if (name.startsWith('_') && !isIndexFile(file)) return false;
-    return true;
-  });
+    // Apenas garante que o Index (Capa) fique no topo, o resto mantém a ordem da API
+    list.sort((a, b) => {
+      if (isIndexFile(a)) return -1;
+      if (isIndexFile(b)) return 1;
+      return 0;
+    });
 
-  // Apenas garante que o Index (Capa) fique no topo, o resto mantém a ordem da API
-  list.sort((a, b) => {
-    if (isIndexFile(a)) return -1;
-    if (isIndexFile(b)) return 1;
-    return 0; 
-  });
-
-  localFiles.value = list;
-}, { immediate: true, deep: true });
+    localFiles.value = list;
+  },
+  { immediate: true, deep: true },
+);
 
 // 3. Função que salva a nova ordem ao soltar
 const onRowReorder = async (event: any) => {
   localFiles.value = event.value; // Atualiza visual
-  const orderedNames = localFiles.value.map((f: { name: any; }) => f.name);
+  const orderedNames = localFiles.value.map((f: { name: any }) => f.name);
 
   try {
     await $fetch("/api/admin/reorder", {
@@ -74,39 +78,44 @@ const onRowReorder = async (event: any) => {
     });
   } catch (error) {
     console.error("Erro ao salvar ordem", error);
-    toast.add({ severity: 'error', summary: 'Erro ao reordenar' });
+    toast.add({ severity: "error", summary: "Erro ao reordenar" });
   }
 };
 
-watch(() => props.currentFolder, () => {
-  first.value = 0;
-  extraFiles.value = [];
-  showSystemFiles.value = false;
-});
+watch(
+  () => props.currentFolder,
+  () => {
+    first.value = 0;
+    extraFiles.value = [];
+    showSystemFiles.value = false;
+  },
+);
 
 watch(showSystemFiles, async (isActive) => {
   if (!isActive) {
     extraFiles.value = [];
     return;
   }
-  const schemaFolder = props.files.find(f => f.name === '_schemas' && f.isDirectory);
+  const schemaFolder = props.files.find(
+    (f) => f.name === "_schemas" && f.isDirectory,
+  );
 
   if (schemaFolder) {
     isLoadingSchemas.value = true;
     try {
-      const schemaPath = props.currentFolder 
-        ? `${props.currentFolder}/_schemas` 
-        : '_schemas';
+      const schemaPath = props.currentFolder
+        ? `${props.currentFolder}/_schemas`
+        : "_schemas";
 
-      const data = await $fetch('/api/admin/storage', {
-        query: { folder: schemaPath, site: props.siteContext }
+      const data = await $fetch("/api/admin/storage", {
+        query: { folder: schemaPath, site: props.siteContext },
       });
 
       if (data.files) {
         extraFiles.value = data.files.map((f: any) => ({
           ...f,
           isSchema: true,
-          path: f.path || `${schemaPath}/${f.name}` 
+          path: f.path || `${schemaPath}/${f.name}`,
         }));
       }
     } catch (e) {
@@ -117,16 +126,15 @@ watch(showSystemFiles, async (isActive) => {
   }
 });
 
-
 const filteredFiles = computed(() => {
   if (showSystemFiles.value) {
     return extraFiles.value.sort((a, b) => a.name.localeCompare(b.name));
   }
   const list = props.files.filter((file: FileItem) => {
     const name = file.name;
-    if (name.startsWith('.')) return false;
-    if (name === '_schemas') return false; 
-    if (name.startsWith('_') && !isIndexFile(file)) return false;
+    if (name.startsWith(".")) return false;
+    if (name === "_schemas") return false;
+    if (name.startsWith("_") && !isIndexFile(file)) return false;
     return true;
   });
   return list.sort((a, b) => {
@@ -139,81 +147,104 @@ const filteredFiles = computed(() => {
 });
 
 const onRowSelect = (event: any) => {
-  emit('select', event.data);
+  emit("select", event.data);
 };
 
 const getThumbnail = (item: FileItem): string | null => {
   if (item.isSchema) return null;
   if (!item.data) return null;
   let imageName: string | null = null;
-  if (Array.isArray(item.data.coverimage) && item.data.coverimage.length > 0) imageName = item.data.coverimage[0];
-  else if (typeof item.data.coverimage === 'string' && item.data.coverimage) imageName = item.data.coverimage;
-  else if (Array.isArray(item.data.images) && item.data.images.length > 0) imageName = item.data.images[0];
+  if (Array.isArray(item.data.coverimage) && item.data.coverimage.length > 0)
+    imageName = item.data.coverimage[0];
+  else if (typeof item.data.coverimage === "string" && item.data.coverimage)
+    imageName = item.data.coverimage;
+  else if (Array.isArray(item.data.images) && item.data.images.length > 0)
+    imageName = item.data.images[0];
   if (!imageName) return null;
-  if (imageName.startsWith('/') || imageName.startsWith('http')) return imageName;
-  let basePath = item.path.replace(/\/$/, '').replace(/^content\//, 'assets/');
-  if (!item.isDirectory) basePath = basePath.substring(0, basePath.lastIndexOf('/'));
+  if (imageName.startsWith("/") || imageName.startsWith("http"))
+    return imageName;
+  let basePath = item.path.replace(/\/$/, "").replace(/^content\//, "assets/");
+  if (!item.isDirectory)
+    basePath = basePath.substring(0, basePath.lastIndexOf("/"));
   return `/${basePath}/${imageName}`;
 };
 
 const formatDate = (dateString?: string) => {
-  if (!dateString) return '-';
+  if (!dateString) return "-";
   try {
-    const [year, month, day] = dateString.split('-');
+    const [year, month, day] = dateString.split("-");
     return `${day}/${month}/${year}`;
-  } catch (e) { return dateString; }
+  } catch (e) {
+    return dateString;
+  }
 };
 </script>
 
 <template>
   <div class="flex flex-col h-full bg-[#0a0f0d]">
-    
-    <div class="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0a0f0d]">
-      
+    <div
+      class="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0a0f0d]"
+    >
       <div class="flex flex-col">
-        <h2 class="text-xl font-bold text-slate-200 tracking-tight capitalize flex items-center gap-2">
-            <i class="pi" :class="showSystemFiles ? 'pi-cog text-cyan-500' : 'pi-database text-[#6f942e]'"></i>
-            
-            <span v-if="!showSystemFiles">{{ currentFolder.split('/').pop()?.replace(/-/g, ' ') }}</span>
-            <span v-else class="text-cyan-500">Modelos (_schemas)</span>
+        <h2
+          class="text-xl font-bold text-slate-200 tracking-tight capitalize flex items-center gap-2"
+        >
+          <i
+            class="pi"
+            :class="
+              showSystemFiles
+                ? 'pi-cog text-cyan-500'
+                : 'pi-database text-[#6f942e]'
+            "
+          ></i>
+
+          <span v-if="!showSystemFiles">{{
+            currentFolder.split("/").pop()?.replace(/-/g, " ")
+          }}</span>
+          <span v-else class="text-cyan-500">Modelos (_schemas)</span>
         </h2>
         <span class="text-xs text-slate-500 font-mono mt-1">
-            {{ filteredFiles.length }} itens listados
+          {{ filteredFiles.length }} itens listados
         </span>
       </div>
 
       <div class="flex items-center gap-3">
-          
-          <span v-if="isLoadingSchemas" class="text-[10px] text-slate-500 italic flex items-center gap-1">
-            <i class="pi pi-spin pi-spinner"></i>
-          </span>
+        <span
+          v-if="isLoadingSchemas"
+          class="text-[10px] text-slate-500 italic flex items-center gap-1"
+        >
+          <i class="pi pi-spin pi-spinner"></i>
+        </span>
 
-          <Button 
-            icon="pi pi-cog" 
-            :label="showSystemFiles ? 'Ver Conteúdo' : 'Modelos'"
-            @click="showSystemFiles = !showSystemFiles"
-            class="p-button-text p-button-sm !text-xs !uppercase !tracking-tighter"
-            :class="showSystemFiles ? '!text-cyan-500 hover:bg-cyan-500/10' : '!text-slate-400 hover:text-white hover:bg-white/5'"
-          />
+        <Button
+          icon="pi pi-cog"
+          :label="showSystemFiles ? 'Ver Conteúdo' : 'Modelos'"
+          @click="showSystemFiles = !showSystemFiles"
+          class="p-button-text p-button-sm !text-xs !uppercase !tracking-tighter"
+          :class="
+            showSystemFiles
+              ? '!text-cyan-500 hover:bg-cyan-500/10'
+              : '!text-slate-400 hover:text-white hover:bg-white/5'
+          "
+        />
 
-          <button 
-            v-if="!showSystemFiles"
-            @click="emit('create-item')"
-            class="flex items-center gap-2 px-4 py-2 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-sm rounded transition-all shadow-[0_0_10px_rgba(111,148,46,0.2)] hover:shadow-[0_0_15px_rgba(111,148,46,0.4)]"
-          >
-            <i class="pi pi-plus text-xs"></i>
-            <span>Novo Item</span>
-          </button>
+        <button
+          v-if="!showSystemFiles"
+          @click="emit('create-item')"
+          class="flex items-center gap-2 px-4 py-2 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-sm rounded transition-all shadow-[0_0_10px_rgba(111,148,46,0.2)] hover:shadow-[0_0_15px_rgba(111,148,46,0.4)]"
+        >
+          <i class="pi pi-plus text-xs"></i>
+          <span>Novo Item</span>
+        </button>
       </div>
     </div>
 
     <div class="flex-1 overflow-hidden relative">
-      <DataTable 
-       :value="displayedFiles" 
-  :reorderableRows="!showSystemFiles"
-  @rowReorder="onRowReorder"
-  
-  selectionMode="single"
+      <DataTable
+        :value="displayedFiles"
+        :reorderableRows="!showSystemFiles"
+        @rowReorder="onRowReorder"
+        selectionMode="single"
         :metaKeySelection="false"
         @rowSelect="onRowSelect"
         dataKey="name"
@@ -221,124 +252,194 @@ const formatDate = (dateString?: string) => {
         scrollable
         scrollHeight="flex"
         stripedRows
-
-        paginator 
-        :rows="10" 
+        paginator
+        :rows="10"
         v-model:first="first"
         :rowsPerPageOptions="[10, 20, 50]"
         paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
         currentPageReportTemplate="{first} a {last} de {totalRecords}"
-
         :pt="{
-            root: { class: 'bg-transparent flex flex-col h-full' },
-            headerRow: { class: 'bg-[#141b18] text-slate-400 text-[10px] uppercase tracking-wider' },
-            bodyRow: ({ context }) => ({
-                class: [
-                    'transition-colors border-b border-white/5 text-slate-300',
-                    context.index % 2 === 0 ? 'bg-transparent' : 'text-slate-400',
-                    'hover:bg-[#6f942e]/10 cursor-pointer'
-                ]
+          root: { class: 'bg-transparent flex flex-col h-full' },
+          headerRow: {
+            class:
+              'bg-[#141b18] text-slate-400 text-[10px] uppercase tracking-wider',
+          },
+          bodyRow: ({ context }) => ({
+            class: [
+              'transition-colors border-b border-white/5 text-slate-300',
+              context.index % 2 === 0 ? 'bg-transparent' : 'text-slate-400',
+              'hover:bg-[#6f942e]/10 cursor-pointer',
+            ],
+          }),
+          paginator: {
+            root: { class: 'bg-[#141b18] border-t border-white/5 p-2' },
+            current: {
+              class: 'text-[10px] text-slate-500 uppercase font-bold ml-auto',
+            },
+            pages: { class: 'flex gap-1' },
+            pageButton: ({ context }) => ({
+              class: [
+                'w-8 h-8 rounded text-[10px] transition-colors',
+                context.active
+                  ? 'bg-[#6f942e] text-black font-black'
+                  : 'text-slate-400 hover:bg-white/5',
+              ],
             }),
-            paginator: {
-                root: { class: 'bg-[#141b18] border-t border-white/5 p-2' },
-                current: { class: 'text-[10px] text-slate-500 uppercase font-bold ml-auto' },
-                pages: { class: 'flex gap-1' },
-                pageButton: ({ context }) => ({
-                    class: [
-                        'w-8 h-8 rounded text-[10px] transition-colors',
-                        context.active ? 'bg-[#6f942e] text-black font-black' : 'text-slate-400 hover:bg-white/5'
-                    ]
-                })
-            }
+          },
         }"
       >
-      <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
-        <Column style="width: 4rem">
-            <template #body="slotProps">
-            <div class="w-10 h-10 rounded overflow-hidden flex items-center justify-center border transition-all"
-                 :class="[
-                    isIndexFile(slotProps.data) ? 'bg-[#6f942e]/10 border-[#6f942e]/30' : 
-                    slotProps.data.isSchema ? 'bg-cyan-500/10 border-cyan-500/30' : 
-                    'bg-white/5 border-white/5'
-                 ]">
-                
-                <img v-if="getThumbnail(slotProps.data)" :src="getThumbnail(slotProps.data)" class="w-full h-full object-cover" loading="lazy" />
-                
-                <i v-else 
-                   class="text-lg"
-                   :class="[
-                     isIndexFile(slotProps.data) ? 'pi pi-home text-[#6f942e]' : 
-                     slotProps.data.isSchema ? 'pi pi-cog text-cyan-500' : 
-                     'pi pi-file text-slate-600'
-                   ]"
-                ></i>
+        <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
+        <Column rowReorder style="width: 4rem">
+          <template #body="slotProps">
+            <div
+              class="w-10 h-10 rounded overflow-hidden flex items-center justify-center border transition-all"
+              :class="[
+                isIndexFile(slotProps.data)
+                  ? 'bg-[#6f942e]/10 border-[#6f942e]/30'
+                  : slotProps.data.isSchema
+                    ? 'bg-cyan-500/10 border-cyan-500/30'
+                    : 'bg-white/5 border-white/5',
+              ]"
+            >
+              <img
+                v-if="getThumbnail(slotProps.data)"
+                :src="getThumbnail(slotProps.data)"
+                class="w-full h-full object-cover"
+                loading="lazy"
+              />
+
+              <i
+                v-else
+                class="text-lg"
+                :class="[
+                  isIndexFile(slotProps.data)
+                    ? 'pi pi-home text-[#6f942e]'
+                    : slotProps.data.isSchema
+                      ? 'pi pi-cog text-cyan-500'
+                      : 'pi pi-file text-slate-600',
+                ]"
+              ></i>
             </div>
-            </template>
+          </template>
         </Column>
 
         <Column header="Título" class="font-medium" sortable field="data.title">
-            <template #body="{ data }">
+          <template #body="{ data }">
             <div class="flex flex-col py-2">
-                <span class="font-semibold text-lg flex items-center gap-2"
-                      :class="[
-                        isIndexFile(data) ? 'text-[#6f942e]' : 
-                        data.isSchema ? 'text-cyan-400' : 
-                        'bg-white/[0.03]'
-                      ]">
-                    {{ data.data?.title || data.name.replace(/-/g, ' ') }}
-                    
-                    <span v-if="isIndexFile(data)" class="text-[9px] border border-[#6f942e] text-[#6f942e] px-1 rounded uppercase tracking-wider font-bold">
-                        Capa
-                    </span>
-                    <span v-if="data.isSchema" class="text-[9px] border border-cyan-500 text-cyan-500 px-1 rounded uppercase tracking-wider font-bold">
-                        Modelo
-                    </span>
+              <span
+                class="font-semibold text-[15px] flex items-center gap-2"
+                :class="[
+                  isIndexFile(data)
+                    ? 'text-[#6f942e]'
+                    : data.isSchema
+                      ? 'text-cyan-400'
+                      : 'bg-white/[0.03]',
+                ]"
+              >
+                {{ data.data?.title || data.name.replace(/-/g, " ") }}
+
+                <span
+                  v-if="isIndexFile(data)"
+                  class="text-[9px] border border-[#6f942e] text-[#6f942e] px-1 rounded uppercase tracking-wider font-bold"
+                >
+                  Capa
                 </span>
-                <span class="text-[10px] text-slate-500 font-mono mt-0.5 flex gap-1">
-                     {{ data.name }}
+                <span
+                  v-if="data.isSchema"
+                  class="text-[9px] border border-cyan-500 text-cyan-500 px-1 rounded uppercase tracking-wider font-bold"
+                >
+                  Modelo
                 </span>
+              </span>
+              <span
+                class="text-[10px] text-slate-500 font-mono mt-0.5 flex gap-1"
+              >
+                {{ data.name }}
+              </span>
             </div>
-            </template>
+          </template>
         </Column>
 
         <Column header="Data" style="width: 8rem" sortable field="data.date">
-            <template #body="{ data }">
-            <span class="text-slate-500 text-xs font-mono">{{ formatDate(data.data?.date) }}</span>
-            </template>
+          <template #body="{ data }">
+            <span class="text-slate-500 text-xs font-mono">{{
+              formatDate(data.data?.date)
+            }}</span>
+          </template>
         </Column>
 
-         <Column header="Status" style="width: 6rem" field="data.draft">
-             <template #body="{ data }">
-                <span v-if="data.data?.draft === true" class="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded border border-amber-500/30">
-                    Rascunho
-                </span>
-                <span v-else-if="data.isSchema" class="text-[10px] text-cyan-500/70">
-                    Config
-                </span>
-                <span v-else class="text-[10px] text-slate-600 flex items-center gap-1">
-                     Publicado
-                </span>
-             </template>
+        <Column header="Status" style="width: 6rem" field="data.draft">
+          <template #body="{ data }">
+            <span
+              v-if="data.data?.draft === true"
+              class="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded border border-amber-500/30"
+            >
+              Rascunho
+            </span>
+            <span
+              v-else-if="data.isSchema"
+              class="text-[10px] text-cyan-500/70"
+            >
+              Config
+            </span>
+            <span
+              v-else
+              class="text-[10px] text-slate-600 flex items-center gap-1"
+            >
+              Publicado
+            </span>
+          </template>
         </Column>
-
       </DataTable>
 
-       <div v-if="filteredFiles.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
-          <i class="pi pi-clone text-4xl mb-2"></i>
-          <p>{{ showSystemFiles ? 'Nenhum modelo encontrado' : 'Coleção vazia' }}</p>
-       </div>
+      <div
+        v-if="filteredFiles.length === 0"
+        class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none"
+      >
+        <i class="pi pi-clone text-4xl mb-2"></i>
+        <p>
+          {{ showSystemFiles ? "Nenhum modelo encontrado" : "Coleção vazia" }}
+        </p>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-:deep(.p-row-reorder-icon) { color: #64748b; cursor: grab; }
-:deep(.p-row-reorder-icon:hover) { color: #6f942e; }
-:deep(.p-datatable-header-cell) { background: #141b18 !important; border: none; padding: 10px 16px; color: #64748b; }
-:deep(.p-datatable-tbody > tr) { background: transparent; transition: background-color 0.2s;}
-:deep(.p-datatable-tbody > tr:nth-child(even)) { background: rgba(255, 255, 255, 0.03) !important; }
-:deep(.p-datatable-tbody > tr:hover) { background: rgba(111, 148, 46, 0.15) !important; cursor: pointer; }
-:deep(.p-datatable-tbody > tr > td) { border-bottom: 1px solid rgba(255,255,255,0.05) !important; padding: 0.5rem 1rem; }
-:deep(.p-paginator) { border-radius: 0 !important; background: #141b18 !important; border-top: 1px solid rgba(255,255,255,0.05) !important;}
-:deep(.p-datatable-wrapper) { flex: 1; }
+:deep(.p-row-reorder-icon) {
+  color: #64748b;
+  cursor: grab;
+}
+:deep(.p-row-reorder-icon:hover) {
+  color: #6f942e;
+}
+:deep(.p-datatable-header-cell) {
+  background: #141b18 !important;
+  border: none;
+  padding: 10px 16px;
+  color: #64748b;
+}
+:deep(.p-datatable-tbody > tr) {
+  background: transparent;
+  transition: background-color 0.2s;
+}
+:deep(.p-datatable-tbody > tr:nth-child(even)) {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+:deep(.p-datatable-tbody > tr:hover) {
+  background: rgba(111, 148, 46, 0.15) !important;
+  cursor: pointer;
+}
+:deep(.p-datatable-tbody > tr > td) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  padding: 0.5rem 1rem;
+}
+:deep(.p-paginator) {
+  border-radius: 0 !important;
+  background: #141b18 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+:deep(.p-datatable-wrapper) {
+  flex: 1;
+}
 </style>

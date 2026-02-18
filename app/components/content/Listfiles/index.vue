@@ -33,7 +33,7 @@ const props = defineProps({
 
 const config = useRuntimeConfig();
 const route = useRoute();
-const siteName = config.public.siteName;
+const siteName = config.siteId;
 
 // =============================================================================
 // 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE)

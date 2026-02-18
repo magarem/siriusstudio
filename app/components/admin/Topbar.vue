@@ -74,7 +74,7 @@ const goToBackup = () => {
               <div class="flex flex-col justify-center">
                  <span class="text-[9px] uppercase tracking-widest text-slate-500 font-bold leading-none mb-0.5">Projeto</span>
                  <span class="text-sm font-bold text-[#6f942e] leading-none tracking-wide">
-                    {{ siteContext }}
+                   {{ siteContext }}
                  </span>
               </div>
             </div>

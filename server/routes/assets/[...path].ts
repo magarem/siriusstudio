@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig();
   const siteId =
     getCookie(event, "cms_site_context") ||
-    config.public?.siteId 
+    config.siteId 
 
   // 5. DEFINE A PASTA DE ORIGEM
   // Preview  -> 'content' (Arquivos originais em edição, estado real-time)
