@@ -62,7 +62,7 @@ function reloadCaddy() {
 async function main() {
     console.clear();
     console.log(`${C.green}╔════════════════════════════════════════════════════╗`);
-    console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER        ║`);
+    console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER           ║`);
     console.log(`╚════════════════════════════════════════════════════╝${C.reset}\n`);
 
     console.log(`${C.cyan}1.${C.reset} Criar novo site (Clean + pnpm)`);
@@ -195,7 +195,7 @@ async function createSite() {
         if (fs.existsSync(link.src)) await fs.ensureSymlink(link.src, link.dest);
     }
 
-    // --- 1.6 GIT REPO & HOOK INTELIGENTE ---
+   // --- 1.6 GIT REPO & HOOK INTELIGENTE ---
     console.log('🛡️  Criando Repositório Git Bare...');
     await fs.ensureDir(destRepo);
     execSync(`git init --bare "${destRepo}"`);
@@ -244,6 +244,25 @@ echo "✅ Deploy concluído sem downtime!"
 `;
     await fs.writeFile(hookPath, hookContent);
     execSync(`chmod +x "${hookPath}"`);
+
+    // --- NOVIDADE: Sincroniza os arquivos iniciais com o Git Bare ---
+    console.log('📦 Inicializando histórico Git...');
+    try {
+        // Inicializa o git na pasta de build (onde estão os arquivos do template)
+        execSync(`git init`, { cwd: destBuild });
+        
+        // Configuração rápida de usuário (caso o servidor não tenha git global config)
+        execSync(`git config user.email "bot@siriusstudio.site"`, { cwd: destBuild });
+        execSync(`git config user.name "Sirius Bot"`, { cwd: destBuild });
+
+        execSync(`git remote add origin "${destRepo}"`, { cwd: destBuild });
+        execSync(`git add .`, { cwd: destBuild });
+        execSync(`git commit -m "Initial Sirius Setup"`, { cwd: destBuild });
+        execSync(`git push origin main`, { cwd: destBuild });
+        console.log(`${C.green}   ✅ Repositório pronto para clone!${C.reset}`);
+    } catch (e) {
+        console.warn(`${C.yellow}   ⚠️  Erro ao fazer primeiro push: ${e.message}${C.reset}`);
+    }
 
     // --- 1.7 PM2 SETUP INICIAL ---
     console.log('⚡ Configurando PM2...');
