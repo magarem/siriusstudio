@@ -248,7 +248,14 @@ echo "✅ Deploy concluído sem downtime!"
     console.log('🔒 Gerando Virtual Host no Caddy...');
     await fs.ensureDir(PATHS.caddy_sites);
     const logName = targetName.replace(/[^a-z0-9]/g, '_');
-    const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {
+    const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {
+    import sirius_rules
+    reverse_proxy localhost:${NEXT_PORT}
+    log {
+        output file /var/log/caddy/${logName}.log
+    }
+}
+`;
     import sirius_rules
     reverse_proxy localhost:${NEXT_PORT}
     log { output file /var/log/caddy/${logName}.log }
