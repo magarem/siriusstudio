@@ -10,7 +10,7 @@ const CURRENT_DIR = process.cwd();
 const APPS_ROOT = path.resolve(CURRENT_DIR, '..'); // ~/dev/apps
 
 const PATHS = {
-    sites: path.join(APPS_ROOT, 'sites'),       // (PRODUÇÃO) Apenas .output e dados
+    sites: path.join(APPS_ROOT, 'sites'),       // (PRODUÇÃO) Apenas artefato e dados
     builds: path.join(APPS_ROOT, 'builds'),     // (MONTAGEM) Código fonte, node_modules (pnpm)
     storage: path.join(APPS_ROOT, 'storage'),   // Dados persistentes
     repos: path.join(APPS_ROOT, 'repos'),       // Repositórios Git Bare
@@ -152,14 +152,14 @@ async function createSite() {
     try {
         execSync('pnpm install', { cwd: destBuild, stdio: 'ignore' });
     } catch (e) {
-        console.warn(`${C.yellow}⚠️  Aviso: Falha no pnpm. Você instalou globalmente? (npm i -g pnpm). Tentando npm...${C.reset}`);
+        console.warn(`${C.yellow}⚠️  Aviso: Falha no pnpm. Tentando npm...${C.reset}`);
         execSync('npm install', { cwd: destBuild, stdio: 'ignore' });
     }
 
     const templateOutput = path.join(PATHS.template_site, '.output');
     if (fs.existsSync(templateOutput)) {
         console.log('⚡ [TURBO] Copiando Build pronto (.output)...');
-        try { execSync(`cp -a "${templateOutput}" "${destBuild}/"`); } 
+        try { execSync(`cp -a "${templateOutput}/." "${destBuild}/.output/"`); } 
         catch (e) { execSync('pnpm run build', { cwd: destBuild, stdio: 'inherit' }); }
     } else {
         console.log('🛠️  Compilando...');
@@ -167,14 +167,16 @@ async function createSite() {
     }
 
     // --- 1.5 DEPLOY PARA PRODUÇÃO (Clean Runtime) ---
-    console.log('🚀 Movendo .output para Área de Produção (Runtime)...');
+    console.log('🚀 Movendo para Área de Produção (Runtime)...');
     await fs.ensureDir(destSite);
     
-    // Copia apenas o artefato compilado autossuficiente
+    // Copia O CONTEÚDO da pasta .output para a raiz do site de produção
     execSync(`cp -a "${path.join(destBuild, '.output')}/." "${destSite}/"`);
 
-    // Gera os arquivos de ambiente
+    // Gera os arquivos de ambiente do processo
     await fs.writeFile(path.join(destSite, '.env'), `NUXT_SITE_ID=${targetName}\nPORT=${NEXT_PORT}\nNODE_ENV=production\nNUXT_PUBLIC_SITE_URL=https://${DOMAIN}`);
+    
+    // ATENÇÃO AQUI: O script agora aponta para ./server/index.mjs
     const ecosystemContent = `module.exports = { apps: [{ name: "${targetName}:${NEXT_PORT}", script: "./server/index.mjs", env: { NODE_ENV: "production", PORT: ${NEXT_PORT}, NUXT_SITE_ID: "${targetName}" } }] };`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), ecosystemContent);
 
@@ -225,7 +227,8 @@ pnpm run build
 # 4. Transfere para Produção Clean
 echo "🚚 Movendo para Área de Produção..."
 mkdir -p "$SITE_DIR"
-rm -rf "$SITE_DIR/.output"
+rm -rf "$SITE_DIR/server" "$SITE_DIR/public" "$SITE_DIR/nitro.json"
+# Copia o conteúdo limpo do novo build
 cp -a .output/. "$SITE_DIR/"
 
 # 5. Reinicia a Aplicação
@@ -244,11 +247,13 @@ echo "✅ Deploy concluído sem downtime!"
         execSync('pm2 save');
     } catch (e) { console.error("Erro no PM2:", e.message); }
 
-    // --- 1.8 CADDY CONFIG ---
+    // --- 1.8 CADDY CONFIG CORRIGIDA ---
     console.log('🔒 Gerando Virtual Host no Caddy...');
     await fs.ensureDir(PATHS.caddy_sites);
     const logName = targetName.replace(/[^a-z0-9]/g, '_');
-    const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {
+    
+    // ATENÇÃO AQUI: Sintaxe do Caddy 100% correta e com quebras de linha exigidas
+    const caddyFileContent = `${DOMAIN}, www.${DOMAIN} {
     import sirius_rules
     reverse_proxy localhost:${NEXT_PORT}
     log {
@@ -256,10 +261,6 @@ echo "✅ Deploy concluído sem downtime!"
     }
 }
 `;
-    import sirius_rules
-    reverse_proxy localhost:${NEXT_PORT}
-    log { output file /var/log/caddy/${logName}.log }
-}\n`;
     await fs.writeFile(path.join(PATHS.caddy_sites, `${targetName}.caddy`), caddyFileContent);
     reloadCaddy();
 
@@ -268,7 +269,7 @@ echo "✅ Deploy concluído sem downtime!"
     infoData.last_port = NEXT_PORT;
     await fs.writeJson(PATHS.info_json, infoData, { spaces: 2 });
 
-    console.log(`${C.green}\n✅ Site ${targetName} criado com sucesso (Clean + pnpm)!${C.reset}`);
+    console.log(`${C.green}\n✅ Site ${targetName} criado com sucesso!${C.reset}`);
 }
 
 // =============================================================================
