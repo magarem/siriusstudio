@@ -171,11 +171,11 @@ async function createSite() {
     await fs.ensureDir(destSite);
     
     // Copia apenas o artefato compilado autossuficiente
-    execSync(`cp -a "${path.join(destBuild, '.output')}" "${destSite}/"`);
+    execSync(`cp -a "${path.join(destBuild, '.output')}/." "${destSite}/"`);
 
     // Gera os arquivos de ambiente
     await fs.writeFile(path.join(destSite, '.env'), `NUXT_SITE_ID=${targetName}\nPORT=${NEXT_PORT}\nNODE_ENV=production\nNUXT_PUBLIC_SITE_URL=https://${DOMAIN}`);
-    const ecosystemContent = `module.exports = { apps: [{ name: "${targetName}:${NEXT_PORT}", script: "./.output/server/index.mjs", env: { NODE_ENV: "production", PORT: ${NEXT_PORT}, NUXT_SITE_ID: "${targetName}" } }] };`;
+    const ecosystemContent = `module.exports = { apps: [{ name: "${targetName}:${NEXT_PORT}", script: "./server/index.mjs", env: { NODE_ENV: "production", PORT: ${NEXT_PORT}, NUXT_SITE_ID: "${targetName}" } }] };`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), ecosystemContent);
 
     // Links Simbólicos para o RUNTIME (Apenas Dados)
@@ -226,7 +226,7 @@ pnpm run build
 echo "🚚 Movendo para Área de Produção..."
 mkdir -p "$SITE_DIR"
 rm -rf "$SITE_DIR/.output"
-cp -a .output "$SITE_DIR/"
+cp -a .output/. "$SITE_DIR/"
 
 # 5. Reinicia a Aplicação
 echo "🔄 Recarregando PM2..."
