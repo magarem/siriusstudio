@@ -257,7 +257,7 @@ echo "✅ Deploy concluído sem downtime!"
     import sirius_rules
     reverse_proxy localhost:${NEXT_PORT}
     log {
-        output file /var/log/caddy/${logName}.log
+        output file /home/maga/dev/apps/caddy/logs/${logName}.log
     }
 }
 `;
