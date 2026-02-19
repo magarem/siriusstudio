@@ -44,10 +44,15 @@ const ask = (q) => new Promise((resolve) => rl.question(q, resolve));
 function reloadCaddy() {
     console.log('🔄 Atualizando Caddy Server...');
     try {
-        execSync('sudo systemctl reload caddy', { stdio: 'ignore' }); 
+        // Adicionamos um timeout de 10 segundos para não travar o script para sempre
+        execSync('sudo systemctl reload caddy', { 
+            stdio: 'inherit', // Isso fará o erro aparecer direto no console se houver
+            timeout: 10000 
+        }); 
         console.log(`${C.green}   ✅ Caddy atualizado com sucesso.${C.reset}`);
     } catch (e) {
-        console.log(`${C.yellow}   ⚠️  Rode 'sudo systemctl reload caddy' manualmente.${C.reset}`);
+        console.log(`${C.yellow}   ⚠️  O Caddy demorou a responder ou falhou.${C.reset}`);
+        console.log(`${C.dim}      Verifique os logs com: journalctl -u caddy -n 20${C.reset}`);
     }
 }
 
@@ -257,7 +262,8 @@ echo "✅ Deploy concluído sem downtime!"
     import sirius_rules
     reverse_proxy localhost:${NEXT_PORT}
     log {
-        output file /home/maga/dev/apps/caddy/logs/${logName}.log
+        output stdout
+        format console
     }
 }
 `;
