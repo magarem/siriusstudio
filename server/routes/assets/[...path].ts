@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
   // 4. IDENTIFICA O SITE
   // Tenta pegar do cookie (Modo Admin/Editor) OU da configuração (Modo Site Público)
   const config = useRuntimeConfig();
+  const storagePath = config.storagePath
+  console.log("🚀 ~ storagePath:", storagePath)
   const siteId =
     getCookie(event, "cms_site_context") ||
     config.siteId 
@@ -27,31 +29,31 @@ export default defineEventHandler(async (event) => {
   // 5. DEFINE A PASTA DE ORIGEM
   // Preview  -> 'content' (Arquivos originais em edição, estado real-time)
   // Produção -> 'data'    (Arquivos copiados/otimizados pelo script de build)
-  let sourceFolder = isPreview ? "content" : "data";
+  // let sourceFolder = isPreview ? "content" : "data";
 
   let filePath = "";
-
+ console.log("🚀 ~ process.cwd():", process.cwd())
   // 6. RESOLUÇÃO DO CAMINHO FÍSICO
   if (siteId) {
     // Lógica Monorepo: Estamos em /apps/site/server, precisamos voltar para /apps/storage
     // path: .../apps/storage/[site]/[content ou data]/[arquivo]
-    sourceFolder = "content";
+    const sourceFolder = "content";
     filePath = resolve(
-      process.cwd(),
-      "..",
+      storagePath,
       "storage",
       siteId,
       sourceFolder,
       decodedPath,
     );
+    console.log("🚀 ~ filePath:", filePath)
     console.log("1 - Resolved with siteId:", siteId);
   } else {
     // Fallback Local: Tenta buscar na pasta do projeto atual (útil para dev isolado)
-    filePath = resolve(process.cwd(), sourceFolder, decodedPath);
-    console.log("2 - Resolved with siteId:");
+    // filePath = resolve(process.cwd(), sourceFolder, decodedPath);
+    // console.log("2 - Resolved with siteId:");
   }
 
-  console.log("filePath:", filePath);
+  // console.log("filePath:", filePath);
 
   // Debug (Descomente se precisar ver no terminal o que está acontecendo)
   // console.log(`📂 Asset Request: ${decodedPath}`)
