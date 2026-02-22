@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join, dirname, relative, sep } from 'node:path';
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
-import { parse } from 'smol-toml'
+import { parse } from 'smol-toml';
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event);
@@ -15,11 +15,9 @@ export default defineEventHandler(async (event) => {
   const APPS_ROOT = resolve(envPath); 
   
   // ORIGEM: Onde você edita (MD + Imagens)
-  // Ex: .../storage/novagokula/content
   const SOURCE_ROOT = join(APPS_ROOT, 'storage', site, 'content'); 
   
   // DESTINO: Onde fica o site compilado (JSON + Imagens)
-  // Ex: .../storage/novagokula/data
   const DEST_ROOT = join(APPS_ROOT, 'storage', site, 'data');
   
   const stats = { processed: 0, copiedOrders: 0, copiedJson: 0, copiedImages: 0, errors: 0 };
@@ -27,7 +25,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     // --- 1. LIMPEZA (NUKE) ---
-    // Limpa a pasta 'data' inteira para garantir que não sobrem arquivos órfãos (ex: posts deletados)
+    // Limpa a pasta 'data' inteira para garantir que não sobrem arquivos órfãos
     try {
       if (await fs.stat(DEST_ROOT).catch(() => false)) {
           const files = await fs.readdir(DEST_ROOT);
@@ -62,7 +60,7 @@ export default defineEventHandler(async (event) => {
     const mdFiles = allFiles.filter(f => f.endsWith('.md'));
     const tomlFiles = allFiles.filter(f => f.endsWith('.toml'));
     const orderFiles = allFiles.filter(f => f.endsWith('_order.yml'));
-    const jsonFiles = allFiles.filter(f => f.endsWith('.json')); // JSONs manuais que já existiam
+    const jsonFiles = allFiles.filter(f => f.endsWith('.json')); 
     
     const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
     const imageFiles = allFiles.filter(f => {
@@ -70,12 +68,11 @@ export default defineEventHandler(async (event) => {
         return imageExtensions.includes(ext);
     });
 
-    // --- 3.5 COMPILAÇÃO (TOML -> JSON) ---
-    // Ideal para o settings.toml -> settings.json
+    // --- 3. COMPILAÇÃO (TOML -> JSON) ---
     for (const filePath of tomlFiles) {
       try {
         const rawContent = await fs.readFile(filePath, 'utf-8');
-        const parsedToml = parse(rawContent); // Transforma TOML em Objeto JS
+        const parsedToml = parse(rawContent); 
         
         const relPath = relative(SOURCE_ROOT, filePath);
         const destFile = join(DEST_ROOT, relPath.replace('.toml', '.json'));
@@ -88,14 +85,14 @@ export default defineEventHandler(async (event) => {
         await fs.mkdir(dirname(destFile), { recursive: true });
         await fs.writeFile(destFile, JSON.stringify(parsedToml, null, 2));
 
-        stats.processed++; // Ou crie um stats.tomlProcessed se preferir
+        stats.processed++; 
       } catch (err) {
         console.error(`Erro compilando TOML ${filePath}:`, err);
         stats.errors++;
       }
     }
 
-    // --- 3. COMPILAÇÃO (MARKDOWN -> JSON) ---
+    // --- 4. COMPILAÇÃO (MARKDOWN -> AST JSON) ---
     for (const filePath of mdFiles) {
       try {
         const fileStat = await fs.stat(filePath);
@@ -110,9 +107,13 @@ export default defineEventHandler(async (event) => {
         if (keyName.endsWith('_index')) keyName = keyName.replace('_index', 'index');
         versions[keyName] = lastModified;
 
-        // Parse MDC (Nuxt Content AST)
-        const parsedAST = await parseMarkdown(rawContent, { toc: { depth: 2, searchDepth: 2 } });
-        parsedAST._id = `content:${site}:${normalizedRelPath}`;
+        // =====================================================================
+        // O CORAÇÃO DO MDC: Geração da Árvore de Sintaxe (AST)
+        // Isso converte <Listfiles> ou ::listfiles no objeto JSON correto
+        // =====================================================================
+        const parsedAST = await parseMarkdown(rawContent, { 
+            toc: { depth: 2, searchDepth: 2 } 
+        });
         
         // Caminho Web (Slug)
         let webPath = normalizedRelPath.replace('.md', '');
@@ -121,10 +122,17 @@ export default defineEventHandler(async (event) => {
         else if (webPath === '_index' || webPath === 'index') webPath = ''; 
         if (!webPath.startsWith('/')) webPath = '/' + webPath;
         if (webPath === '') webPath = '/';
-        parsedAST._path = webPath;
+        
+        // Monta o JSON final, devolvendo o `body` que o frontend espera
+        const finalJsonObj = {
+          data: parsedAST.data || {},
+          body: parsedAST.body, // A AST pura que alimenta o <MDCRenderer>
+          _id: `content:${site}:${normalizedRelPath}`,
+          _path: webPath
+        };
+        // =====================================================================
         
         // Define nome do arquivo de saída
-        // _index.md vira index.json
         let destFileName = relPath;
         if (destFileName.endsWith('_index.md')) {
             destFileName = destFileName.replace('_index.md', 'index.json');
@@ -135,7 +143,7 @@ export default defineEventHandler(async (event) => {
         const destFile = join(DEST_ROOT, destFileName);
         
         await fs.mkdir(dirname(destFile), { recursive: true });
-        await fs.writeFile(destFile, JSON.stringify(parsedAST, null, 2));
+        await fs.writeFile(destFile, JSON.stringify(finalJsonObj, null, 2));
 
         stats.processed++;
       } catch (err) {
@@ -144,14 +152,13 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // --- 4. CÓPIA DE ARQUIVOS AUXILIARES (JSON, YML) ---
+    // --- 5. CÓPIA DE ARQUIVOS AUXILIARES ---
     const auxFiles = [...jsonFiles, ...orderFiles];
     for (const filePath of auxFiles) {
       try {
         const relPath = relative(SOURCE_ROOT, filePath);
         const destFile = join(DEST_ROOT, relPath);
         
-        // Atualiza versão se for JSON
         if (filePath.endsWith('.json')) {
             const normalizedRelPath = relPath.split(sep).join('/');
             const keyName = normalizedRelPath.replace('.json', '');
@@ -172,9 +179,7 @@ export default defineEventHandler(async (event) => {
       }
     }
 
-    // --- 5. CÓPIA DE IMAGENS ---
-    // Copia as imagens para a mesma estrutura dentro de 'data'
-    // Assim, se o JSON está em data/blog/index.json, a imagem vai para data/blog/foto.jpg
+    // --- 6. CÓPIA DE IMAGENS ---
     for (const filePath of imageFiles) {
         try {
             const relPath = relative(SOURCE_ROOT, filePath);
@@ -189,7 +194,7 @@ export default defineEventHandler(async (event) => {
         }
     }
 
-    // --- 6. MANIFESTO ---
+    // --- 7. MANIFESTO ---
     await fs.writeFile(
       join(DEST_ROOT, '_meta.json'), 
       JSON.stringify(versions, null, 2)

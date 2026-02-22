@@ -1,6 +1,16 @@
 // siriusstudio/nuxt.config.ts
 import Aura from "@primevue/themes/aura";
 export default defineNuxtConfig({
+ vite: {
+    optimizeDeps: {
+      exclude: [
+        '@codemirror/state',
+        '@codemirror/view',
+        '@codemirror/commands',
+        '@codemirror/language'
+      ]
+    }
+  },
   runtimeConfig: {
     storagePath: process.env.STORAGE_PATH,
     jwtSecret: process.env.JWT_SECRET || "chave-de-emergencia-sirius-123",
@@ -14,8 +24,8 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
   modules: [
+    '@nuxtjs/mdc',
     "@nuxtjs/tailwindcss",
-    "@nuxt/content",
     "@nuxt/image",
     "@primevue/nuxt-module",
   ],

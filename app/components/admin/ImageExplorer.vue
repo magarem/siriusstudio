@@ -42,7 +42,7 @@ const filteredFiles = computed(() => {
   console.log("🚀 ~ Array.isArray(files.value):", Array.isArray(files.value))
   if (!files.value || !Array.isArray(files.value)) return []; // Proteção contra null
   
-  const validExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
+  const validExtensions = ['.avif', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
 
   return files.value.filter(f => {
     if (f.isDirectory) return true;

@@ -1,21 +1,22 @@
 import { promises as fs } from 'node:fs';
 import { resolve, join, relative, extname } from 'node:path';
 import { parseMarkdown } from '@nuxtjs/mdc/runtime'; 
-import { parse as parseToml } from 'smol-toml'; // Parser para TOML
-import yaml from 'js-yaml'; // Parser para YAML (caso queira suportar também)
+import { parse as parseToml } from 'smol-toml'; 
+import yaml from 'js-yaml'; 
 
 export default defineEventHandler(async (event) => {
 
   let slug = getRouterParam(event, 'slug') || 'index';
-  slug = slug.replace(/\/+$/, ''); // Remove barra final
+  slug = slug.replace(/\/+$/, ''); // Remove a barra final
+  if (slug === '') slug = 'index'; // Previne erros na página principal (home)
 
   const STORAGE_DIR = resolve(process.cwd(), 'content');
 
-  console.log(`🔍 Preview solicitando: ${slug}`);
+  console.log(`🔍 Preview a solicitar: ${slug}`);
 
   // LISTA DE PRIORIDADES DE BUSCA
   const possiblePaths = [
-    // 1. Prioridade Máxima: Configurações de Bloco (TOML/YAML)
+    // 1. Configurações de Bloco (JSON/TOML/YAML)
     join(STORAGE_DIR, `${slug}.json`),
     join(STORAGE_DIR, slug, '_index.json'),
     join(STORAGE_DIR, slug, '_index.toml'),
@@ -38,53 +39,49 @@ export default defineEventHandler(async (event) => {
     try {
       const rawContent = await fs.readFile(p, 'utf-8');
       const ext = extname(p).toLowerCase();
-      const relativePath = relative(STORAGE_DIR, p);
       
       let resultData = {};
-      let resultBody = {};
+      let resultBody = null; // O AST só será gerado para ficheiros Markdown
 
       // --- LÓGICA DE PARSE POR EXTENSÃO ---
       if (ext === '.json') {
-          // JSON: É puramente dados, não tem "Body" (AST)
           resultData = JSON.parse(rawContent);
-          resultBody = null; // Smart Blocks não têm corpo de texto rico
       } 
       else if (ext === '.toml') {
-          // TOML: É puramente dados, não tem "Body" (AST)
           resultData = parseToml(rawContent);
-          resultBody = null; // Smart Blocks não têm corpo de texto rico
       } 
       else if (ext === '.yml' || ext === '.yaml') {
-          // YAML: Também puramente dados
           resultData = yaml.load(rawContent);
-          resultBody = null;
       } 
       else {
-          // MARKDOWN: Usa o parser do Nuxt (MDC)
-          const parsed = await parseMarkdown(rawContent, {});
+          // =====================================================================
+          // MARKDOWN: Geração da AST no Preview
+          // Usamos o parser do MDC para identificar os seus componentes Vue (ex: Listfiles)
+          // =====================================================================
+          const parsed = await parseMarkdown(rawContent, {
+            toc: { depth: 2, searchDepth: 2 }
+          });
+          
           resultData = parsed.data;
-          resultBody = parsed.body;
+          resultBody = parsed.body; // A AST pura que alimenta o <MDCRenderer>
       }
 
       // --- MONTAGEM DA RESPOSTA ---
+      // Mantém a exata consistência com o ficheiro de compilação
       return {
-        data: resultData || {}, // Frontmatter ou Dados do TOML
-        body: resultBody,       // AST (apenas para Markdown)
-        
-        // Metadados do Nuxt Content
-        _file: relativePath,
+        data: resultData || {}, 
+        body: resultBody, 
         _path: slug === 'index' ? '/' : `/${slug}`,
-        _id: relativePath,
+        _source: 'preview',
         _extension: ext.replace('.', '')
       }; 
 
     } catch (e) {
-      // Se der erro de leitura ou parse, tenta o próximo
-      // console.error(`Erro ao ler ${p}:`, e.message); // Opcional: Debug
+      // Se der erro de leitura ou parse, tenta o próximo caminho da lista
       continue; 
     }
   }
 
-  // Se o loop terminou e não retornou nada:
+  // Se percorreu todos os caminhos e não encontrou nada:
   throw createError({ statusCode: 404, message: 'Página/Rascunho não encontrado.' });
 });

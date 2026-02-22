@@ -45,7 +45,6 @@ const wrapperClasses = computed(() => {
         <p v-if="subtitle" class="text-lg text-gray-600 max-w-2xl mx-auto">
           {{ subtitle }}
         </p>
-        
         <div 
           v-if="titleAlign === 'text-center'"
           class="h-1 w-20 bg-[#d97706] mx-auto mt-4 rounded-full opacity-80"

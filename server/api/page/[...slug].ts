@@ -1,67 +1,59 @@
-// server/api/page/[...slug].ts
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { defineEventHandler, getRouterParam, createError } from 'h3';
 
-// Aponta para a pasta onde o Sirius salvou os JSONs compilados
-// Geralmente em produção/build, isso fica em 'data' ou '.output/data'
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 
 export default defineEventHandler(async (event) => {
-  // 1. Pega o slug da URL
   let slug = getRouterParam(event, 'slug') || 'index';
   
-  // 2. Normalização do Slug
   if (Array.isArray(slug)) slug = slug.join('/');
-  slug = slug.replace(/\/+$/, ''); // Remove barra final
+  slug = slug.replace(/\/+$/, '');
   if (slug === '') slug = 'index';
 
-  // 3. Estratégia de Resolução de Arquivo
-  // O compilador do CMS deve ter gerado arquivos .json para tudo
   const possiblePaths = [
-    path.join(DATA_DIR, `${slug}.json`),          // ex: data/contato.json
-    path.join(DATA_DIR, slug, 'index.json'),      // ex: data/blog/index.json
-    path.join(DATA_DIR, slug, '_index.json')      // ex: data/blog/_index.json (fallback)
+    path.join(DATA_DIR, `${slug}.json`),
+    path.join(DATA_DIR, slug, 'index.json'),
+    path.join(DATA_DIR, slug, '_index.json')
   ];
 
   for (const p of possiblePaths) {
     try {
-      // Segurança: garante que não sai da pasta DATA_DIR
       if (!p.startsWith(DATA_DIR)) continue;
 
-      // Tenta ler o arquivo
       const content = await fs.readFile(p, 'utf-8');
-      
-      // Parseia o JSON
       const jsonContent = JSON.parse(content);
 
       // =====================================================================
-      // 4. PADRONIZAÇÃO DE RESPOSTA (A Correção da "Questão Intrigante")
+      // PADRONIZAÇÃO DE RESPOSTA PARA O @nuxtjs/mdc
       // =====================================================================
       
-      // Cenário A: O arquivo já é um Markdown compilado pelo CMS?
-      // (Geralmente Markdowns compilados já salvam com { data: ..., body: ... })
-      if (jsonContent.data && (jsonContent.body || jsonContent._path)) {
-          // Retorna como está, pois já está no padrão Nuxt Content
-          return jsonContent;
+      // Se o JSON tiver metadados (veio de um Markdown compilado)
+      if (jsonContent.data) {
+          // Pegamos o texto puro. 
+          // (Suportando 'markdownString', 'content' ou o antigo 'body' caso haja legado)
+          const rawText = jsonContent.markdownString || jsonContent.content || jsonContent.body || '';
+          
+          return {
+        data: jsonContent.data,
+        body: jsonContent.body, // <-- Devolve a AST
+        _path: slug === 'index' ? '/' : `/${slug}`,
+        _source: 'cms-compiled'
+    };
       }
 
-      // Cenário B: O arquivo é um JSON Puro / Configuração (Raw Data)?
-      // Se for apenas { "titulo": "Olá" }, nós encapsulamos manualmente 
-      // para o front-end não quebrar esperando um .data
+      // Se for um JSON de dados brutos (ex: configurações sem texto)
       return {
-        data: jsonContent,   // O conteúdo vira o Frontmatter
-        body: null,          // Não tem corpo de texto (AST)
+        data: jsonContent,   
+        markdownString: null, 
         _path: slug === 'index' ? '/' : `/${slug}`,
-        _source: 'json-api'
+        _source: 'json-raw'
       };
 
     } catch (e) {
-      // Arquivo não existe neste path, tenta o próximo da lista
       continue;
     }
   }
 
-  // 5. Se percorreu todas as opções e não achou nada
-  // console.warn(`[Page API] 404 Not Found for slug: ${slug}`);
   throw createError({ statusCode: 404, message: 'Página não encontrada' });
 });

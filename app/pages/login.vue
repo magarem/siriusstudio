@@ -19,8 +19,8 @@
           <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Domínio do Site</label>
           <div class="relative">
             <i class="pi pi-globe absolute left-4 top-1/2 -translate-y-1/2 text-[#6f942e] text-sm"></i>
-            <input v-model="form.domain" type="text" placeholder="Nome do domínio" 
-              class="custom-input" />
+            <input v-model="form.domain" type="text" :disabled="!!route.query.site" 
+              class="custom-input" :class="{'opacity-50 cursor-not-allowed': !!route.query.site}" />
           </div>
         </div>
         
@@ -59,8 +59,12 @@
 <script setup>
 definePageMeta({ layout: ''})
 
+const route = useRoute()
+const router = useRouter()
+
 const form = ref({ 
-  domain: '', 
+  // 1. Tenta pegar o domínio da URL (?site=...) ou deixa vazio
+  domain: route.query.site || '', 
   username: '', 
   password: '' 
 })
@@ -71,16 +75,23 @@ const handleLogin = async () => {
       alert('Por favor, preencha todos os campos.')
       return
     } 
+    
     const res = await $fetch('/api/auth/login', {
       method: 'POST',
       body: form.value
     })
     
     if (res.success) {
-      window.location.href = '/editor?path=content'
+      // 2. Lógica de Redirecionamento Inteligente
+      // Se houver um 'path' na URL (vindo do F11), mantém ele.
+      const targetPath = route.query.path || 'content'
+      
+      // Usamos window.location para garantir que o middleware de auth 
+      // do Nuxt reconheça o novo cookie auth_token fresquinho.
+      window.location.href = `/editor?path=${targetPath}`
     }
   } catch (err) {
-    alert('Erro de identificação. Verifique suas credenciais.')
+    alert('Erro de identificação. Verifique os dados e tente novamente.')
   }
 }
 </script>

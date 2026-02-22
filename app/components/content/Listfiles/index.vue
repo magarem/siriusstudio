@@ -5,6 +5,7 @@ import ListfilesList from "./List.vue";
 import Supergrid from "./Supergrid.vue";
 import ListfilesRaw from "./Raw.vue";
 import Carrosel from "./Carrosel.vue";
+import Blog from "./Blog.vue";
 
 // --- PROPS ---
 const props = defineProps({
@@ -64,6 +65,7 @@ const { data: fetchedConfig } = await useFetch(sourceEndpoint, {
   watch: [sourceEndpoint],
   lazy: true,
 });
+console.log("🚀 ~ fetchedConfig:", fetchedConfig)
 
 // =============================================================================
 // 2. MERGE DE PARÂMETROS (FINAL PARAMS)
@@ -293,11 +295,18 @@ const displayedItems = computed(() => {
 </script>
 
 <template>
+  
+   <SectionWrapper 
+    v-if="finalParams"
+    :title="finalParams.title" 
+    :subtitle="finalParams.subtitle" 
+    :showFooterLine="false"
+  >
   <div class="list-container">
-    <h3 v-if="finalParams.title" class="list-title">
+    <!-- <h3 v-if="finalParams.title" class="list-title">
       <i v-if="finalParams.icon" :class="finalParams.icon"></i>
       {{ finalParams.title }}
-    </h3>
+    </h3> -->
 
     <div
       v-if="loading && (!items || items.length === 0)"
@@ -350,6 +359,14 @@ const displayedItems = computed(() => {
         :fileIcon="fileIcon"
       />
 
+       <Blog
+        v-else-if="finalParams.view?.toLowerCase() === 'blog'"
+        :items="displayedItems"
+        :viewparams="finalParams.viewparams"
+        :fallbackImage="fallbackImage"
+        :fileIcon="fileIcon"
+      />
+
       <Carrosel
         v-else-if="finalParams.view?.toLowerCase() === 'carrosel'"
         :items="displayedItems"
@@ -359,6 +376,7 @@ const displayedItems = computed(() => {
       />
     </div>
   </div>
+  </SectionWrapper>
 </template>
 
 <style scoped>
