@@ -1,6 +1,38 @@
+# Dependências locais (O Docker deve instalar as suas próprias)
 node_modules
+.pnpm-store
+pnpm-debug.log
+
+# Nuxt & Build
+.nuxt
 .output
-.git
-.env
+.nitro
 dist
+
+# Dados e Sites (Esses serão montados via Volumes no Docker)
+# Ignoramos para que o build do motor seja leve e isolado
+apps/storage
+apps/sites
+**/*.db
+**/*.db-journal
+
+# Logs e Debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# Sistema e Editores
 .DS_Store
+.vscode
+.git
+.gitignore
+.dockerignore
+README.md
+LICENSE
+
+# Arquivos de Ambiente (Segurança!)
+.env
+.env.*
+!.env.example

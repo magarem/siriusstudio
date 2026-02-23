@@ -240,157 +240,119 @@ const formatDate = (dateString?: string) => {
     </div>
 
     <div class="flex-1 overflow-hidden relative">
-      <DataTable
-        :value="displayedFiles"
-        :reorderableRows="!showSystemFiles"
-        @rowReorder="onRowReorder"
-        selectionMode="single"
-        :metaKeySelection="false"
-        @rowSelect="onRowSelect"
-        dataKey="name"
-        class="text-sm h-full flex flex-col"
-        scrollable
-        scrollHeight="flex"
-        stripedRows
-        paginator
-        :rows="10"
-        v-model:first="first"
-        :rowsPerPageOptions="[10, 20, 50]"
-        paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
-        currentPageReportTemplate="{first} a {last} de {totalRecords}"
-        :pt="{
-          root: { class: 'bg-transparent flex flex-col h-full' },
-          headerRow: {
-            class:
-              'bg-[#141b18] text-slate-400 text-[10px] uppercase tracking-wider',
-          },
-          bodyRow: ({ context }) => ({
-            class: [
-              'transition-colors border-b border-white/5 text-slate-300',
-              context.index % 2 === 0 ? 'bg-transparent' : 'text-slate-400',
-              'hover:bg-[#6f942e]/10 cursor-pointer',
-            ],
-          }),
-          paginator: {
-            root: { class: 'bg-[#141b18] border-t border-white/5 p-2' },
-            current: {
-              class: 'text-[10px] text-slate-500 uppercase font-bold ml-auto',
-            },
-            pages: { class: 'flex gap-1' },
-            pageButton: ({ context }) => ({
-              class: [
-                'w-8 h-8 rounded text-[10px] transition-colors',
-                context.active
-                  ? 'bg-[#6f942e] text-black font-black'
-                  : 'text-slate-400 hover:bg-white/5',
-              ],
-            }),
-          },
-        }"
+     <DataTable
+  :value="displayedFiles"
+  :reorderableRows="!showSystemFiles"
+  @rowReorder="onRowReorder"
+  selectionMode="single"
+  :metaKeySelection="false"
+  @rowSelect="onRowSelect"
+  dataKey="name"
+  class="text-sm h-full flex flex-col"
+  scrollable
+  scrollHeight="flex"
+  paginator
+  :rows="10"
+  v-model:first="first"
+  :rowsPerPageOptions="[10, 20, 50]"
+  paginatorTemplate="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink CurrentPageReport RowsPerPageDropdown"
+  currentPageReportTemplate="{first} a {last} de {totalRecords}"
+  :pt="{
+    root: { class: 'bg-transparent flex flex-col h-full' },
+    headerRow: {
+      class: 'bg-[#141b18] text-slate-500 text-[10px] uppercase tracking-widest font-bold',
+    },
+    bodyRow: ({ context }) => ({
+      class: [
+        'transition-colors border-b border-white/5 text-slate-300',
+        'hover:bg-white/5 cursor-pointer', // Efeito de hover sutil, sem cor berrante
+      ],
+    }),
+    paginator: {
+      root: { class: 'bg-[#141b18] border-t border-white/5 p-2' },
+      current: { class: 'text-[10px] text-slate-500 uppercase font-bold ml-auto' },
+      pages: { class: 'flex gap-1' },
+      pageButton: ({ context }) => ({
+        class: [
+          'w-8 h-8 rounded text-[10px] transition-colors',
+          context.active
+            ? 'bg-[#6f942e] text-black font-black'
+            : 'text-slate-400 hover:bg-white/5',
+        ],
+      }),
+    },
+  }"
+>
+  <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
+  
+  
+  <Column header="Título" class="font-medium" sortable field="data.title">
+    <template #body="{ data }">
+      <div class="flex flex-col py-2.5">
+        <div class="flex items-center gap-2">
+          <span
+            class="font-medium text-[14px]"
+            :class="[
+              isIndexFile(data)
+                ? 'text-[#6f942e] font-bold'
+                : data.isSchema
+                  ? 'text-cyan-400'
+                  : 'text-slate-200',
+            ]"
+          >
+            {{ data.data?.title || data.name.replace(/-/g, " ") }}
+          </span>
+
+          <span
+            v-if="isIndexFile(data)"
+            class="text-[8px] border border-[#6f942e]/30 text-[#6f942e] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold bg-[#6f942e]/10"
+          >
+            Capa
+          </span>
+          <span
+            v-if="data.isSchema"
+            class="text-[8px] border border-cyan-500/30 text-cyan-500 px-1.5 py-0.5 rounded uppercase tracking-wider font-bold bg-cyan-500/10"
+          >
+            Modelo
+          </span>
+        </div>
+        
+        <span class="text-[10px] text-slate-500 font-mono mt-0.5 opacity-80">
+          {{ data.name }}
+        </span>
+      </div>
+    </template>
+  </Column>
+
+  <Column header="Data" style="width: 8rem" sortable field="data.date">
+    <template #body="{ data }">
+      <span class="text-slate-400 text-xs font-mono">{{ formatDate(data.data?.date) }}</span>
+    </template>
+  </Column>
+
+  <Column header="Status" style="width: 7rem" field="data.draft">
+    <template #body="{ data }">
+      <span
+        v-if="data.data?.draft === true"
+        class="text-[10px] font-bold text-amber-500 flex items-center gap-1.5"
       >
-        <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
-        <Column rowReorder style="width: 4rem">
-          <template #body="slotProps">
-            <div
-              class="w-10 h-10 rounded overflow-hidden flex items-center justify-center border transition-all"
-              :class="[
-                isIndexFile(slotProps.data)
-                  ? 'bg-[#6f942e]/10 border-[#6f942e]/30'
-                  : slotProps.data.isSchema
-                    ? 'bg-cyan-500/10 border-cyan-500/30'
-                    : 'bg-white/5 border-white/5',
-              ]"
-            >
-              <img
-                v-if="getThumbnail(slotProps.data)"
-                :src="getThumbnail(slotProps.data)"
-                class="w-full h-full object-cover"
-                loading="lazy"
-              />
-
-              <i
-                v-else
-                class="text-lg"
-                :class="[
-                  isIndexFile(slotProps.data)
-                    ? 'pi pi-home text-[#6f942e]'
-                    : slotProps.data.isSchema
-                      ? 'pi pi-cog text-cyan-500'
-                      : 'pi pi-file text-slate-600',
-                ]"
-              ></i>
-            </div>
-          </template>
-        </Column>
-
-        <Column header="Título" class="font-medium" sortable field="data.title">
-          <template #body="{ data }">
-            <div class="flex flex-col py-2">
-              <span
-                class="font-semibold text-[15px] flex items-center gap-2"
-                :class="[
-                  isIndexFile(data)
-                    ? 'text-[#6f942e]'
-                    : data.isSchema
-                      ? 'text-cyan-400'
-                      : 'bg-white/[0.03]',
-                ]"
-              >
-                {{ data.data?.title || data.name.replace(/-/g, " ") }}
-
-                <span
-                  v-if="isIndexFile(data)"
-                  class="text-[9px] border border-[#6f942e] text-[#6f942e] px-1 rounded uppercase tracking-wider font-bold"
-                >
-                  Capa
-                </span>
-                <span
-                  v-if="data.isSchema"
-                  class="text-[9px] border border-cyan-500 text-cyan-500 px-1 rounded uppercase tracking-wider font-bold"
-                >
-                  Modelo
-                </span>
-              </span>
-              <span
-                class="text-[10px] text-slate-500 font-mono mt-0.5 flex gap-1"
-              >
-                {{ data.name }}
-              </span>
-            </div>
-          </template>
-        </Column>
-
-        <Column header="Data" style="width: 8rem" sortable field="data.date">
-          <template #body="{ data }">
-            <span class="text-slate-500 text-xs font-mono">{{
-              formatDate(data.data?.date)
-            }}</span>
-          </template>
-        </Column>
-
-        <Column header="Status" style="width: 6rem" field="data.draft">
-          <template #body="{ data }">
-            <span
-              v-if="data.data?.draft === true"
-              class="text-[10px] bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded border border-amber-500/30"
-            >
-              Rascunho
-            </span>
-            <span
-              v-else-if="data.isSchema"
-              class="text-[10px] text-cyan-500/70"
-            >
-              Config
-            </span>
-            <span
-              v-else
-              class="text-[10px] text-slate-600 flex items-center gap-1"
-            >
-              Publicado
-            </span>
-          </template>
-        </Column>
-      </DataTable>
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Rascunho
+      </span>
+      <span
+        v-else-if="data.isSchema"
+        class="text-[10px] font-bold text-cyan-500 flex items-center gap-1.5"
+      >
+        <i class="pi pi-cog text-[10px]"></i> Config
+      </span>
+      <span
+        v-else
+        class="text-[10px] font-bold text-slate-500 flex items-center gap-1.5"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-[#6f942e] opacity-50"></span> Publicado
+      </span>
+    </template>
+  </Column>
+</DataTable>
 
       <div
         v-if="filteredFiles.length === 0"
@@ -407,37 +369,47 @@ const formatDate = (dateString?: string) => {
 
 <style scoped>
 :deep(.p-row-reorder-icon) {
-  color: #64748b;
+  color: #475569; /* slate-600 */
   cursor: grab;
+  transition: color 0.2s;
 }
 :deep(.p-row-reorder-icon:hover) {
   color: #6f942e;
 }
 :deep(.p-datatable-header-cell) {
   background: #141b18 !important;
-  border: none;
-  padding: 10px 16px;
-  color: #64748b;
+  border: none !important;
+  padding: 12px 16px !important;
+  color: #64748b !important;
 }
+
+/* Fundo da tabela transparente */
 :deep(.p-datatable-tbody > tr) {
-  background: transparent;
-  transition: background-color 0.2s;
+  background: transparent !important;
+  transition: background-color 0.15s ease-in-out;
 }
+
+/* REMOVE O EFEITO ZEBRADO */
 :deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: transparent !important;
 }
+
+/* Hover mais sutil e profissional */
 :deep(.p-datatable-tbody > tr:hover) {
-  background: rgba(111, 148, 46, 0.15) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
   cursor: pointer;
 }
+
+/* Borda inferior suave para as células */
 :deep(.p-datatable-tbody > tr > td) {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
-  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+  padding: 0.25rem 1rem !important;
 }
+
 :deep(.p-paginator) {
   border-radius: 0 !important;
   background: #141b18 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.03) !important;
 }
 :deep(.p-datatable-wrapper) {
   flex: 1;
