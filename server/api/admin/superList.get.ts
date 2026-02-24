@@ -12,8 +12,8 @@ export default defineEventHandler(async (event) => {
 
   const site =
     getCookie(event, "cms_site_context") ||
-    config.public?.siteName 
-    console.log("🚀 ~ config.public?.siteName:", config.public?.siteName)
+    config.siteName 
+    console.log("🚀 ~ config.siteName:", config.siteName)
 
   console.log("🚀 ~ site:", site)
 

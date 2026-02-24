@@ -52,7 +52,7 @@ async function main() {
     console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER          ║`);
     console.log(`╚════════════════════════════════════════════════════╝${C.reset}\n`);
 
-    console.log(`${C.cyan}1.${C.reset} Criar novo site (Completo na pasta sites + Repo Git)`);
+    console.log(`${C.cyan}1.${C.reset} Criar novo site (Zero-Build / Symlink)`);
     console.log(`${C.cyan}2.${C.reset} Listar sites ativos`);
     console.log(`${C.cyan}3.${C.reset} Mudar nome de um projeto`);
     console.log(`${C.cyan}4.${C.reset} Pausar/Retomar projeto`);
@@ -92,6 +92,12 @@ async function createSite() {
 
     if (fs.existsSync(destSite)) throw new Error(`O site '${targetName}' já existe.`);
 
+    // 0. Validação da Fonte (Skeleton)
+    const templateOutput = path.join(PATHS.template_site, '.output');
+    if (!fs.existsSync(templateOutput)) {
+        throw new Error(`⚠️ A pasta .output não foi encontrada em ${PATHS.template_site}. Rode o build no template_0 primeiro!`);
+    }
+
     // 1. Porta e Info
     const infoData = await fs.readJson(PATHS.info_json);
     const NEXT_PORT = Math.max(infoData.last_port, 4000) + 1;
@@ -106,40 +112,37 @@ async function createSite() {
     }
     await fs.writeJson(path.join(destStorage, '_config.json'), { url: `https://${DOMAIN}`, port: NEXT_PORT.toString(), name: targetName }, { spaces: 2 });
 
-    // 3. Preparando Área de Produção
-    console.log('⚙️  Preparando Área de Produção...');
+    // 3. Preparando Área de Produção (Apenas criação da pasta, sem cópia pesada)
+    console.log('⚡ Preparando Área de Produção (Zero-Build)...');
     await fs.ensureDir(destSite);
-    await fs.copy(PATHS.template_site, destSite, {
-        filter: (src) => !['node_modules', '.git', '.nuxt', 'data', '.output', 'dist'].some(el => src.includes(el))
-    });
 
-    // 4. Criando Links Simbólicos
+    // 4. Criando Links Simbólicos (O Coração do SaaS)
     const siteLinks = [
+        // Links de Dados (Individuais do Cliente)
         { dest: path.join(destSite, 'content'), src: path.join(destStorage, 'content') },
         { dest: path.join(destSite, 'db'), src: path.join(destStorage, 'db') },
         { dest: path.join(destSite, 'data'), src: path.join(destStorage, 'data') },
+        
+        // Links Estruturais (Reaproveitados do Template Base)
+        { dest: path.join(destSite, '.output'), src: templateOutput },
+        { dest: path.join(destSite, 'node_modules'), src: path.join(PATHS.template_site, 'node_modules') },
         { dest: path.join(destSite, 'server'), src: PATHS.core_server },
         { dest: path.join(destSite, 'app', 'components', 'content'), src: PATHS.core_components }
     ];
-   for (const link of siteLinks) {
-        // Remove se por acaso existir algo no caminho para não dar erro no symlink
+
+    for (const link of siteLinks) {
         if (fs.existsSync(link.dest)) await fs.remove(link.dest);
-        
         if (fs.existsSync(link.src)) {
+            // Garante que o diretório pai existe (útil para app/components/content)
+            await fs.ensureDir(path.dirname(link.dest));
             await fs.ensureSymlink(link.src, link.dest);
         } else {
             console.warn(`${C.yellow}   ⚠️  Aviso: Fonte não encontrada para link: ${link.src}${C.reset}`);
         }
     }
 
-    // 5. Instalação e Build Inicial
-    console.log('📦 Instalando dependências (pnpm)...');
-    execSync('pnpm install --shamefully-hoist', { cwd: destSite, stdio: 'ignore' });
-    
-    console.log('🛠️  Executando build do Nuxt...');
-    execSync('pnpm run build', { cwd: destSite, stdio: 'inherit' });
-
-    // 6. Variáveis de Ambiente e Configuração PM2
+    // 5. Variáveis de Ambiente e Configuração PM2
+    console.log('📝 Gerando Configurações Locais...');
     const envContent = `NUXT_SITE_ID=${targetName}
 PORT=${NEXT_PORT}
 NODE_ENV=production
@@ -162,7 +165,7 @@ STORAGE_PATH=${APPS_ROOT}`;
 };`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), eco);
 
-    // 7. Repositório Git e Hook de Auto-Deploy Inteligente
+    // 6. Repositório Git e Hook Otimizado
     console.log('🛡️  Configurando Git Bare e Hooks...');
     await fs.ensureDir(destRepo);
     execSync(`git init --bare "${destRepo}"`);
@@ -172,6 +175,7 @@ export PATH="/home/maga/.local/share/pnpm:/home/maga/.nvm/versions/node/v24.12.0
 SITE_DIR="${destSite}"
 GIT_DIR="${destRepo}"
 STORAGE_DIR="${destStorage}"
+TEMPLATE_DIR="${PATHS.template_site}"
 CORE_SERVER="${PATHS.core_server}"
 CORE_COMPONENTS="${PATHS.core_components}"
 
@@ -179,56 +183,41 @@ echo "🚀 [AUTO-DEPLOY] Iniciando atualização do site..."
 git --work-tree="$SITE_DIR" --git-dir="$GIT_DIR" checkout -f main
 cd "$SITE_DIR"
 
-echo "🔗 Restaurando elos do ecossistema..."
-rm -rf content db data server app/components/content
+echo "🔗 Restaurando elos estruturais do ecossistema..."
+rm -rf content db data server app/components/content .output node_modules
 ln -sfn "$STORAGE_DIR/content" content
 ln -sfn "$STORAGE_DIR/data" data
 ln -sfn "$STORAGE_DIR/db" db
+ln -sfn "$TEMPLATE_DIR/.output" .output
+ln -sfn "$TEMPLATE_DIR/node_modules" node_modules
 ln -sfn "$CORE_SERVER" server
 mkdir -p app/components
 ln -sfn "$CORE_COMPONENTS" app/components/content
 
-echo "📦 Rodando pnpm install e build..."
-pnpm install --shamefully-hoist
-if pnpm run build; then
-    echo "🔄 Reiniciando site no PM2..."
-    pm2 reload "${targetName}:${NEXT_PORT}" || pm2 start ecosystem.config.cjs --update-env
-    echo "✅ [AUTO-DEPLOY] Sucesso!"
-else
-    echo "❌ [AUTO-DEPLOY] Erro no build! O site antigo continua rodando."
-    exit 1
-fi`;
+echo "🔄 Reiniciando site no PM2..."
+pm2 reload "${targetName}:${NEXT_PORT}" || pm2 start ecosystem.config.cjs --update-env
+echo "✅ [AUTO-DEPLOY] Sucesso Total (Zero-Build)!"`;
 
     await fs.writeFile(path.join(destRepo, 'hooks', 'post-receive'), hookContent);
     execSync(`chmod +x "${path.join(destRepo, 'hooks', 'post-receive')}"`);
 
-   // --- 8. POPULAR O REPOSITÓRIO (Sincronização Total) ---
-    console.log('📤 Sincronizando arquivos com o Repositório...');
+    // 7. POPULAR O REPOSITÓRIO (Sincronização)
+    console.log('📤 Inicializando Repositório...');
     try {
         const gitOpts = { cwd: destSite, maxBuffer: 1024 * 1024 * 10 }; 
-        
         execSync(`git init -b main`, gitOpts);
-        
-        // Configuração do Bot
         execSync(`git config user.email "bot@siriusstudio.site"`, gitOpts);
         execSync(`git config user.name "Sirius Bot"`, gitOpts);
-
-        // Adiciona TUDO, inclusive os links simbólicos (que o Git tratará como ponteiros)
         execSync(`git add .`, gitOpts);
-        
-        // Verifica se há algo para commit (evita erro caso a pasta esteja vazia)
-        execSync(`git commit -m "Initial Setup: ${targetName}"`, gitOpts);
-        
-        // Define o remote e faz o push forçado para garantir que o 'main' seja criado no Bare
+        execSync(`git commit -m "Initial Setup: ${targetName} (Symlinked)"`, gitOpts);
         try { execSync(`git remote add origin "${destRepo}"`, gitOpts); } catch(e) {}
         execSync(`git push -u origin main`, gitOpts);
-        
-        console.log(`${C.green}   ✅ Repositório pronto para clone!${C.reset}`);
     } catch(e) {
         console.warn(`${C.yellow}   ⚠️  Erro no Git: ${e.message}${C.reset}`);
     }
 
-    // 9. Iniciar PM2 e Caddy
+    // 8. Iniciar PM2 e Caddy
+    console.log('🚀 Iniciando Servidor...');
     execSync(`pm2 start ecosystem.config.cjs`, { cwd: destSite });
     execSync('pm2 save', { cwd: APPS_ROOT });
 
@@ -237,18 +226,24 @@ fi`;
     await fs.writeFile(path.join(PATHS.caddy_sites, `${targetName}.caddy`), caddyContent);
     reloadCaddy();
 
-    // 10. Atualizar Info JSON
-    infoData.sites.push({ id: targetName, port: NEXT_PORT, created_at: new Date().toISOString() });
+    // 9. Atualizar Info JSON (Adicionado a URL)
+    infoData.sites.push({ 
+        id: targetName, 
+        port: NEXT_PORT, 
+        url: `https://${DOMAIN}`, // Pronto para a API do painel!
+        created_at: new Date().toISOString(),
+        status: "active"
+    });
     infoData.last_port = NEXT_PORT;
     await fs.writeJson(PATHS.info_json, infoData, { spaces: 2 });
 
-    console.log(`${C.green}\n✅ Tudo pronto! Para clonar localmente:${C.reset}`);
+    console.log(`${C.green}\n✅ Tudo pronto em tempo recorde! Para clonar localmente:${C.reset}`);
     console.log(`${C.cyan}git clone maga@siriusstudio.site:${destRepo}${C.reset}`);
 }
 
 async function listSites() {
     const info = await fs.readJson(PATHS.info_json);
-    console.table(info.sites.map(s => ({ ID: s.id, PORT: s.port, URL: `${s.id}.siriusstudio.site` })));
+    console.table(info.sites.map(s => ({ ID: s.id, PORT: s.port, URL: s.url || `${s.id}.siriusstudio.site` })));
 }
 
 async function renameSite() { console.log("Em breve..."); }
@@ -285,7 +280,6 @@ async function deleteSite() {
     try {
         console.log('🛑 Parando processo PM2...');
         try {
-            // CWD fixo no APPS_ROOT evita erro de getcwd() se você rodar o script de uma pasta deletada
             execSync(`pm2 delete "${target.id}:${target.port}"`, { stdio: 'ignore', cwd: APPS_ROOT });
             execSync('pm2 save', { cwd: APPS_ROOT });
         } catch (e) { console.log(C.dim + "   (Processo PM2 não encontrado ou já parado)" + C.reset); }
