@@ -52,7 +52,7 @@ async function main() {
     console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER          ║`);
     console.log(`╚════════════════════════════════════════════════════╝${C.reset}\n`);
 
-    console.log(`${C.cyan}1.${C.reset} Criar novo site (Zero-Build / Symlink)`);
+    console.log(`${C.cyan}1.${C.reset} Criar novo site (Cópia Física + Zero-Build)`);
     console.log(`${C.cyan}2.${C.reset} Listar sites ativos`);
     console.log(`${C.cyan}3.${C.reset} Mudar nome de um projeto`);
     console.log(`${C.cyan}4.${C.reset} Pausar/Retomar projeto`);
@@ -112,26 +112,34 @@ async function createSite() {
     }
     await fs.writeJson(path.join(destStorage, '_config.json'), { url: `https://${DOMAIN}`, port: NEXT_PORT.toString(), name: targetName }, { spaces: 2 });
 
-    // 3. Preparando Área de Produção (Apenas criação da pasta, sem cópia pesada)
-    console.log('⚡ Preparando Área de Produção (Zero-Build)...');
-    await fs.ensureDir(destSite);
+    // 3. Preparando Área de Produção (Cópia Completa do Skeleton)
+    console.log('⚡ Copiando arquivos do template (incluindo .output e node_modules)...');
+    await fs.copy(PATHS.template_site, destSite, {
+        filter: (src) => {
+            const basename = path.basename(src);
+            // Evita copiar o repositório git do template original
+            if (basename === '.git') return false; 
+            return true;
+        }
+    });
 
-    // 4. Criando Links Simbólicos (O Coração do SaaS)
+    // 4. Criando Links Simbólicos (Sobrescrevendo as pastas base copiadas)
+    console.log('🔗 Configurando Links Simbólicos (Storage e Core)...');
     const siteLinks = [
         // Links de Dados (Individuais do Cliente)
         { dest: path.join(destSite, 'content'), src: path.join(destStorage, 'content') },
         { dest: path.join(destSite, 'db'), src: path.join(destStorage, 'db') },
         { dest: path.join(destSite, 'data'), src: path.join(destStorage, 'data') },
         
-        // Links Estruturais (Reaproveitados do Template Base)
-        { dest: path.join(destSite, '.output'), src: templateOutput },
-        { dest: path.join(destSite, 'node_modules'), src: path.join(PATHS.template_site, 'node_modules') },
+        // Links Estruturais (Reaproveitados do Core)
         { dest: path.join(destSite, 'server'), src: PATHS.core_server },
         { dest: path.join(destSite, 'app', 'components', 'content'), src: PATHS.core_components }
     ];
 
     for (const link of siteLinks) {
+        // Remove a pasta/arquivo se o fs.copy tiver trazido do template_0
         if (fs.existsSync(link.dest)) await fs.remove(link.dest);
+        
         if (fs.existsSync(link.src)) {
             // Garante que o diretório pai existe (útil para app/components/content)
             await fs.ensureDir(path.dirname(link.dest));
@@ -184,12 +192,10 @@ git --work-tree="$SITE_DIR" --git-dir="$GIT_DIR" checkout -f main
 cd "$SITE_DIR"
 
 echo "🔗 Restaurando elos estruturais do ecossistema..."
-rm -rf content db data server app/components/content .output node_modules
+rm -rf content db data server app/components/content 
 ln -sfn "$STORAGE_DIR/content" content
 ln -sfn "$STORAGE_DIR/data" data
 ln -sfn "$STORAGE_DIR/db" db
-ln -sfn "$TEMPLATE_DIR/.output" .output
-ln -sfn "$TEMPLATE_DIR/node_modules" node_modules
 ln -sfn "$CORE_SERVER" server
 mkdir -p app/components
 ln -sfn "$CORE_COMPONENTS" app/components/content
