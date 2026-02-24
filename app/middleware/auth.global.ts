@@ -1,56 +1,63 @@
 // middleware/auth.global.ts
 export default defineNuxtRouteMiddleware((to, from) => {
-  // 1. Lê o cookie (seu "crachá" de acesso público)
   const siteContext = useCookie('cms_site_context');
   
-  // 2. Verifica se a URL está pedindo um site específico (vindo do atalho)
-  const requestedSite = to.query.domain;
+  // Captura o site de ?site= ou ?domain=
+  const requestedSite = to.query.site || to.query.domain;
+  const isProtectedRoute = to.path.startsWith('/editor');
 
   // ======================================================================
-  // NOVO CASO: Conflito de Sessão (Tentou editar o Site B estando logado no Site A)
+  // 1. CONFLITO DE SESSÃO (Logado em A, pediu B)
   // ======================================================================
   if (siteContext.value && requestedSite && requestedSite !== siteContext.value) {
-    console.warn(`[Auth] Sessão do ${siteContext.value} invalidada. Redirecionando para login do ${requestedSite}`);
+    // "Mata" a sessão no front imediatamente
+    siteContext.value = null; 
     
-    // Limpa o crachá atual do frontend
-    siteContext.value = null;
+    // Trava de segurança: Se o redirecionamento já está indo para a tela de login
+    // com o domínio do novo site (B), nós "deixamos passar" para evitar loop.
+    if (to.path === '/login' && to.query.domain === requestedSite) {
+        return; 
+    }
 
-    // Redireciona para o login passando o novo domínio
+    // Se não, forçamos o redirecionamento para o login do site novo
     return navigateTo({
       path: '/login',
       query: {
-        domain: requestedSite,             // Passa o nome para preencher o input do login
-        redirect: to.query.path || ''      // Salva o arquivo que ele queria editar
+        domain: requestedSite,
+        redirect: to.query.path || ''
       }
     });
   }
 
   // ======================================================================
-  // CASO 1: Tentou entrar no Editor SEM cookie -> Manda pro Login
+  // 2. PROTEÇÃO DO EDITOR (Sem cookie -> Login)
   // ======================================================================
-  const isProtectedRoute = to.path.startsWith('/editor');
-  
   if (isProtectedRoute && !siteContext.value) {
     return navigateTo({
       path: '/login',
       query: {
-        domain: requestedSite,        // Se veio do atalho, repassa para o form
-        redirect: to.query.path || '' // Repassa o path
+        domain: requestedSite,
+        redirect: to.query.path || ''
       }
     });
   }
 
   // ======================================================================
-  // CASO 2: Tentou entrar no Login JÁ TENDO cookie -> Manda pro Editor
+  // 3. JÁ LOGADO (No Login -> Editor)
   // ======================================================================
   if (to.path === '/login' && siteContext.value) {
-    // Como ele já está logado, garantimos que a URL mostre o site correto do cookie
-    return navigateTo({
-      path: '/editor',
-      query: { 
-        site: siteContext.value, 
-        path: to.query.redirect || 'content/_index.md' // Usa redirect se existir, senão default
-      }
-    });
+    // Só redirecionamos para o editor se o usuário NÃO estiver tentando
+    // acessar especificamente um domínio diferente do que ele está logado.
+    if (!requestedSite || requestedSite === siteContext.value) {
+        const targetPath = to.query.redirect || 'content/_index.md';
+        
+        return navigateTo({
+          path: '/editor',
+          query: { 
+            site: siteContext.value, // ERRO CORRIGIDO: antes estava 'domain:'
+            path: targetPath 
+          }
+        });
+    }
   }
 });
