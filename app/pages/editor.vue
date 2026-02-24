@@ -990,7 +990,7 @@ const editPageFromPreview = async () => {
 };
 
 onMounted(async () => { // <--- Adicionado o async aqui
-  const requestedSite = route.query.site
+  const requestedSite = route.query.domain
   
   if (!requestedSite) return
 

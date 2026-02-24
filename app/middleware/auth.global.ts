@@ -4,7 +4,7 @@ export default defineNuxtRouteMiddleware((to, from) => {
   const siteContext = useCookie('cms_site_context');
   
   // 2. Verifica se a URL está pedindo um site específico (vindo do atalho)
-  const requestedSite = to.query.site;
+  const requestedSite = to.query.domain;
 
   // ======================================================================
   // NOVO CASO: Conflito de Sessão (Tentou editar o Site B estando logado no Site A)
