@@ -148,6 +148,7 @@ NUXT_PORT=${NEXT_PORT}
 NUXT_NODE_ENV=production
 NUXT_PUBLIC_SITE_URL=https://${DOMAIN}
 NUXT_JWT_SECRET=uma_chave_muito_longa_e_aleatoria_123456
+NUXT_SIRIUS_URL="https://siriusstudio.site"
 NUXT_STORAGE_PATH=${APPS_ROOT}`;
     await fs.writeFile(path.join(destSite, '.env'), envContent);
     const eco = `module.exports = { 
