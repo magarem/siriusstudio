@@ -118,7 +118,8 @@ async function createSite() {
         filter: (src) => {
             const basename = path.basename(src);
             // Evita copiar o repositório git do template original
-            if (basename === '.git') return false; 
+            if (basename === '.git') return false;
+            if (basename === 'node_modules') return false; 
             return true;
         }
     });
