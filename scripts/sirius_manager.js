@@ -144,17 +144,17 @@ async function createSite() {
     // 5. Variáveis de Ambiente e Configuração PM2
     console.log('📝 Gerando Configurações Locais...');
     const envContent = `NUXT_SITE_ID=${targetName}
-PORT=${NEXT_PORT}
-NODE_ENV=production
+NUXT_PORT=${NEXT_PORT}
+NUXT_NODE_ENV=production
 NUXT_PUBLIC_SITE_URL=https://${DOMAIN}
-JWT_SECRET=uma_chave_muito_longa_e_aleatoria_123456
-STORAGE_PATH=${APPS_ROOT}`;
+NUXT_JWT_SECRET=uma_chave_muito_longa_e_aleatoria_123456
+NUXT_STORAGE_PATH=${APPS_ROOT}`;
     await fs.writeFile(path.join(destSite, '.env'), envContent);
 
     const eco = `module.exports = { 
   apps: [{ 
     name: "${targetName}:${NEXT_PORT}", 
-    script: "./.output/server/index.mjs", 
+    script: "bun ./.output/server/index.mjs", 
     cwd: "${destSite}", 
     env: { 
       NODE_ENV: "production", 
