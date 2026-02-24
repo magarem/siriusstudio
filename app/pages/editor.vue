@@ -990,6 +990,24 @@ const editPageFromPreview = async () => {
 };
 
 onMounted(() => {
+
+const requestedSite = route.query.site
+  
+  if (!requestedSite) return
+
+  // Se o site que ele quer editar é diferente do que está no cookie da sessão atual
+  if (requestedSite !== siteContext.value) {
+    console.warn(`🔒 Sessão pertence a [${siteContext.value}], mas pediu [${requestedSite}]. Forçando re-login...`)
+    
+    // Limpa o contexto do frontend
+    siteContext.value = null 
+    
+    await $fetch("/api/auth/logout", { method: "POST" });
+
+    // Redireciona para o login passando o domínio desejado
+    const targetPath = route.query.path || ''
+    navigateTo(`/login?domain=${requestedSite}&redirect=${targetPath}`)
+
   window.addEventListener("message", handleMessageFromPreview);
   window.addEventListener("keydown", handleKeydown);
 });

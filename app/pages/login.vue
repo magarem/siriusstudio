@@ -88,7 +88,7 @@ const handleLogin = async () => {
       
       // Usamos window.location para garantir que o middleware de auth 
       // do Nuxt reconheça o novo cookie auth_token fresquinho.
-      window.location.href = `/editor?path=${targetPath}`
+      window.location.href = `/editor?path=${targetPath}&site=${route.query.site}`
     }
   } catch (err) {
     alert('Erro de identificação. Verifique os dados e tente novamente.')
