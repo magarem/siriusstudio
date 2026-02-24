@@ -98,9 +98,9 @@ async function createSite() {
         throw new Error(`⚠️ A pasta .output não foi encontrada em ${PATHS.template_site}. Rode o build no template_0 primeiro!`);
     }
 
-    // 1. Porta e Info
+    // 1. Porta e Info (Ajustado para faixa segura 10000+)
     const infoData = await fs.readJson(PATHS.info_json);
-    const NEXT_PORT = Math.max(infoData.last_port, 4000) + 1;
+    const NEXT_PORT = Math.max(infoData.last_port, 10000) + 1;
     const DOMAIN = `${targetName}.siriusstudio.site`;
 
     // 2. Configurando Storage
@@ -163,7 +163,7 @@ NUXT_STORAGE_PATH=${APPS_ROOT}`;
     const eco = `module.exports = { 
   apps: [{ 
     name: "${targetName}:${NEXT_PORT}", 
-    script: "pnpm ./.output/server/index.mjs", 
+    script: "bun ./.output/server/index.mjs", 
     cwd: "${destSite}", 
     env: { 
       NODE_ENV: "production", 
@@ -174,8 +174,8 @@ NUXT_STORAGE_PATH=${APPS_ROOT}`;
 };`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), eco);
 
-    // 6. Dependências (A Mágica do Bun)
-    console.log('📦 Instalando dependências ultra-rápido (pnpm)...');
+    // 6. Dependências (Armazenamento Global do pnpm)
+    console.log('📦 Instalando dependências (pnpm)...');
     execSync('pnpm install', { cwd: destSite, stdio: 'ignore' });
 
     // 7. Repositório Git e Hook Otimizado
