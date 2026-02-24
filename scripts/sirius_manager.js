@@ -52,7 +52,7 @@ async function main() {
     console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER          ║`);
     console.log(`╚════════════════════════════════════════════════════╝${C.reset}\n`);
 
-    console.log(`${C.cyan}1.${C.reset} Criar novo site (Zero-Build + Bun Install)`);
+    console.log(`${C.cyan}1.${C.reset} Criar novo site (Zero-Build + pnpm Install)`);
     console.log(`${C.cyan}2.${C.reset} Listar sites ativos`);
     console.log(`${C.cyan}3.${C.reset} Mudar nome de um projeto`);
     console.log(`${C.cyan}4.${C.reset} Pausar/Retomar projeto`);
@@ -117,7 +117,7 @@ async function createSite() {
     await fs.copy(PATHS.template_site, destSite, {
         filter: (src) => {
             const basename = path.basename(src);
-            // Ignora o repositório original e o node_modules (o Bun vai recriar!)
+            // Ignora o repositório original e o node_modules (o pnpm vai recriar!)
             if (basename === '.git' || basename === 'node_modules') return false; 
             return true;
         }
@@ -163,7 +163,7 @@ NUXT_STORAGE_PATH=${APPS_ROOT}`;
     const eco = `module.exports = { 
   apps: [{ 
     name: "${targetName}:${NEXT_PORT}", 
-    script: "bun ./.output/server/index.mjs", 
+    script: "pnpm ./.output/server/index.mjs", 
     cwd: "${destSite}", 
     env: { 
       NODE_ENV: "production", 
@@ -175,8 +175,8 @@ NUXT_STORAGE_PATH=${APPS_ROOT}`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), eco);
 
     // 6. Dependências (A Mágica do Bun)
-    console.log('📦 Instalando dependências ultra-rápido (Bun)...');
-    execSync('bun install', { cwd: destSite, stdio: 'ignore' });
+    console.log('📦 Instalando dependências ultra-rápido (pnpm)...');
+    execSync('pnpm install', { cwd: destSite, stdio: 'ignore' });
 
     // 7. Repositório Git e Hook Otimizado
     console.log('🛡️  Configurando Git Bare e Hooks...');
@@ -205,8 +205,8 @@ ln -sfn "$CORE_SERVER" server
 mkdir -p app/components
 ln -sfn "$CORE_COMPONENTS" app/components/content
 
-echo "📦 Reinstalando dependências (Bun)..."
-bun install
+echo "📦 Reinstalando dependências (pnpm)..."
+pnpm install
 
 echo "🔄 Reiniciando site no PM2..."
 pm2 reload "${targetName}:${NEXT_PORT}" || pm2 start ecosystem.config.cjs --update-env
@@ -223,7 +223,7 @@ echo "✅ [AUTO-DEPLOY] Sucesso Total (Zero-Build)!"`;
         execSync(`git config user.email "bot@siriusstudio.site"`, gitOpts);
         execSync(`git config user.name "Sirius Bot"`, gitOpts);
         execSync(`git add .`, gitOpts);
-        execSync(`git commit -m "Initial Setup: ${targetName} (Symlinked & Bun)"`, gitOpts);
+        execSync(`git commit -m "Initial Setup: ${targetName} (Symlinked & pnpm)"`, gitOpts);
         try { execSync(`git remote add origin "${destRepo}"`, gitOpts); } catch(e) {}
         execSync(`git push -u origin main`, gitOpts);
     } catch(e) {
