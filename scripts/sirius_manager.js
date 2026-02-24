@@ -150,7 +150,6 @@ NUXT_PUBLIC_SITE_URL=https://${DOMAIN}
 NUXT_JWT_SECRET=uma_chave_muito_longa_e_aleatoria_123456
 NUXT_STORAGE_PATH=${APPS_ROOT}`;
     await fs.writeFile(path.join(destSite, '.env'), envContent);
-
     const eco = `module.exports = { 
   apps: [{ 
     name: "${targetName}:${NEXT_PORT}", 
