@@ -52,7 +52,7 @@ async function main() {
     console.log(`║        🌟 SIRIUS STUDIO ECOSYSTEM MANAGER          ║`);
     console.log(`╚════════════════════════════════════════════════════╝${C.reset}\n`);
 
-    console.log(`${C.cyan}1.${C.reset} Criar novo site (Cópia Física + Zero-Build)`);
+    console.log(`${C.cyan}1.${C.reset} Criar novo site (Zero-Build + Bun Install)`);
     console.log(`${C.cyan}2.${C.reset} Listar sites ativos`);
     console.log(`${C.cyan}3.${C.reset} Mudar nome de um projeto`);
     console.log(`${C.cyan}4.${C.reset} Pausar/Retomar projeto`);
@@ -112,14 +112,13 @@ async function createSite() {
     }
     await fs.writeJson(path.join(destStorage, '_config.json'), { url: `https://${DOMAIN}`, port: NEXT_PORT.toString(), name: targetName }, { spaces: 2 });
 
-    // 3. Preparando Área de Produção (Cópia Completa do Skeleton)
-    console.log('⚡ Copiando arquivos do template (incluindo .output e node_modules)...');
+    // 3. Preparando Área de Produção (Cópia Otimizada)
+    console.log('⚡ Copiando arquivos do template (otimizado)...');
     await fs.copy(PATHS.template_site, destSite, {
         filter: (src) => {
             const basename = path.basename(src);
-            // Evita copiar o repositório git do template original
-            if (basename === '.git') return false;
-            if (basename === 'node_modules') return false; 
+            // Ignora o repositório original e o node_modules (o Bun vai recriar!)
+            if (basename === '.git' || basename === 'node_modules') return false; 
             return true;
         }
     });
@@ -160,6 +159,7 @@ NUXT_JWT_SECRET=uma_chave_muito_longa_e_aleatoria_123456
 NUXT_SIRIUS_URL="https://siriusstudio.site"
 NUXT_STORAGE_PATH=${APPS_ROOT}`;
     await fs.writeFile(path.join(destSite, '.env'), envContent);
+
     const eco = `module.exports = { 
   apps: [{ 
     name: "${targetName}:${NEXT_PORT}", 
@@ -174,13 +174,17 @@ NUXT_STORAGE_PATH=${APPS_ROOT}`;
 };`;
     await fs.writeFile(path.join(destSite, 'ecosystem.config.cjs'), eco);
 
-    // 6. Repositório Git e Hook Otimizado
+    // 6. Dependências (A Mágica do Bun)
+    console.log('📦 Instalando dependências ultra-rápido (Bun)...');
+    execSync('bun install', { cwd: destSite, stdio: 'ignore' });
+
+    // 7. Repositório Git e Hook Otimizado
     console.log('🛡️  Configurando Git Bare e Hooks...');
     await fs.ensureDir(destRepo);
     execSync(`git init --bare "${destRepo}"`);
 
     const hookContent = `#!/bin/bash
-export PATH="/home/maga/.local/share/pnpm:/home/maga/.nvm/versions/node/v24.12.0/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+export PATH="/home/maga/.bun/bin:/home/maga/.local/share/pnpm:/home/maga/.nvm/versions/node/v24.12.0/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 SITE_DIR="${destSite}"
 GIT_DIR="${destRepo}"
 STORAGE_DIR="${destStorage}"
@@ -193,13 +197,16 @@ git --work-tree="$SITE_DIR" --git-dir="$GIT_DIR" checkout -f main
 cd "$SITE_DIR"
 
 echo "🔗 Restaurando elos estruturais do ecossistema..."
-rm -rf content db data server app/components/content 
+rm -rf content db data server app/components/content node_modules
 ln -sfn "$STORAGE_DIR/content" content
 ln -sfn "$STORAGE_DIR/data" data
 ln -sfn "$STORAGE_DIR/db" db
 ln -sfn "$CORE_SERVER" server
 mkdir -p app/components
 ln -sfn "$CORE_COMPONENTS" app/components/content
+
+echo "📦 Reinstalando dependências (Bun)..."
+bun install
 
 echo "🔄 Reiniciando site no PM2..."
 pm2 reload "${targetName}:${NEXT_PORT}" || pm2 start ecosystem.config.cjs --update-env
@@ -208,7 +215,7 @@ echo "✅ [AUTO-DEPLOY] Sucesso Total (Zero-Build)!"`;
     await fs.writeFile(path.join(destRepo, 'hooks', 'post-receive'), hookContent);
     execSync(`chmod +x "${path.join(destRepo, 'hooks', 'post-receive')}"`);
 
-    // 7. POPULAR O REPOSITÓRIO (Sincronização)
+    // 8. POPULAR O REPOSITÓRIO (Sincronização)
     console.log('📤 Inicializando Repositório...');
     try {
         const gitOpts = { cwd: destSite, maxBuffer: 1024 * 1024 * 10 }; 
@@ -216,14 +223,14 @@ echo "✅ [AUTO-DEPLOY] Sucesso Total (Zero-Build)!"`;
         execSync(`git config user.email "bot@siriusstudio.site"`, gitOpts);
         execSync(`git config user.name "Sirius Bot"`, gitOpts);
         execSync(`git add .`, gitOpts);
-        execSync(`git commit -m "Initial Setup: ${targetName} (Symlinked)"`, gitOpts);
+        execSync(`git commit -m "Initial Setup: ${targetName} (Symlinked & Bun)"`, gitOpts);
         try { execSync(`git remote add origin "${destRepo}"`, gitOpts); } catch(e) {}
         execSync(`git push -u origin main`, gitOpts);
     } catch(e) {
         console.warn(`${C.yellow}   ⚠️  Erro no Git: ${e.message}${C.reset}`);
     }
 
-    // 8. Iniciar PM2 e Caddy
+    // 9. Iniciar PM2 e Caddy
     console.log('🚀 Iniciando Servidor...');
     execSync(`pm2 start ecosystem.config.cjs`, { cwd: destSite });
     execSync('pm2 save', { cwd: APPS_ROOT });
@@ -233,11 +240,11 @@ echo "✅ [AUTO-DEPLOY] Sucesso Total (Zero-Build)!"`;
     await fs.writeFile(path.join(PATHS.caddy_sites, `${targetName}.caddy`), caddyContent);
     reloadCaddy();
 
-    // 9. Atualizar Info JSON (Adicionado a URL)
+    // 10. Atualizar Info JSON (Adicionado a URL)
     infoData.sites.push({ 
         id: targetName, 
         port: NEXT_PORT, 
-        url: `https://${DOMAIN}`, // Pronto para a API do painel!
+        url: `https://${DOMAIN}`,
         created_at: new Date().toISOString(),
         status: "active"
     });
