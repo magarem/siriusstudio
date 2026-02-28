@@ -60,11 +60,11 @@
 definePageMeta({ layout: ''})
 
 const route = useRoute()
+// O Nuxt recomenda usar o router interno em vez do window.location
 const router = useRouter()
 
 const form = ref({ 
-  // 1. Tenta pegar o domínio da URL (?site=...) ou deixa vazio
-  domain: route.query.domain || '', 
+  domain: route.query.site || '', 
   username: '', 
   password: '' 
 })
@@ -82,15 +82,24 @@ const handleLogin = async () => {
     })
     
     if (res.success) {
-      // 2. Lógica de Redirecionamento Inteligente
-      // Se houver um 'path' na URL (vindo do F11), mantém ele.
       const targetPath = route.query.path || 'content'
       
-      // Usamos window.location para garantir que o middleware de auth 
-      // do Nuxt reconheça o novo cookie auth_token fresquinho.
-      window.location.href = `/editor?path=${targetPath}&domain=${route.query.domain}`
+      // TRUQUE DE MESTRE: Atualiza a memória reativa do Nuxt manualmente 
+      // para o middleware não ficar "cego" durante a transição
+      const siteCookie = useCookie('cms_site_context')
+      siteCookie.value = form.value.domain
+      
+      // Navegação nativa forçando a recarga do contexto (external: true)
+      await navigateTo({
+        path: '/editor',
+        query: {
+          site: form.value.domain,
+          path: targetPath
+        }
+      }, { external: true }) 
     }
   } catch (err) {
+    console.error('Falha no login:', err)
     alert('Erro de identificação. Verifique os dados e tente novamente.')
   }
 }

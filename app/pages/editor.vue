@@ -731,12 +731,16 @@ const handlePublish = async () => {
   loadingPublish.value = true;
   // toast.add({ severity: "info", summary: "Publicando...", life: 1000 });
   try {
-    const result = await $fetch("/api/admin/compile-all", {
+    const result = await $fetch("/api/admin/publish", {
       method: "POST",
       body: { site: siteContext.value },
     });
     if (result.success)
-      toast.add({ severity: "success", summary: "Site publicado.", life: 1000 });
+      toast.add({
+        severity: "success",
+        summary: "Site publicado.",
+        life: 1000,
+      });
     else throw new Error(result.message);
   } catch (error) {
     toast.add({ severity: "error", summary: "Erro na publicação", life: 1000 });
@@ -915,17 +919,17 @@ const editPageFromPreview = async () => {
 
   // 1. Limpeza pesada: Se vier uma URL completa (http://...), pega só o caminho
   try {
-    if (path.startsWith('http')) {
+    if (path.startsWith("http")) {
       path = new URL(path).pathname;
     }
-  } catch(e) {}
+  } catch (e) {}
 
   // 2. Remove query params (? preview=true) e hashs (#secao)
-  path = path.split('?')[0].split('#')[0];
+  path = path.split("?")[0].split("#")[0];
 
   // 3. Garante que sempre começa com barra para não quebrar a concatenação
-  if (!path.startsWith('/')) {
-    path = '/' + path;
+  if (!path.startsWith("/")) {
+    path = "/" + path;
   }
 
   // 4. Normaliza (remove barra final para padronizar)
@@ -945,9 +949,9 @@ const editPageFromPreview = async () => {
   // CASO 2: TENTATIVA INTELIGENTE
   // Como garantimos que path começa com "/", a concatenação "content/..." funcionará perfeitamente.
   const candidates = [
-    `content${path}.md`,        // ex: content/sobre.md
+    `content${path}.md`, // ex: content/sobre.md
     `content${path}/_index.md`, // ex: content/sobre/_index.md
-    `content${path}/index.md`,  // ex: content/sobre/index.md
+    `content${path}/index.md`, // ex: content/sobre/index.md
   ];
 
   // Mostra no console do navegador quais arquivos ele está tentando achar (ótimo para debugar)
@@ -985,22 +989,25 @@ const editPageFromPreview = async () => {
     severity: "warn",
     summary: "Arquivo não encontrado",
     detail: `Não achei um correspondente para a rota: ${path}`,
-    life: 2500
+    life: 2500,
   });
 };
 
-onMounted(async () => { // <--- Adicionado o async aqui
-  const requestedSite = route.query.domain
-  
-  if (!requestedSite) return
+onMounted(async () => {
+  // <--- Adicionado o async aqui
+  const requestedSite = route.query.domain;
+
+  if (!requestedSite) return;
 
   // Se o site que ele quer editar é diferente do que está no cookie da sessão atual
   if (requestedSite !== siteContext.value) {
-    console.warn(`🔒 Sessão pertence a [${siteContext.value}], mas pediu [${requestedSite}]. Forçando re-login...`)
-    
+    console.warn(
+      `🔒 Sessão pertence a [${siteContext.value}], mas pediu [${requestedSite}]. Forçando re-login...`,
+    );
+
     // 1. Limpa o contexto do frontend
-    siteContext.value = null 
-    
+    siteContext.value = null;
+
     // 2. Chama o logout no servidor para limpar o cookie HttpOnly (auth_token)
     try {
       await $fetch("/api/auth/logout", { method: "POST" });
@@ -1009,8 +1016,8 @@ onMounted(async () => { // <--- Adicionado o async aqui
     }
 
     // 3. Redireciona para o login passando o domínio desejado
-    const targetPath = route.query.path || ''
-    return navigateTo(`/login?domain=${requestedSite}&redirect=${targetPath}`)
+    const targetPath = route.query.path || "";
+    return navigateTo(`/login?domain=${requestedSite}&redirect=${targetPath}`);
   }
 
   // Configuração de eventos (só acontece se NÃO houver conflito de site)
@@ -1028,64 +1035,130 @@ onUnmounted(() => {
   <div
     class="h-screen w-screen bg-[#0a0f0d] text-slate-300 flex flex-col overflow-hidden font-sans"
   >
-<header class="h-14 bg-[#141b18] border-b border-white/5 shrink-0 flex items-center justify-between px-4 z-20 select-none shadow-sm relative overflow-hidden gap-4">
-  
-  <div class="flex items-center shrink-0 z-20 group cursor-default">
-    <div class="flex items-center relative">
-      <div class="absolute -inset-2 bg-[#6f942e]/20 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-      
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-[#6f942e] drop-shadow-[0_0_6px_rgba(111,148,46,0.6)] animate-pulse-slow relative z-10">
-        <path fill-rule="evenodd" d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z" clip-rule="evenodd" />
-      </svg>
+    <header
+      class="h-14 bg-[#141b18] border-b border-white/5 shrink-0 flex items-center justify-between px-4 z-20 select-none shadow-sm relative overflow-hidden gap-4"
+    >
+      <div class="flex items-center shrink-0 z-20 group cursor-default">
+        <div class="flex items-center relative">
+          <div
+            class="absolute -inset-2 bg-[#6f942e]/20 rounded-full blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+          ></div>
 
-      <div class="flex items-baseline gap-1.5 ml-2 relative z-10">
-          <span class="font-black text-slate-100 text-sm uppercase tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400">SIRIUS</span>
-          <span class="font-bold text-[10px] text-[#6f942e] uppercase tracking-[0.2em]">STUDIO</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            class="w-5 h-5 text-[#6f942e] drop-shadow-[0_0_6px_rgba(111,148,46,0.6)] animate-pulse-slow relative z-10"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M10.788 3.21c.448-1.077 1.976-1.077 2.424 0l2.082 5.007 5.404.433c1.164.093 1.636 1.545.749 2.305l-4.117 3.527 1.257 5.273c.271 1.136-.964 2.033-1.96 1.425L12 18.354 7.373 21.18c-.996.608-2.231-.29-1.96-1.425l1.257-5.273-4.117-3.527c-.887-.76-.415-2.212.749-2.305l5.404-.433 2.082-5.006z"
+              clip-rule="evenodd"
+            />
+          </svg>
+
+          <div class="flex items-baseline gap-1.5 ml-2 relative z-10">
+            <span
+              class="font-black text-slate-100 text-sm uppercase tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-400"
+              >SIRIUS</span
+            >
+            <span
+              class="font-bold text-[10px] text-[#6f942e] uppercase tracking-[0.2em]"
+              >STUDIO</span
+            >
+          </div>
+        </div>
+
+        <span
+          v-if="siteContext"
+          class="text-white/10 mx-1 text-xl font-thin relative z-10"
+          >/</span
+        >
+
+        <div
+          v-if="siteContext"
+          class="flex items-center gap-2 _bg-white/5 _border _border-white/10 px-3 py-1 rounded-full shadow-inner relative z-10 group-hover:border-[#6f942e]/30 transition-colors"
+        >
+          <div
+            class="w-1.5 h-1.5 rounded-full bg-[#6f942e] animate-pulse"
+          ></div>
+          <span
+            class="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-slate-300 transition-colors"
+          >
+            {{ siteContext }}
+          </span>
+        </div>
       </div>
-    </div>
 
-    <span v-if="siteContext" class="text-white/10 mx-1 text-xl font-thin relative z-10">/</span>
-    
-    <div v-if="siteContext" class="flex items-center gap-2 _bg-white/5 _border _border-white/10 px-3 py-1 rounded-full shadow-inner relative z-10 group-hover:border-[#6f942e]/30 transition-colors">
-      <div class="w-1.5 h-1.5 rounded-full bg-[#6f942e] animate-pulse"></div>
-      <span class="text-[9px] font-black uppercase tracking-[0.15em] text-slate-400 group-hover:text-slate-300 transition-colors">
-        {{ siteContext }}
-      </span>
-    </div>
-  </div>
+      <div
+        class="absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-full max-w-lg pointer-events-none z-10"
+      >
+       
 
-  <div class="absolute left-1/2 -translate-x-1/2 flex items-center justify-center w-full max-w-lg pointer-events-none z-10">
-    <nav v-if="!isPreviewMode" class="flex items-center gap-1.5 text-[14px] font-mono px-3 py-1 bg-black/20 border border-white/5 rounded-md truncate pointer-events-auto shadow-inner transition-all">
-      <template v-for="(crumb, index) in folderBreadcrumbs" :key="crumb.path">
-        <span v-if="index > 0" class="text-slate-600">/</span>
-        <button @click="navigateToBreadcrumb(crumb)" :disabled="crumb.disabled" :class="['transition-colors max-w-[200px] truncate', crumb.disabled ? 'text-[#6f942e] font-bold cursor-default' : 'text-slate-500 hover:text-white cursor-pointer hover:underline']">{{ crumb.label }}</button>
-      </template>
-    </nav>
+        <div
+          v-if="isPreviewMode"
+          class="flex items-center gap-2 bg-black/40 border border-white/10 rounded-full px-4 py-1.5 w-full group pointer-events-auto shadow-inner transition-all animate-in zoom-in-95 duration-200"
+        >
+          <i class="pi pi-lock text-[10px] text-green-500"></i>
+          <span
+            class="text-[11px] font-mono text-slate-400 truncate flex-1 text-center select-all"
+            >{{ currentPreviewDisplayUrl }}</span
+          >
+          <i
+            class="pi pi-refresh text-[10px] text-slate-500 cursor-pointer hover:text-white transition-transform hover:rotate-180 duration-500"
+            @click="handlePreview"
+          ></i>
+        </div>
+      </div>
 
-    <div v-if="isPreviewMode" class="flex items-center gap-2 bg-black/40 border border-white/10 rounded-full px-4 py-1.5 w-full group pointer-events-auto shadow-inner transition-all animate-in zoom-in-95 duration-200">
-      <i class="pi pi-lock text-[10px] text-green-500"></i>
-      <span class="text-[11px] font-mono text-slate-400 truncate flex-1 text-center select-all">{{ currentPreviewDisplayUrl }}</span>
-      <i class="pi pi-refresh text-[10px] text-slate-500 cursor-pointer hover:text-white transition-transform hover:rotate-180 duration-500" @click="handlePreview"></i>
-    </div>
-  </div>
+      <div class="flex items-center justify-end gap-3 shrink-0 z-20">
+        <div
+          v-if="isPreviewMode"
+          class="flex items-center gap-1.5 animate-in fade-in duration-200"
+        >
+          <button
+            @click="editPageFromPreview"
+            class="flex items-center gap-1.5 px-2.5 py-1 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-[9px] uppercase tracking-wider rounded-sm transition-all shadow-[0_0_10px_rgba(111,148,46,0.2)]"
+            title="Editar a página atual"
+          >
+            <i class="pi pi-file-edit text-[10px]"></i
+            ><span class="hidden sm:inline">Editar Página</span>
+          </button>
+          <button
+            @click="isPreviewMode = false"
+            class="flex items-center justify-center w-6 h-6 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-sm transition-colors"
+            title="Fechar Preview (Esc)"
+          >
+            <i class="pi pi-times text-[10px]"></i>
+          </button>
+        </div>
 
-  <div class="flex items-center justify-end gap-3 shrink-0 z-20">
-    <div v-if="!isPreviewMode" class="flex items-center bg-white/5 rounded p-1 border border-white/5 gap-0.5">
-      <button @click="saveFile" v-if="currentFile" class="flex items-center gap-1.5 px-2.5 py-1 bg-[#6f942e] text-black font-bold text-[9px] uppercase tracking-wider rounded-sm hover:bg-[#5a7a23] transition-colors"><i class="pi pi-save text-[10px]"></i> Salvar</button>
-      <div v-if="currentFile" class="w-[1px] h-3 bg-white/10 mx-1"></div>
-      <button @click="handlePreview" class="flex items-center gap-1.5 px-2 py-1 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-[9px] uppercase tracking-wider rounded-sm transition-colors" title="Visualizar no Site"><i class="pi pi-eye text-[10px]"></i> Preview</button>
-      <button @click="handlePublish" class="flex items-center gap-1.5 px-2 py-1 hover:bg-white/10 text-slate-300 hover:text-white font-bold text-[9px] uppercase tracking-wider rounded-sm transition-colors"><i class="pi pi-cloud-upload text-[10px]"></i> Publicar</button>
-    </div>
+<div class="flex">
 
-    <div v-if="isPreviewMode" class="flex items-center gap-1.5 animate-in fade-in duration-200">
-      <button @click="editPageFromPreview" class="flex items-center gap-1.5 px-2.5 py-1 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-[9px] uppercase tracking-wider rounded-sm transition-all shadow-[0_0_10px_rgba(111,148,46,0.2)]" title="Editar a página atual"><i class="pi pi-file-edit text-[10px]"></i><span class="hidden sm:inline">Editar Página</span></button>
-      <button @click="isPreviewMode = false" class="flex items-center justify-center w-6 h-6 bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded-sm transition-colors" title="Fechar Preview (Esc)"><i class="pi pi-times text-[10px]"></i></button>
-    </div>
+   <button
+            @click="goToBackup"
+            class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500 mr-2"
+          >
+            <i class="pi pi-cog text-lg"></i>
+          </button>
 
-    <button @click="toggleUserMenu" class="flex items-center gap-2 w-8 h-8 justify-center rounded-full hover:bg-white/5 transition-all active:scale-90 border border-transparent hover:border-white/10"><i class="pi pi-user text-slate-400 text-xs"></i></button>
-    <Menu ref="userMenu" :model="userMenuItems" :popup="true" class="bg-[#1a2320] border-white/10" />
-  </div>
-</header>
+
+        <button
+          @click="toggleUserMenu"
+          class="flex items-center gap-2 w-8 h-8 justify-center rounded-full hover:bg-white/5 transition-all active:scale-90 border border-transparent hover:border-white/10"
+        >
+          <i class="pi pi-user text-slate-400 text-lg"></i>
+        </button>
+</div>
+        
+        <Menu
+          ref="userMenu"
+          :model="userMenuItems"
+          :popup="true"
+          class="bg-[#1a2320] border-white/10"
+        />
+      </div>
+    </header>
     <div class="flex-1 flex flex-col overflow-hidden relative">
       <div v-show="!isPreviewMode" class="flex-1 flex flex-row overflow-hidden">
         <aside
@@ -1098,12 +1171,7 @@ onUnmounted(() => {
           >
             <i class="pi pi-folder text-lg"></i>
           </button>
-          <button
-            @click="goToBackup"
-            class="w-8 h-8 rounded-md flex items-center justify-center text-zinc-500"
-          >
-            <i class="pi pi-cog text-lg"></i>
-          </button>
+         
           <Menu ref="settingsMenu" :model="settingsItems" :popup="true" />
         </aside>
 
@@ -1138,74 +1206,171 @@ onUnmounted(() => {
           class="fixed inset-0 z-50 cursor-col-resize bg-transparent"
         ></div>
 
-     <main class="flex-1 flex flex-col min-w-0 bg-[#0a0f0d] relative overflow-hidden">
-  <slot name="workspace-content">
-    
-    <div class="flex-1 flex flex-row overflow-hidden relative w-full h-full">
-      
-      <div class="flex-1 flex flex-col bg-[#0a0f0d] min-w-0 h-full relative">
-        <CollectionFiles
-          v-if="collectionPanelVisible"
-          :files="mainFiles"
-          :current-folder="mainFolder"
-          @select="handleNavigate.loadFile"
-          @create-item="createActions.openFile(mainFolder)"
-        />
-        <AdminMarkdownEditor
-          v-else-if="currentFile"
-          ref="markdownEditorRef"
-          class="w-full h-full"
-          :content="fileData.content"
-          @update:content="fileData.content = $event"
-          :site-context="siteContext"
-          :current-folder="mainFolder"
-          :current-file="currentFile"
-          @toggle-raw="isRawMode = !isRawMode" 
-          :is-raw-mode="isRawMode"
-          @open-image="imageActions.open()"
-        />
-      </div>
-
-      <div v-if="showMetaSidebar" class="flex flex-row h-full shrink-0">
-        
-        <div 
-          class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] bg-black/40 z-20 shrink-0 flex items-center justify-center group relative" 
-          @mousedown.prevent="startResizeFrontmatter"
+        <main
+          class="flex-1 flex flex-col min-w-0 bg-[#0a0f0d] relative overflow-hidden"
         >
-          <div class="w-[1px] h-8 bg-white/20 group-hover:bg-white/80 rounded-full"></div>
-        </div>
         
-      <div 
-   class="flex flex-col bg-[#141b18] border-l border-white/5 h-full transition-all duration-300" 
-   :style="{ width: isFrontmatterCollapsed ? '48px' : frontmatterWidth + 'px' }"
->
-   <div class="flex-1 flex flex-col overflow-hidden h-full w-full">
-      <AdminMetaEditor
-         v-if="currentFile && fields.length > 0"
-         :modelValue="fileData.frontmatter"
-         :frontmatter="fileData.frontmatter"
-         :fields="fields"
-         :site-context="siteContext"
-         :current-folder="mainFolder"
-         :site-url="userSiteUrl"
-         :is-collapsed="isFrontmatterCollapsed"
-         @toggle-collapse="isFrontmatterCollapsed = !isFrontmatterCollapsed"
-         @open-image="imageActions.open"
-         class="h-full w-full"
-      />
-      <div v-else class="p-4 text-xs text-slate-500 text-center flex flex-col items-center justify-center h-full gap-2">
-         <i class="pi pi-cog text-2xl opacity-20"></i>
-         <p v-show="!isFrontmatterCollapsed">{{ currentFile ? "Sem campos configurados." : "Selecione um arquivo." }}</p>
-      </div>
-   </div>
-</div>
-      </div>
 
-      <div v-if="isResizingFrontmatter" class="fixed inset-0 z-50 cursor-col-resize bg-transparent"></div>
+
+<div class="flex items-center justify-between w-full gap-4 p-2">
+  <nav
+    v-if="!isPreviewMode"
+    class="flex-1 flex items-center gap-1.5 text-[14px] font-mono px-3 py-1 bg-black/20 border border-white/5 rounded-md truncate pointer-events-auto shadow-inner transition-all overflow-hidden"
+  >
+    <template
+      v-for="(crumb, index) in folderBreadcrumbs"
+      :key="crumb.path"
+    >
+      <span v-if="index > 0" class="text-slate-600">/</span>
+      <button
+        @click="navigateToBreadcrumb(crumb)"
+        :disabled="crumb.disabled"
+        :class="[
+          'transition-colors max-w-[200px] truncate shrink-0',
+          crumb.disabled
+            ? 'text-[#6f942e] font-bold cursor-default'
+            : 'text-slate-500 hover:text-white cursor-pointer hover:underline',
+        ]"
+      >
+        {{ crumb.label }}
+      </button>
+    </template>
+  </nav>
+
+ <div v-if="!collectionPanelVisible" class="flex items-center bg-black/40 border border-white/10 rounded-md overflow-hidden shrink-0 h-[28px] shadow-lg backdrop-blur-sm">
     
-    </div>
-  </slot>
-</main>
+    <button
+      @click="saveFile"
+      v-if="currentFile"
+      class="flex items-center gap-2 px-3 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[9px] uppercase tracking-wider transition-all border-r border-white/5"
+    >
+      <i class="pi pi-save text-[10px]"></i>
+      <span>Salvar</span>
+    </button>
+    
+    <button
+      @click="handlePreview"
+      class="flex items-center gap-2 px-3 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[9px] uppercase tracking-wider transition-all border-r border-white/5"
+      title="Visualizar no Site"
+    >
+      <i class="pi pi-eye text-[10px]"></i>
+      <span>Preview</span>
+    </button>
+
+    <button
+      @click="handlePublish"
+      class="flex items-center gap-2 px-3 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[9px] uppercase tracking-wider transition-all"
+      title="Enviar para Produção"
+    >
+      <i class="pi pi-cloud-upload text-[10px]"></i>
+      <span>Publicar</span>
+    </button>
+  </div>
+
+
+
+
+</div>
+      
+
+      
+
+
+        
+
+
+
+
+          <slot name="workspace-content">
+            <div
+              class="flex-1 flex flex-row overflow-hidden relative w-full h-full"
+            >
+              <div
+                class="flex-1 flex flex-col bg-[#0a0f0d] min-w-0 h-full relative"
+              >
+                <CollectionFiles
+                  v-if="collectionPanelVisible"
+                  :files="mainFiles"
+                  :current-folder="mainFolder"
+                  @select="handleNavigate.loadFile"
+                  @create-item="createActions.openFile(mainFolder)"
+                  @refresh="handleNavigate.refresh"
+                />
+                <AdminMarkdownEditor
+                  v-else-if="currentFile"
+                  ref="markdownEditorRef"
+                  class="w-full h-full"
+                  :content="fileData.content"
+                  @update:content="fileData.content = $event"
+                  :site-context="siteContext"
+                  :current-folder="mainFolder"
+                  :current-file="currentFile"
+                  @toggle-raw="isRawMode = !isRawMode"
+                  :is-raw-mode="isRawMode"
+                  @open-image="imageActions.open()"
+                />
+              </div>
+
+              <div v-if="showMetaSidebar && !collectionPanelVisible" class="flex flex-row h-full shrink-0">
+                <div
+                  class="w-[4px] h-full cursor-col-resize hover:bg-[#6f942e] bg-black/40 z-20 shrink-0 flex items-center justify-center group relative"
+                  @mousedown.prevent="startResizeFrontmatter"
+                >
+                  <div
+                    class="w-[1px] h-8 bg-white/20 group-hover:bg-white/80 rounded-full"
+                  ></div>
+                </div>
+
+                <div
+                  class="flex flex-col bg-[#141b18] border-l border-white/5 h-full transition-all duration-300"
+                  :style="{
+                    width: isFrontmatterCollapsed
+                      ? '48px'
+                      : frontmatterWidth + 'px',
+                  }"
+                >
+                  <div
+                    class="flex-1 flex flex-col overflow-hidden h-full w-full"
+                  >
+                    <AdminMetaEditor
+                      v-if="currentFile && fields.length > 0"
+                      :modelValue="fileData.frontmatter"
+                      :frontmatter="fileData.frontmatter"
+                      :fields="fields"
+                      :site-context="siteContext"
+                      :current-folder="mainFolder"
+                      :site-url="userSiteUrl"
+                      :is-collapsed="isFrontmatterCollapsed"
+                      @toggle-collapse="
+                        isFrontmatterCollapsed = !isFrontmatterCollapsed
+                      "
+                      @open-image="imageActions.open"
+                      class="h-full w-full"
+                    />
+                    <div
+                      v-else
+                      class="p-4 text-xs text-slate-500 text-center flex flex-col items-center justify-center h-full gap-2"
+                    >
+                      <i class="pi pi-cog text-2xl opacity-20"></i>
+                      <p v-show="!isFrontmatterCollapsed">
+                        {{
+                          currentFile
+                            ? "Sem campos configurados."
+                            : "Selecione um arquivo."
+                        }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                v-if="isResizingFrontmatter"
+                class="fixed inset-0 z-50 cursor-col-resize bg-transparent"
+              ></div>
+            </div>
+          </slot>
+        </main>
       </div>
 
       <div v-if="isPreviewMode" class="flex-1 flex flex-col bg-white relative">

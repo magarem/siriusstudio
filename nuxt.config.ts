@@ -1,15 +1,15 @@
 // siriusstudio/nuxt.config.ts
 import Aura from "@primevue/themes/aura";
 export default defineNuxtConfig({
- vite: {
+  vite: {
     optimizeDeps: {
       exclude: [
-        '@codemirror/state',
-        '@codemirror/view',
-        '@codemirror/commands',
-        '@codemirror/language'
-      ]
-    }
+        "@codemirror/state",
+        "@codemirror/view",
+        "@codemirror/commands",
+        "@codemirror/language",
+      ],
+    },
   },
   runtimeConfig: {
     storagePath: process.env.STORAGE_PATH,
@@ -24,7 +24,7 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
   modules: [
-    '@nuxtjs/mdc',
+    "@nuxtjs/mdc",
     "@nuxtjs/tailwindcss",
     "@nuxt/image",
     "@primevue/nuxt-module",
@@ -35,13 +35,26 @@ export default defineNuxtConfig({
       theme: {
         preset: Aura,
         options: {
-            prefix: 'p',
-            darkModeSelector: 'system',
-            cssLayer: false
-        }
-      }
+          prefix: "p",
+          darkModeSelector: "system",
+          cssLayer: false,
+        },
+      },
     },
     autoImport: true,
+  }, // 2. A Mágica do Proxy
+  routeRules: {
+    "/api/**": {
+      // Lemos a variável do Docker Compose aqui no servidor!
+      proxy: process.env.NUXT_PUBLIC_API_BASE
+        ? `${process.env.NUXT_PUBLIC_API_BASE}/api/**`
+        : "http://localhost:8080/api/**",
+    },
+    "/assets/**": { proxy: "http://localhost:8080/assets/**" },
+  },
+  // 3. Otimização para o Bun (Opcional, mas recomendado já que migramos o Dockerfile)
+  nitro: {
+    preset: "bun",
   },
   // Força o Nuxt a vasculhar todos os componentes do SiriusStudio
   components: [{ path: "./components", pathPrefix: false }],

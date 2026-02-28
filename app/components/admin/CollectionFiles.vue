@@ -21,10 +21,11 @@ const props = defineProps({
   siteContext: { type: String, default: "" },
 });
 
-const emit = defineEmits(["select", "create-item"]);
+// 1. Adicionado o emit 'delete'
+const emit = defineEmits(["select", "create-item", "delete", "refresh"]);
 
 const localFiles = ref<FileItem[]>([]);
-const toast = useToast(); // Certifique-se de importar useToast
+const toast = useToast(); 
 
 const showSystemFiles = ref(false);
 const extraFiles = ref<FileItem[]>([]);
@@ -37,6 +38,24 @@ const displayedFiles = computed(() => {
   if (showSystemFiles.value) return extraFiles.value;
   return localFiles.value;
 });
+
+const deleteFile = async (path: string) => {
+  if (!path) return;
+  try {
+    await $fetch("/api/admin/storage", {
+      method: "DELETE",
+      body: { path }
+    });
+    toast.add({ severity: "success", summary: "Excluído", life: 2000 });
+    emit("refresh");
+  } catch (e) {
+    toast.add({
+      severity: "error",
+      summary: "Erro",
+      detail: "Falha ao excluir.",
+    });
+  } 
+};
 
 const isIndexFile = (file: FileItem) =>
   file.name.toLowerCase().startsWith("_index");
@@ -54,7 +73,6 @@ watch(
       return true;
     });
 
-    // Apenas garante que o Index (Capa) fique no topo, o resto mantém a ordem da API
     list.sort((a, b) => {
       if (isIndexFile(a)) return -1;
       if (isIndexFile(b)) return 1;
@@ -66,9 +84,8 @@ watch(
   { immediate: true, deep: true },
 );
 
-// 3. Função que salva a nova ordem ao soltar
 const onRowReorder = async (event: any) => {
-  localFiles.value = event.value; // Atualiza visual
+  localFiles.value = event.value; 
   const orderedNames = localFiles.value.map((f: { name: any }) => f.name);
 
   try {
@@ -150,6 +167,18 @@ const onRowSelect = (event: any) => {
   emit("select", event.data);
 };
 
+
+
+// 2. Função de exclusão (com stopPropagation para não abrir o arquivo ao clicar)
+const confirmDelete = (event: Event, item: FileItem) => {
+  event.stopPropagation();
+  const itemName = item.data?.title || item.name;
+  
+  if (confirm(`Tem certeza que deseja excluir "${itemName}"? \nEsta ação não poderá ser desfeita.`)) {
+    deleteFile(item.path)
+  }
+};
+
 const getThumbnail = (item: FileItem): string | null => {
   if (item.isSchema) return null;
   if (!item.data) return null;
@@ -203,9 +232,9 @@ const formatDate = (dateString?: string) => {
           }}</span>
           <span v-else class="text-cyan-500">Modelos (_schemas)</span>
         </h2>
-        <span class="text-xs text-slate-500 font-mono mt-1">
+        <!-- <span class="text-xs text-slate-500 font-mono mt-1">
           {{ filteredFiles.length }} itens listados
-        </span>
+        </span> -->
       </div>
 
       <div class="flex items-center gap-3">
@@ -216,31 +245,35 @@ const formatDate = (dateString?: string) => {
           <i class="pi pi-spin pi-spinner"></i>
         </span>
 
-        <Button
-          icon="pi pi-cog"
-          :label="showSystemFiles ? 'Ver Conteúdo' : 'Modelos'"
-          @click="showSystemFiles = !showSystemFiles"
-          class="p-button-text p-button-sm !text-xs !uppercase !tracking-tighter"
-          :class="
-            showSystemFiles
-              ? '!text-cyan-500 hover:bg-cyan-500/10'
-              : '!text-slate-400 hover:text-white hover:bg-white/5'
-          "
-        />
+      <div class="flex items-center bg-black/40 border border-white/10 rounded-md overflow-hidden shrink-0 h-[32px] shadow-lg backdrop-blur-sm">
+  
+  <button
+    @click="showSystemFiles = !showSystemFiles"
+    class="flex items-center gap-2 px-3 h-full font-black text-[10px] uppercase tracking-wider transition-all border-r border-white/5"
+    :class="[
+      showSystemFiles 
+        ? 'bg-white/10 text-white' 
+        : 'text-slate-400 hover:text-white hover:bg-white/5'
+    ]"
+  >
+    <i class="pi pi-cog text-[11px]"></i>
+    <span>{{ showSystemFiles ? 'Ver Conteúdo' : 'Modelos' }}</span>
+  </button>
 
-        <button
-          v-if="!showSystemFiles"
-          @click="emit('create-item')"
-          class="flex items-center gap-2 px-4 py-2 bg-[#6f942e] hover:bg-[#5a7a23] text-black font-bold text-sm rounded transition-all shadow-[0_0_10px_rgba(111,148,46,0.2)] hover:shadow-[0_0_15px_rgba(111,148,46,0.4)]"
-        >
-          <i class="pi pi-plus text-xs"></i>
-          <span>Novo Item</span>
-        </button>
+  <button
+    v-if="!showSystemFiles"
+    @click="emit('create-item')"
+    class="flex items-center gap-2 px-4 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[10px] uppercase tracking-wider transition-all"
+  >
+    <i class="pi pi-plus text-[10px]"></i>
+    <span>Novo Item</span>
+  </button>
+</div>
       </div>
     </div>
 
     <div class="flex-1 overflow-hidden relative">
-     <DataTable
+    <DataTable
   :value="displayedFiles"
   :reorderableRows="!showSystemFiles"
   @rowReorder="onRowReorder"
@@ -260,44 +293,46 @@ const formatDate = (dateString?: string) => {
   :pt="{
     root: { class: 'bg-transparent flex flex-col h-full' },
     headerRow: {
-      class: 'bg-[#141b18] text-slate-500 text-[10px] uppercase tracking-widest font-bold',
+      class: 'text-slate-500 text-[10px] uppercase tracking-widest font-black border-b border-white/5',
     },
     bodyRow: ({ context }) => ({
       class: [
         'transition-colors border-b border-white/5 text-slate-300',
-        'hover:bg-white/5 cursor-pointer', // Efeito de hover sutil, sem cor berrante
+        context.selected ? 'bg-white/10 text-white' : 'hover:bg-white/5 cursor-pointer', 
       ],
     }),
     paginator: {
-      root: { class: 'bg-[#141b18] border-t border-white/5 p-2' },
+      root: { class: 'bg-black/20 border-t border-white/10 p-2' },
       current: { class: 'text-[10px] text-slate-500 uppercase font-bold ml-auto' },
       pages: { class: 'flex gap-1' },
       pageButton: ({ context }) => ({
         class: [
-          'w-8 h-8 rounded text-[10px] transition-colors',
+          'w-7 h-7 rounded text-[10px] transition-all font-bold',
           context.active
-            ? 'bg-[#6f942e] text-black font-black'
-            : 'text-slate-400 hover:bg-white/5',
+            ? 'bg-white text-black'
+            : 'text-slate-500 hover:bg-white/10 hover:text-white',
         ],
       }),
+      prevPageButton: { class: 'text-slate-500 hover:text-white' },
+      nextPageButton: { class: 'text-slate-500 hover:text-white' },
+      firstPageButton: { class: 'text-slate-500 hover:text-white' },
+      lastPageButton: { class: 'text-slate-500 hover:text-white' },
+      rowsPerPageDropdown: { class: 'bg-transparent border-white/10 text-slate-400 text-[10px]' }
     },
   }"
 >
   <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
-  
   
   <Column header="Título" class="font-medium" sortable field="data.title">
     <template #body="{ data }">
       <div class="flex flex-col py-2.5">
         <div class="flex items-center gap-2">
           <span
-            class="font-medium text-[14px]"
+            class="text-[13px] tracking-tight"
             :class="[
               isIndexFile(data)
-                ? 'text-[#6f942e] font-bold'
-                : data.isSchema
-                  ? 'text-cyan-400'
-                  : 'text-slate-200',
+                ? 'text-white font-black' 
+                : 'text-slate-300 font-medium',
             ]"
           >
             {{ data.data?.title || data.name.replace(/-/g, " ") }}
@@ -305,19 +340,20 @@ const formatDate = (dateString?: string) => {
 
           <span
             v-if="isIndexFile(data)"
-            class="text-[8px] border border-[#6f942e]/30 text-[#6f942e] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold bg-[#6f942e]/10"
+            class="text-[8px] border border-white/20 text-white px-1.5 py-0.5 rounded-sm uppercase tracking-tighter font-black bg-white/10"
           >
             Capa
           </span>
+
           <span
             v-if="data.isSchema"
-            class="text-[8px] border border-cyan-500/30 text-cyan-500 px-1.5 py-0.5 rounded uppercase tracking-wider font-bold bg-cyan-500/10"
+            class="text-[8px] border border-white/10 text-slate-400 px-1.5 py-0.5 rounded-sm uppercase tracking-tighter font-bold bg-white/5"
           >
             Modelo
           </span>
         </div>
         
-        <span class="text-[10px] text-slate-500 font-mono mt-0.5 opacity-80">
+        <span class="text-[10px] text-slate-600 font-mono mt-0.5">
           {{ data.name }}
         </span>
       </div>
@@ -326,7 +362,7 @@ const formatDate = (dateString?: string) => {
 
   <Column header="Data" style="width: 8rem" sortable field="data.date">
     <template #body="{ data }">
-      <span class="text-slate-400 text-xs font-mono">{{ formatDate(data.data?.date) }}</span>
+      <span class="text-slate-500 text-[11px] font-mono">{{ formatDate(data.data?.date) }}</span>
     </template>
   </Column>
 
@@ -334,22 +370,36 @@ const formatDate = (dateString?: string) => {
     <template #body="{ data }">
       <span
         v-if="data.data?.draft === true"
-        class="text-[10px] font-bold text-amber-500 flex items-center gap-1.5"
+        class="text-[9px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5"
       >
-        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Rascunho
+        <span class="w-1 h-1 rounded-full bg-amber-600 shadow-[0_0_5px_rgba(217,119,6,0.5)]"></span> Rascunho
       </span>
       <span
         v-else-if="data.isSchema"
-        class="text-[10px] font-bold text-cyan-500 flex items-center gap-1.5"
+        class="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"
       >
         <i class="pi pi-cog text-[10px]"></i> Config
       </span>
       <span
         v-else
-        class="text-[10px] font-bold text-slate-500 flex items-center gap-1.5"
+        class="text-[9px] font-black text-white/40 uppercase tracking-widest flex items-center gap-1.5"
       >
-        <span class="w-1.5 h-1.5 rounded-full bg-[#6f942e] opacity-50"></span> Publicado
+        <span class="w-1 h-1 rounded-full bg-white/20"></span> Publicado
       </span>
+    </template>
+  </Column>
+
+  <Column header="" style="width: 4rem">
+    <template #body="{ data }">
+      <div class="flex justify-center">
+        <button
+          @click="confirmDelete($event, data)"
+          class="w-7 h-7 flex items-center justify-center rounded text-slate-600 hover:text-white hover:bg-red-500/20 transition-all"
+          title="Excluir item"
+        >
+          <i class="pi pi-trash text-[12px]"></i>
+        </button>
+      </div>
     </template>
   </Column>
 </DataTable>
@@ -368,50 +418,5 @@ const formatDate = (dateString?: string) => {
 </template>
 
 <style scoped>
-:deep(.p-row-reorder-icon) {
-  color: #475569; /* slate-600 */
-  cursor: grab;
-  transition: color 0.2s;
-}
-:deep(.p-row-reorder-icon:hover) {
-  color: #6f942e;
-}
-:deep(.p-datatable-header-cell) {
-  background: #141b18 !important;
-  border: none !important;
-  padding: 12px 16px !important;
-  color: #64748b !important;
-}
 
-/* Fundo da tabela transparente */
-:deep(.p-datatable-tbody > tr) {
-  background: transparent !important;
-  transition: background-color 0.15s ease-in-out;
-}
-
-/* REMOVE O EFEITO ZEBRADO */
-:deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: transparent !important;
-}
-
-/* Hover mais sutil e profissional */
-:deep(.p-datatable-tbody > tr:hover) {
-  background: rgba(255, 255, 255, 0.02) !important;
-  cursor: pointer;
-}
-
-/* Borda inferior suave para as células */
-:deep(.p-datatable-tbody > tr > td) {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
-  padding: 0.25rem 1rem !important;
-}
-
-:deep(.p-paginator) {
-  border-radius: 0 !important;
-  background: #141b18 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.03) !important;
-}
-:deep(.p-datatable-wrapper) {
-  flex: 1;
-}
 </style>

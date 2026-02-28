@@ -22,6 +22,7 @@
     "@codemirror/view": "^6.39.15",
     "@heroicons/vue": "^2.2.0",
     "@iconify/vue": "^5.0.0",
+    "@libsql/client": "^0.17.0",
     "@ltd/j-toml": "^1.38.0",
     "@nuxt/image": "2.0.0",
     "@nuxtjs/mdc": "^0.20.1",
