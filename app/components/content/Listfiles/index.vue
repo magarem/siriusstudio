@@ -9,22 +9,12 @@ import Blog from "./Blog.vue";
 
 // --- PROPS ---
 const props = defineProps({
-  // --- MODO SOURCE ---
-  // Caminho para um arquivo .toml/.md que contém os parametros
   source: { type: String, default: null },
-
-  // --- PARÂMETROS DIRETOS ---
   title: { type: String, default: null },
   icon: { type: String, default: null },
   section: { type: String, default: null },
   view: { type: String, default: null },
-
-  // Pode vir como String (do Markdown) ou Objeto (do TOML/JS)
-  viewparams: {
-    type: [Object, String],
-    default: null,
-  },
-
+  viewparams: { type: [Object, String], default: null },
   limit: { type: Number, default: null },
   columns: { type: Number, default: null },
   subfolders: { type: Boolean, default: null },
@@ -37,15 +27,14 @@ const route = useRoute();
 const siteName = config.siteId;
 
 // =============================================================================
-// 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE)
+// 1. LÓGICA DE FETCH DA CONFIGURAÇÃO (SOURCE UNIFICADO)
 // =============================================================================
 
-// Detecta se estamos em modo preview
 const isPreview = computed(() => {
-  return route.query.preview === "true";
+  return route.query.preview === "true" || (import.meta.client && window.location.hostname.startsWith('preview.'));
 });
 
-// Endpoint para buscar o arquivo de configuração (.toml/.md)
+// Agora aponta sempre para o Cérebro do Conteúdo (/api/content)
 const sourceEndpoint = computed(() => {
   if (!props.source) return null;
   const cleanPath = props.source
@@ -53,19 +42,17 @@ const sourceEndpoint = computed(() => {
     .replace(/\.json$/, "")
     .replace(/\.md$/, "")
     .replace(/\.toml$/, "");
-  return isPreview.value
-    ? `/api/preview/${cleanPath}`
-    : `/api/page/${cleanPath}`;
+  return `/api/content/${cleanPath}`;
 });
 
-// Busca os dados do arquivo de configuração (se source for definido)
+// Repassa a query da URL (incluindo o preview=true) para o Bun
 const { data: fetchedConfig } = await useFetch(sourceEndpoint, {
   key: `listfiles-config-${props.source}`,
   immediate: !!props.source,
-  watch: [sourceEndpoint],
+  query: computed(() => route.query),
+  watch: [sourceEndpoint, () => route.query],
   lazy: true,
 });
-console.log("🚀 ~ fetchedConfig:", fetchedConfig)
 
 // =============================================================================
 // 2. MERGE DE PARÂMETROS (FINAL PARAMS)
@@ -148,53 +135,41 @@ const viewConfig = computed(() => {
   };
 });
 
-// --- CORREÇÃO DO TARGET SECTION ---
 const targetSection = computed(() => {
   let sec = "";
-  
   if (finalParams.value.section) {
     sec = finalParams.value.section;
   } else {
-    // Fallback para rota atual se não houver section definida
     const currentPath = route.path === "/" ? "" : route.path;
     sec = `content${currentPath}`;
   }
-
-  // Normalização: remove barras duplas
   sec = sec.replace(/\/+/g, "/");
-  
-  // Opcional: Garante que comece com content/ se sua API exigir
   if (!sec.startsWith('content')) {
       sec = sec.startsWith('/') ? `content${sec}` : `content/${sec}`;
   }
-  
   return sec;
 });
 
 // =============================================================================
-// 4. DATA FETCHING (ITENS) - CORRIGIDO
+// 4. DATA FETCHING (ITENS SUPERLIST)
 // =============================================================================
 
 const timestamp = ref(Date.now());
 
-// Incluímos o timestamp e section na query
+// Mesclamos a query da rota com as necessidades da superlist
 const queryParams = computed(() => ({
+  ...route.query,
   site: siteName,
   section: targetSection.value, 
-  mode: isPreview.value ? "preview" : "production",
   t: timestamp.value,
-  nocache: 1,
 }));
 
-// Fetch dos itens reais
-const { data: items, status, refresh } = await useFetch("/api/admin/superList", {
+// Rota corrigida para /api/admin/superlist (minúsculo)
+const { data: items, status, refresh } = await useFetch("/api/admin/superlist", {
   lazy: true,
   server: false,
   query: queryParams,
-  // --- CORREÇÃO: Assistir queryParams garante refresh no clique do botão ---
   watch: [queryParams], 
-  
-  // --- CORREÇÃO: Transform robusto para evitar erros se vier objeto ---
   transform: (response) => {
     const list = Array.isArray(response) 
       ? response 
@@ -208,19 +183,22 @@ const loading = computed(() => status.value === "pending");
 
 const forceRefresh = () => {
   timestamp.value = Date.now();
-  // O watch em queryParams cuidará de chamar o refresh automaticamente
 };
 
-// --- HELPERS DE IMAGEM E LINK ---
+// --- HELPERS DE IMAGEM E LINK COM CACHE BUSTER ---
 const resolveSmartImage = (itemPath, imgName) => {
   if (!imgName) return props.fallbackImage;
   if (imgName.startsWith("http") || imgName.startsWith("/")) return imgName;
 
   let folderPath = itemPath.substring(0, itemPath.lastIndexOf("/"));
   folderPath = folderPath.replace(/^content\//, "").replace(/^content/, "");
-  const a_ = `/assets/${folderPath}/${imgName}`.replace("//", "/")
-  console.log("🚀 ~ resolveSmartImage ~ a_:", a_)
-  return a_ + "?preview="+isPreview.value;
+  
+  let url = `/assets/${folderPath}/${imgName}`.replace(/\/\//g, "/");
+  
+  if (isPreview.value) {
+    url += `?preview=true&t=${Date.now()}`;
+  }
+  return url;
 };
 
 const resolveLink = (itemPath) => {
@@ -234,12 +212,10 @@ const resolveLink = (itemPath) => {
 
 // --- PROCESSAMENTO FINAL DOS ITENS ---
 const displayedItems = computed(() => {
-  const rawItems = items.value.filter(x=>x.title[0]!=="_");
-  console.log("🚀 ~ rawItems:", rawItems)
+  const rawItems = items.value.filter(x => x.title[0] !== "_");
   const limit = finalParams.value.limit; 
   const useSubfolders = finalParams.value.subfolders;
 
-  // MODO 1: Lista Plana (Arquivos)
   if (!useSubfolders) {
     return rawItems.slice(0, limit).map((item) => ({
       ...item,
@@ -249,7 +225,6 @@ const displayedItems = computed(() => {
     }));
   }
 
-  // MODO 2: Agrupamento por Pastas
   const foldersMap = {};
   rawItems.forEach((item) => {
     let relativePath = item.path.replace(targetSection.value, "");
@@ -258,14 +233,11 @@ const displayedItems = computed(() => {
 
     if (parts.length > 0) {
       const folderName = parts[0];
-      // Ignora arquivos na raiz se estiver em modo subfolders
       if (!folderName || folderName.includes(".")) return;
 
       if (!foldersMap[folderName]) {
         foldersMap[folderName] = {
-          title:
-            folderName.charAt(0).toUpperCase() +
-            folderName.slice(1).replace(/-/g, " "),
+          title: folderName.charAt(0).toUpperCase() + folderName.slice(1).replace(/-/g, " "),
           _path: `${targetSection.value}/${folderName}`
             .replace(/^content/, "")
             .replace(/\/+/g, "/")
@@ -276,15 +248,8 @@ const displayedItems = computed(() => {
         };
       } else {
         foldersMap[folderName].count++;
-        // Tenta achar uma imagem melhor se a atual for fallback
-        if (
-          !foldersMap[folderName].image ||
-          foldersMap[folderName].image === props.fallbackImage
-        ) {
-          foldersMap[folderName].image = resolveSmartImage(
-            item.path,
-            item.image,
-          );
+        if (!foldersMap[folderName].image || foldersMap[folderName].image === props.fallbackImage) {
+          foldersMap[folderName].image = resolveSmartImage(item.path, item.image);
         }
       }
     }
@@ -293,7 +258,6 @@ const displayedItems = computed(() => {
   return Object.values(foldersMap).slice(0, limit);
 });
 </script>
-
 <template>
   
    <SectionWrapper 

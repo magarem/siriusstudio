@@ -2,14 +2,15 @@
 import { useToast } from "primevue/usetoast";
 import { useConfirm } from "primevue/useconfirm";
 import { Icon } from '@iconify/vue'
+import { ref } from 'vue';
 
 const toast = useToast();
 const confirm = useConfirm();
 const siteContext = useCookie("cms_site_context");
 
 // --- DADOS ---
-// Busca a lista de backups do servidor
-const { data: backups, refresh, pending } = await useFetch('/api/admin/backups/list', {
+// Chamada atualizada para o novo endpoint do Bun
+const { data: backups, refresh, pending } = await useFetch('/api/admin/backup', {
     lazy: true,
     server: false
 });
@@ -26,7 +27,7 @@ const handleCreateBackup = async () => {
     createLoading.value = true;
 
     try {
-        await $fetch('/api/admin/backups/create', {
+        await $fetch('/api/admin/backup/create', {
             method: 'POST',
             body: { name: newBackupName.value }
         });
@@ -35,7 +36,7 @@ const handleCreateBackup = async () => {
         newBackupName.value = '';
         refresh();
     } catch (e) {
-        toast.add({ severity: 'error', summary: 'Erro', detail: e.message || 'Falha ao criar backup.' });
+        toast.add({ severity: 'error', summary: 'Erro', detail: e.data?.error || 'Falha ao criar backup.' });
     } finally {
         createLoading.value = false;
     }
@@ -50,12 +51,12 @@ const restoreBackupName = ref('');
 
 const confirmRestore = (backup) => {
     confirm.require({
-        group: 'restore', // <--- IMPORTANTE: Usa o Dialog customizado
+        group: 'restore', 
         message: `ATENÇÃO: Isso substituirá TODO o site pela versão "${backup.name}". Continuar?`,
         header: 'Confirmar Restauração',
         icon: 'pi pi-exclamation-triangle',
-        acceptLabel: 'Sim', // <--- Botão de Confirmação
-        rejectLabel: 'Não', // <--- Botão de Cancelamento
+        acceptLabel: 'Sim', 
+        rejectLabel: 'Não', 
         accept: () => handleRestore(backup)
     });
 };
@@ -65,10 +66,10 @@ const handleRestore = async (backup) => {
 
     restoreBackupName.value = backup.name;
     restoreLoading.value = true;
-    showRestoreProgress.value = true; // Abre modal de progresso
+    showRestoreProgress.value = true; 
 
     try {
-        await $fetch('/api/admin/backups/restore', {
+        await $fetch('/api/admin/backup/restore', {
             method: 'POST',
             body: { filename: backup.filename }
         });
@@ -77,8 +78,8 @@ const handleRestore = async (backup) => {
         setTimeout(() => window.location.reload(), 1500);
         
     } catch (e) {
-        showRestoreProgress.value = false; // Fecha modal de progresso se der erro
-        toast.add({ severity: 'error', summary: 'Erro Crítico', detail: 'Falha ao restaurar backup.' });
+        showRestoreProgress.value = false; 
+        toast.add({ severity: 'error', summary: 'Erro Crítico', detail: e.data?.error || 'Falha ao restaurar backup.' });
         restoreLoading.value = false;
     }
 };
@@ -104,14 +105,15 @@ const confirmDelete = (backup) => {
 const handleDelete = async (backup) => {
     deleteLoading.value = true;
     try {
-        await $fetch('/api/admin/backups/delete', {
+        await $fetch('/api/admin/backup/delete', {
             method: 'POST',
             body: { filename: backup.filename }
         });
         toast.add({ severity: 'success', summary: 'Excluído', detail: 'Backup removido permanentemente.', life: 2000 });
         refresh();
     } catch (e) {
-        toast.add({ severity: 'error', summary: 'Erro', detail: 'Falha ao excluir arquivo.' });
+        // Correção aqui: garantindo que 'e' é capturado no catch block
+        toast.add({ severity: 'error', summary: 'Erro', detail: e.data?.error || 'Falha ao excluir arquivo.' });
     } finally {
         deleteLoading.value = false;
     }

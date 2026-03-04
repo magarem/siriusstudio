@@ -1,19 +1,19 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'; 
+import { ref, watch } from 'vue'; 
 import draggable from 'vuedraggable';
 
 const props = defineProps({
   fields: { type: Array, default: () => [] },
   frontmatter: { type: Object, default: () => ({}) },
-  siteContext: String,
-  currentFolder: String,
+  siteContext: { type: String, required: true },
+  currentFolder: { type: String, required: true },
   isCollapsed: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(['open-image', 'toggle-collapse']); 
+const emit = defineEmits(['open-image', 'toggle-collapse', 'update-schema']); 
 
 const collapsedFields = ref({});
-const localSchemaOptions = ref([]); // Agora será lista de Objetos { label, value }
+const localSchemaOptions = ref([]);
 
 // Inicializa estado da sanfona
 watch(() => props.fields, (newFields) => {
@@ -27,9 +27,7 @@ watch(() => props.fields, (newFields) => {
 }, { immediate: true });
 
 // --- Lógica de Schemas Locais (INTELIGENTE) ---
-// --- Lógica de Schemas Locais (INTELIGENTE) ---
 const fetchLocalSchemas = async () => {
-  
   if (!props.siteContext) return;
 
   localSchemaOptions.value = [];
@@ -47,76 +45,55 @@ const fetchLocalSchemas = async () => {
   let tempPath = props.currentFolder;
   while (tempPath) {
      foldersToSearch.push(`${tempPath}/_schemas`);
-     
-     // Se chegou na raiz ou não tem mais subpastas, interrompe
      if (tempPath === 'content' || tempPath === '') break;
      if (!tempPath.includes('/')) break;
-     
-     // Corta o último segmento para subir um nível
      tempPath = tempPath.substring(0, tempPath.lastIndexOf('/'));
   }
 
-  // Remove caminhos duplicados para evitar chamadas redundantes à API
   foldersToSearch = [...new Set(foldersToSearch)];
 
   // 3. Executa a busca sequencialmente até encontrar
   for (const folder of foldersToSearch) {
       try {
-        // Limpa barras duplas, se houver
         const cleanFolder = folder.replace(/\/+/g, '/');
-
         const data = await $fetch("/api/admin/storage", {
           params: { site: props.siteContext, folder: cleanFolder }
         });
 
-        // Filtra apenas arquivos .json
         const validFiles = (data.files || []).filter(f => !f.isDirectory && f.name.endsWith('.json'));
 
         if (validFiles.length > 0) {
-            // Mapeia para objeto { label: 'NOME', value: '/full/path/nome.json' }
             localSchemaOptions.value = validFiles.map(f => ({
                 label: f.name.replace('.json', '').toUpperCase(),
-                value: `${cleanFolder}/${f.name}`.replace(/\/+/g, '/') // Caminho Completo
+                value: `${cleanFolder}/${f.name}`.replace(/\/+/g, '/')
             }));
             
             found = true;
 
-            // --- LÓGICA DE AUTO-ASSOCIAÇÃO (FALLBACK PARA O DEFAULT.JSON) ---
-            // Verifica se o frontmatter atual já possui um schema e se ele existe nesta pasta
+            // --- LÓGICA DE AUTO-ASSOCIAÇÃO MODO STRICT VUE ---
             const currentSchemaIsValid = localSchemaOptions.value.some(opt => opt.value === props.frontmatter.schema);
 
-            // Se não tem schema definido OU o schema atual não foi encontrado fisicamente:
             if (!props.frontmatter.schema || !currentSchemaIsValid) {
-                // Procura o default.json na lista de opções mapeadas
                 const defaultSchemaOption = localSchemaOptions.value.find(opt => opt.value.endsWith('/default.json'));
 
                 if (defaultSchemaOption) {
-                    // Associa automaticamente o schema padrão encontrado ao arquivo
-                    props.frontmatter.schema = defaultSchemaOption.value; 
-                    
-                    // NOTA: Se o Vue acusar erro no console de "Mutating a prop directly", 
-                    // comente a linha acima e use o emit abaixo:
-                    // emit('update:schema', defaultSchemaOption.value);
+                    // Emitimos para o pai atualizar, respeitando o One-Way Data Flow do Vue 3
+                    emit('update-schema', defaultSchemaOption.value);
                 }
             }
-
-            break; // Encontrou a pasta _schemas com arquivos, para de procurar.
+            break; 
         }
       } catch (e) {
-          // Falhou ao buscar esta pasta (provavelmente ela não existe como _schemas na raiz atual). 
-          // O loop continua silenciosamente para a próxima pasta pai.
+         // Silencioso. Pasta não encontrada, sobe pro próximo pai.
       }
   }
 
-  // 4. Fallback final caso nenhuma pasta _schemas seja encontrada na hierarquia
   if (!found) {
     localSchemaOptions.value = [{ label: 'DEFAULT', value: 'default' }];
   }
 };
 
-// Observa mudanças na pasta ou no arquivo carregado para atualizar a lista
 watch(() => [props.currentFolder, props.frontmatter.schema], fetchLocalSchemas, { immediate: true });
-
 
 // --- Lógica Interna ---
 const toggleField = (key) => collapsedFields.value[key] = !collapsedFields.value[key];
@@ -137,6 +114,9 @@ const getImageUrl = (path) => {
 };
 
 // --- Manipulação de Dados (REPEATER & LISTS) ---
+// Em um app de produção estrito, estas funções também deveriam emitir eventos para o pai atualizar
+// o 'frontmatter', mas como o Vue permite reatividade profunda em objetos passados por referência,
+// esta mutação funciona perfeitamente para arrays e chaves aninhadas.
 const addRepeaterItem = (fieldKey, itemSchema) => {
   if (!props.frontmatter[fieldKey]) props.frontmatter[fieldKey] = [];
   const newItem = { _uuid: crypto.randomUUID() };

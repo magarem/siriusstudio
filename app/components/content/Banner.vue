@@ -12,7 +12,6 @@ const props = defineProps({
   subtitle: { type: String, default: null },
 
   // --- NOVO PARÂMETRO ---
-  // Aceita valores como '16px', '1rem', '50%', etc.
   borderRadius: { type: String, default: '0px' },
 
   // --- MODO CMS ---
@@ -20,7 +19,6 @@ const props = defineProps({
     type: [String, Object],
     default: null
   },
-
   paddingClass: {
     type: String,
     default: '' 
@@ -33,28 +31,30 @@ const props = defineProps({
 
 const route = useRoute();
 
-// 1. Detecta Preview
+// 1. Detecta Preview (Para controle interno e de imagens)
 const isPreview = computed(() => {
   return route.query.preview === 'true' || (import.meta.client && window.location.hostname.startsWith('preview.'));
 });
 
-// 2. Fetch do Source
+// 2. Fetch do Source UNIFICADO
 const sourceEndpoint = computed(() => {
   if (!props.source) return null;
+  // Agora o endpoint é sempre o /api/content
   const cleanPath = props.source.replace(/^\//, '').replace(/\.md$/, '');
-  return isPreview.value ? `/api/preview/${cleanPath}` : `/api/page/${cleanPath}`;
+  return `/api/content/${cleanPath}`;
 });
 
+// O Nuxt anexa automaticamente o route.query na URL final graças ao parâmetro 'query'
 const { data: fetchedData } = await useFetch(sourceEndpoint, {
   key: `banner-${props.source}`,
   immediate: !!props.source,
-  watch: [sourceEndpoint]
+  query: computed(() => route.query), // Repassa '?preview=true' e qualquer outra query para o Bun
+  watch: [sourceEndpoint, () => route.query]
 });
 
 // --- COMPUTED PARA BORDA (Prioridade: CMS > Prop) ---
 const finalBorderRadius = computed(() => {
   if (fetchedData.value?.data) {
-    // Tenta pegar do CMS (suporta camelCase ou snake_case do TOML)
     const d = fetchedData.value.data;
     if (d.borderRadius) return d.borderRadius;
     if (d.border_radius) return d.border_radius;
@@ -62,7 +62,7 @@ const finalBorderRadius = computed(() => {
   return props.borderRadius;
 });
 
-// 3. Helper de Imagem
+// 3. Helper de Imagem (Mantido, pois resolve bem o cache buster do editor)
 const getImageUrl = (imgPath, contextPath = null) => {
   if (!imgPath) return '';
   if (imgPath.startsWith('http') || imgPath.startsWith('/assets')) return imgPath;
@@ -87,20 +87,15 @@ const bannerSlides = computed(() => {
   let commonData = { link: '', title: '', subtitle: '' };
   let contextPath = null;
 
-  // A. Props Manuais (Array ou String)
   if (props.images && props.images.length) {
     rawImages = props.images;
     commonData = { link: props.link, title: props.title, subtitle: props.subtitle };
   } else if (props.image) {
     rawImages = [props.image];
     commonData = { link: props.link, title: props.title, subtitle: props.subtitle };
-  }
-
-  // B. Source Fetch (CMS)
-  else if (fetchedData.value?.data) {
+  } else if (fetchedData.value?.data) {
     const d = fetchedData.value.data;
     contextPath = props.source;
-    // Pega array 'images' ou string única 'image'
     if (d.images && Array.isArray(d.images)) rawImages = d.images;
     else if (d.image) rawImages = [d.image];
 
@@ -109,10 +104,7 @@ const bannerSlides = computed(() => {
       title: d.title, 
       subtitle: d.subtitle || d.description 
     };
-  }
-
-  // C. Data Prop (CMS Legado)
-  else if (props.data) {
+  } else if (props.data) {
     if (typeof props.data === 'string') {
       rawImages = [props.data];
     } else {
@@ -128,7 +120,6 @@ const bannerSlides = computed(() => {
     }
   }
 
-  // Monta o array final de objetos
   return rawImages.map(imgStr => ({
     src: getImageUrl(imgStr, contextPath),
     ...commonData
@@ -193,8 +184,6 @@ const bannerSlides = computed(() => {
 </template>
 
 <style scoped>
-
-/* Mantém apenas os estilos do carousel */
 .custom-banner-carousel .p-carousel-content,
 .custom-banner-carousel .p-carousel-container,
 .custom-banner-carousel .p-carousel-item {

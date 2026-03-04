@@ -21,7 +21,7 @@
 
       <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex space-x-2 z-20">
         <button
-          v-for="(_, i) in carrossel.images"
+          v-for="(_, i) in carrossel.data.images"
           :key="i"
           @click="currentSlide = i"
           class="w-2 h-2 rounded-full transition-all duration-300 shadow-md"
@@ -35,47 +35,50 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 
-const route = useRoute()
+const route = useRoute();
 const currentSlide = ref(0);
 let timer = null;
 
-// --- A CORREÇÃO PRINCIPAL ESTÁ AQUI ---
-// Movemos toda a lógica de API para o TOPO do script.
-// Assim, a variável 'carrossel' nasce antes de ser usada.
+// 1. Detecta Preview para o helper de imagens
+const isPreview = computed(() => {
+  return route.query.preview === 'true' || (import.meta.client && window.location.hostname.startsWith('preview.'));
+});
 
+// 2. Helper de Imagem (com cache buster para edição em tempo real)
 const getImageUrl = (img) => {
-  return 'assets/_home/carrossel/' + img;
-}
+  let url = `/assets/_home/carrossel/${img}`;
+  if (isPreview.value) {
+      url += `?preview=true&t=${Date.now()}`;
+  }
+  return url;
+};
 
-const apiPrefix = computed(() => {
-  const isPreview = route.query.preview !== undefined && route.query.preview !== 'false'
-  return isPreview ? '/api/preview' : '/api/page'
-})
+// 3. O FETCH MÁGICO DO SIRIUS UNIFICADO
 
-const fetchOptions = {
+// e repassamos toda a query da URL (incluindo o ?preview=true) para o Bun
+const { data: carrossel } = await useFetch('/api/content/_home/carrossel', {
   lazy: true,
   server: false,
-  query: { t: Date.now() },
-  watch: [apiPrefix]
-}
-
-// O fetch acontece AGORA. A variável 'carrossel' passa a existir.
-const { data: carrossel } = await useFetch(() => `${apiPrefix.value}/_home/carrossel`, fetchOptions)
+  query: computed(() => {
+    // Mescla um timestamp para evitar cache no Nuxt com as queries da rota atual
+    return { ...route.query, t: Date.now() };
+  }),
+  watch: [() => route.query]
+});
 
 
 // --- LÓGICA DO SLIDER ---
-// Agora podemos usar 'carrossel' tranquilamente aqui embaixo
 
 const nextSlide = () => {
-  // Verificação de segurança: se carrossel for null ou não tiver imagens, para.
-  const images = carrossel.value?.data.images || [];
+  // Acesso seguro aos dados unificados
+  const images = carrossel.value?.data?.images || [];
   if (images.length === 0) return;
   
   currentSlide.value = (currentSlide.value + 1) % images.length;
 };
 
-// Observa mudanças nas imagens para resetar o slide
-watch(() => carrossel.value?.images, () => {
+// Observa mudanças estruturais no CMS para resetar o slide
+watch(() => carrossel.value?.data?.images, () => {
   currentSlide.value = 0;
 }, { deep: true });
 

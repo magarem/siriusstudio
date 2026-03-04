@@ -14,7 +14,7 @@ const emit = defineEmits(['update:visible', 'success']);
 const toast = useToast();
 const loading = ref(false);
 const schemasLoading = ref(false);
-const form = ref({ name: "", type: "" }); // Type começa vazio, será preenchido pelo fetch
+const form = ref({ name: "", type: "" }); 
 const availableSchemas = ref([]);
 
 // 1. BUSCA OS SCHEMAS COM PATH COMPLETO
@@ -26,21 +26,21 @@ const fetchSchemas = async () => {
   let found = false;
 
   // Loop Bubbling Up (Sobe pastas até achar)
-  while (searchPath) {
+  while (searchPath !== undefined && searchPath !== null) {
     try {
+      // Evita barras duplas na montagem do caminho
+      const targetFolder = `${searchPath}/_schemas`.replace(/\/+/g, '/');
+
       const data = await $fetch("/api/admin/storage", {
-        params: { site: props.siteContext, folder: searchPath + "/_schemas" }
+        params: { site: props.siteContext, folder: targetFolder }
       });
       
       const validFiles = (data.files || [])
         .filter(f => !f.isDirectory && f.name.endsWith('.json'));
 
       if (validFiles.length > 0) {
-        // --- MUDANÇA AQUI ---
-        // Agora a KEY guarda o caminho completo
         availableSchemas.value = validFiles.map(f => ({
           label: f.name.replace('.json', '').toUpperCase(),
-          // Ex: /content/blog/_schemas/post.json
           key: `/${searchPath}/_schemas/${f.name}`.replace(/\/+/g, '/') 
         }));
         
@@ -52,7 +52,7 @@ const fetchSchemas = async () => {
       // Ignora erro e tenta no pai
     }
 
-    if (searchPath === 'content') break;
+    if (searchPath === 'content' || searchPath === '') break;
     if (!searchPath.includes('/')) break;
     searchPath = searchPath.substring(0, searchPath.lastIndexOf('/'));
   }
@@ -61,7 +61,7 @@ const fetchSchemas = async () => {
   if (!found || availableSchemas.value.length === 0) {
     availableSchemas.value = [{ 
         label: 'DEFAULT', 
-        key: '/content/_schemas/default.json' // Caminho absoluto padrão
+        key: '/content/_schemas/default.json' 
     }];
   }
 
@@ -90,10 +90,10 @@ const handleCreate = async () => {
         .replace(/\.md$/, "") 
         .replace(/\s+/g, "-");
 
-    const targetFolderPath = `${props.currentFolder}/${folderName}`;
+    const targetFolderPath = `${props.currentFolder}/${folderName}`.replace(/\/+/g, '/');
 
-    // Cria Pasta
-    await $fetch("/api/admin/mkdir", {
+    // Cria Pasta usando o endpoint centralizado de admin
+    await $fetch("/api/admin/storage/mkdir", {
       method: "POST",
       body: {
         site: props.siteContext,
@@ -103,7 +103,6 @@ const handleCreate = async () => {
     });
 
     // Prepara Frontmatter
-    // AQUI: form.value.type agora já contém o caminho completo (ex: /content/_schemas/blog.json)
     const frontmatter = { 
         schema: form.value.type, 
         title: form.value.name, 
@@ -112,7 +111,7 @@ const handleCreate = async () => {
 
     const content = `---\n${yaml.dump(frontmatter)}---\n\n# ${form.value.name}`;
 
-    // Cria Arquivo
+    // Cria Arquivo _index.md
     await $fetch("/api/admin/storage", {
       method: "POST",
       body: {
@@ -131,7 +130,8 @@ const handleCreate = async () => {
 
   } catch (e) {
     console.error(e);
-    toast.add({ severity: "error", summary: "Erro", detail: "Falha ao criar." });
+    // Extrai o erro limpo do backend Elysia, se existir
+    toast.add({ severity: "error", summary: "Erro", detail: e.data?.error || "Falha ao criar." });
   } finally {
     loading.value = false;
   }

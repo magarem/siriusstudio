@@ -994,33 +994,28 @@ const editPageFromPreview = async () => {
 };
 
 onMounted(async () => {
-  // <--- Adicionado o async aqui
   const requestedSite = route.query.domain;
 
-  if (!requestedSite) return;
-
-  // Se o site que ele quer editar é diferente do que está no cookie da sessão atual
-  if (requestedSite !== siteContext.value) {
+  // 1. Só verificamos conflito SE a URL trouxe um domínio específico
+  if (requestedSite && requestedSite !== siteContext.value) {
     console.warn(
       `🔒 Sessão pertence a [${siteContext.value}], mas pediu [${requestedSite}]. Forçando re-login...`,
     );
 
-    // 1. Limpa o contexto do frontend
-    siteContext.value = null;
+    siteContext.value = null; // Limpa o contexto local
 
-    // 2. Chama o logout no servidor para limpar o cookie HttpOnly (auth_token)
     try {
       await $fetch("/api/auth/logout", { method: "POST" });
     } catch (e) {
       console.error("Erro ao deslogar no servidor", e);
     }
 
-    // 3. Redireciona para o login passando o domínio desejado
     const targetPath = route.query.path || "";
+    // O return aqui é importante para impedir que a tela renderize antes do redirecionamento
     return navigateTo(`/login?domain=${requestedSite}&redirect=${targetPath}`);
   }
 
-  // Configuração de eventos (só acontece se NÃO houver conflito de site)
+  // 2. Se a sessão está correta (ou se não havia ?domain= na URL), registramos os atalhos!
   window.addEventListener("message", handleMessageFromPreview);
   window.addEventListener("keydown", handleKeydown);
 });
@@ -1334,6 +1329,7 @@ onUnmounted(() => {
                   >
                     <AdminMetaEditor
                       v-if="currentFile && fields.length > 0"
+                      
                       :modelValue="fileData.frontmatter"
                       :frontmatter="fileData.frontmatter"
                       :fields="fields"
@@ -1341,6 +1337,7 @@ onUnmounted(() => {
                       :current-folder="mainFolder"
                       :site-url="userSiteUrl"
                       :is-collapsed="isFrontmatterCollapsed"
+                      @update-schema="fileData.frontmatter.schema = $event"
                       @toggle-collapse="
                         isFrontmatterCollapsed = !isFrontmatterCollapsed
                       "
@@ -1421,6 +1418,7 @@ onUnmounted(() => {
       v-model:visible="showCollectionCreateModal"
       :site-context="siteContext"
       :current-folder="sidebarFolder"
+      @refresh="handleNavigate.refresh"
       @success="createActions.onCollectionCreated"
     />
     <Dialog

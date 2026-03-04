@@ -1,129 +1,3 @@
-<template>
-  <div _class="card-horizontal-video" :class="customClass">
-    <!-- Container principal com fundo transparente -->
-    <div class=" flex flex-col lg:flex-row gap-6 lg:gap-[30px] p-0 md:p-0 p-0 m-0  lg:p-1 bg-transparent md:rounded-xl transition-shadow duration-300">
-      
-      <!-- Primeira coluna: Vídeo do YouTube -->
-      <div class="lg:w-1/2">
-        <div class="md:mt-15 md:rounded-[20px] relative w-full h-75 md:h-190 lg:h-[330px] overflow-hidden shadow-md">
-          <!-- Container do vídeo -->
-          <div 
-            v-if="videoId"
-            class="w-full h-full cursor-pointer"
-            @click="playVideo"
-          >
-            <!-- Thumbnail do vídeo com overlay -->
-            <div class="relative w-full h-full">
-              <!-- Thumbnail -->
-              <img
-                :src="`https://img.youtube.com/vi/${videoId}/${imageQuality}.jpg`"
-                :alt="title"
-                class="w-full h-full object-cover"
-                @error="handleImageError"
-              />
-              
-              <!-- Overlay com ícone de play -->
-              <div v-if="showPlayButton" class="absolute inset-0 flex items-center justify-center hover:bg-opacity-20 transition-all duration-300">
-                <div class="w-16 h-16 md:w-20 md:h-20 bg-red-600 rounded-full flex items-center justify-center hover:bg-red-700 transform hover:scale-110 transition-all duration-300">
-                  <svg class="w-8 h-8 md:w-10 md:h-10 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Placeholder se não tiver videoId -->
-          <div v-else class="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center">
-            <svg class="w-16 h-16 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M10 9v6l5-3-5-3zm7-9h-14c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-14c0-1.1-.9-2-2-2zm-5 13.5v-9l6 4.5-6 4.5z"/>
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- Segunda coluna: Conteúdo textual -->
-      <div class="px-5 mb-7" :class="['lg:w-1/2 flex flex-col', layoutReverse ? 'lg:order-first' : '']">
-        <!-- Título -->
-        <h2 
-          class="text-2xl md:text-[43px] font-bold mb-6"
-          :style="{ color: titleColor }"
-        >
-          {{ title }}
-        </h2>
-        
-        <!-- Texto descritivo -->
-        <div class="mb-2 flex-grow" :style="{ color: textColor, fontSize: '20px' }">
-          <!-- <p class="leading-relaxed md:text-[22px]"> -->
-            {{ description }}
-          <!-- </p> -->
-          
-          <!-- Informação extra (opcional) com fundo semi-transparente -->
-          <div 
-            v-if="additionalInfo" 
-            class="mt-2 p-3 rounded-lg backdrop-blur-sm"
-            :style="{ backgroundColor: `${buttonColor}15` }"
-          >
-            <p class="text-sm italic" :style="{ color: textColor + 'aa' }">
-              {{ additionalInfo }}
-            </p>
-          </div>
-        </div>
-        
-        <!-- Botão "Saiba Mais" -->
-        <div v-if="buttonLink" class="mt-5">
-          <a
-            :href="buttonLink"
-            rel="noopener noreferrer"
-            class="inline-flex items-center px-6 py-3 font-medium md:rounded-lg transition-colors duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
-            :style="{
-              backgroundColor: buttonColor,
-              color: buttonTextColor || '#ffffff'
-            }"
-            @mouseover="e => e.target.style.backgroundColor = buttonHoverColor || darkenColor(buttonColor, 20)"
-            @mouseleave="e => e.target.style.backgroundColor = buttonColor"
-          >
-            <span>Saiba Mais</span>
-            <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
-            </svg>
-          </a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal do vídeo -->
-    <div 
-      v-if="showVideoModal"
-      class="fixed inset-0 z-50 flex items-center justify-center _bg-black bg-opacity-50 p-4"
-      @click="closeVideo"
-    >
-      <div class="relative w-full max-w-4xl" @click.stop>
-        <!-- Botão fechar -->
-        <button
-          @click="closeVideo"
-          class="absolute -top-10 right-0 text-white hover:text-gray-300 z-10"
-        >
-          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-        
-        <!-- Player do YouTube -->
-        <div class="relative w-full pt-[56.25%]">
-          <iframe
-            :src="`https://www.youtube.com/embed/${videoId}?autoplay=1`"
-            class="absolute inset-0 w-full h-full rounded-lg shadow-2xl"
-            frameborder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowfullscreen
-          ></iframe>
-        </div>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 // 1. PRIMEIRO: Definir as props
 interface Props {
@@ -180,22 +54,25 @@ const props = withDefaults(defineProps<Props>(), {
 
 const route = useRoute();
 
-// 2. Detecta Preview
+// 2. Detecta Preview (mantido para logica visual, se necessario)
 const isPreview = computed(() => {
   return route.query.preview === 'true' || (import.meta.client && window.location.hostname.startsWith('preview.'));
 });
 
-// 3. Fetch do Source
+// 3. Fetch do Source UNIFICADO
 const sourceEndpoint = computed(() => {
   if (!props.source) return null;
+  // Aponta sempre para o endpoint unificado do Elysia
   const cleanPath = props.source.replace(/^\//, '').replace(/\.md$/, '');
-  return isPreview.value ? `/api/preview/${cleanPath}` : `/api/page/${cleanPath}`;
+  return `/api/content/${cleanPath}`; 
 });
 
+// O Nuxt anexa automaticamente o route.query na URL final
 const { data: fetchedData } = await useFetch(sourceEndpoint, {
   key: `card-video-${props.source}`,
   immediate: !!props.source,
-  watch: [sourceEndpoint]
+  query: computed(() => route.query), // Repassa '?preview=true' e outras queries para o Bun
+  watch: [sourceEndpoint, () => route.query]
 });
 
 // 4. COMPUTED PRINCIPAL: Normaliza os dados
@@ -281,10 +158,11 @@ const showVideoModal = ref(false);
 
 // 7. Função para escurecer cor (para hover)
 function darkenColor(color: string, percent: number): string {
+  if (!color) return '#000000';
   const hex = color.replace('#', '');
-  const r = parseInt(hex.substr(0, 2), 16);
-  const g = parseInt(hex.substr(2, 2), 16);
-  const b = parseInt(hex.substr(4, 2), 16);
+  const r = parseInt(hex.substr(0, 2), 16) || 0;
+  const g = parseInt(hex.substr(2, 2), 16) || 0;
+  const b = parseInt(hex.substr(4, 2), 16) || 0;
   
   const darken = 1 - (percent / 100);
   
@@ -341,20 +219,3 @@ onMounted(() => {
   });
 });
 </script>
-
-<style scoped>
-.card-horizontal-video {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* Animações suaves */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

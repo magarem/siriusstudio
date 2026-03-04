@@ -19,6 +19,7 @@ const emit = defineEmits([
   "create-folder",
   "create-collection",
   "back",
+  "refresh"
 ]);
 
 const toast = useToast();

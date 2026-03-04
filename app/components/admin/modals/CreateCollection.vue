@@ -8,7 +8,7 @@ const props = defineProps({
   currentFolder: { type: String, default: "content" },
 });
 
-const emit = defineEmits(["update:visible", "success"]);
+const emit = defineEmits(["update:visible", "success", "refresh"]);
 const toast = useToast();
 const loading = ref(false);
 const collectionName = ref("");
@@ -27,10 +27,11 @@ const handleCreate = async () => {
   loading.value = true;
 
   try {
-    // Chama nosso novo endpoint inteligente
+    // Chama o endpoint de criação de coleção, agora COM a credencial do site!
     const res = await $fetch("/api/admin/create-collection", {
       method: "POST",
       body: {
+        site: props.siteContext, // <-- A CHAVE DE SEGURANÇA ADICIONADA!
         folder: props.currentFolder,
         name: collectionName.value,
       },
@@ -46,13 +47,15 @@ const handleCreate = async () => {
     emit("update:visible", false);
 
     // Retorna o path da nova coleção para o editor navegar até lá
-    emit("success", res.path);
+    // emit("success", res.path);
+    emit("refresh"); // Força o FileExplorer a atualizar, mostrando a nova coleção
   } catch (e) {
     console.error(e);
+    // Lê o erro amigável do Elysia (se houver), ou usa o fallback
     toast.add({
       severity: "error",
       summary: "Erro",
-      detail: e.statusMessage || "Falha ao criar coleção.",
+      detail: e.data?.error || "Falha ao criar coleção.",
     });
   } finally {
     loading.value = false;

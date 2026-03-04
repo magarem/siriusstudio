@@ -1,6 +1,6 @@
 <script setup>
 import { useToast } from "primevue/usetoast";
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 
 // --- PROPS & EMITS ---
 const props = defineProps({
@@ -14,7 +14,6 @@ const siteContext = useCookie('cms_site_context');
 const viewMode = useCookie('cms_media_view_mode', { default: () => 'grid' });
 
 const folder = ref(props.initialFolder); 
-console.log("🚀 ~ folder:", folder)
 
 // Estado de UI
 const loadingAction = ref(false);
@@ -28,19 +27,18 @@ const zoomedFileIndex = ref(0);
 const isDragging = ref(false);
 const isUploading = ref(false);
 
-// --- DATA FETCHING (CORREÇÃO: REMOVIDO O AWAIT) ---
-// Adicionamos 'pending' para mostrar loading enquanto busca
+// Ref para o input de arquivo oculto
+const hiddenFileInput = ref(null);
+
+// --- DATA FETCHING ---
 const { data: files, refresh, pending } = await useFetch('/api/admin/storage', {
-  query: { folder: folder.value },
-  watch: [folder],
+  query: { folder: folder }, // No Nuxt 3+, passar a ref diretamente torna a query reativa!
   transform: (input) => input.files || []
 });
-console.log("🚀 ~ files:--", files.value)
 
 // --- COMPUTEDS AUXILIARES ---
 const filteredFiles = computed(() => {
-  console.log("🚀 ~ Array.isArray(files.value):", Array.isArray(files.value))
-  if (!files.value || !Array.isArray(files.value)) return []; // Proteção contra null
+  if (!files.value || !Array.isArray(files.value)) return []; 
   
   const validExtensions = ['.avif', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
 
@@ -51,7 +49,6 @@ const filteredFiles = computed(() => {
     return validExtensions.some(ext => lowerName.endsWith(ext));
   });
 });
-console.log("🚀 ~ filteredFiles:", filteredFiles.value)
 
 const imageFiles = computed(() => {
   return filteredFiles.value.filter(f => !f.isDirectory);
@@ -77,10 +74,6 @@ const breadcrumbs = computed(() => {
   });
 });
 
-const uploadUrl = computed(() => {
-  return `/api/admin/upload?site=${siteContext.value}&folder=${encodeURIComponent(folder.value)}`;
-});
-
 // --- HELPER DE URL ---
 const getPublicUrl = (fileName) => {
   const cleanFolder = folder.value.replace(/^content\/?/, '');
@@ -104,8 +97,6 @@ const goBack = () => {
 
 // --- AÇÃO PRINCIPAL: SELECIONAR IMAGEM ---
 const selectImage = (name) => {
-  // Se estivermos na mesma pasta inicial, retornamos apenas o nome do arquivo
-  // Se navegamos para subpastas, retornamos o caminho relativo assets/...
   const cleanName = folder.value === props.initialFolder ? name : getPublicUrl(name);
   emit('select', cleanName);
   toast.add({ severity: 'success', summary: 'Imagem Selecionada', life: 1000 });
@@ -157,12 +148,20 @@ const confirmCreateFolder = async () => {
   }
 };
 
-const onUpload = () => {
-  refresh();
-  toast.add({ severity: 'success', summary: 'Upload concluído!', life: 2000 });
+// --- DRAG & DROP & UPLOAD MANUAL ---
+const triggerManualUpload = () => {
+    hiddenFileInput.value?.click();
 };
 
-// --- DRAG & DROP ---
+const handleManualFileSelect = async (event) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        await uploadDroppedFiles(files);
+        // Limpa o input para permitir enviar a mesma imagem duas vezes seguidas se necessário
+        event.target.value = null; 
+    }
+};
+
 const handleDrop = async (e) => {
     isDragging.value = false;
     const files = e.dataTransfer.files;
@@ -241,13 +240,6 @@ const processRemoteImage = async (url) => {
     }
 };
 
-const copyImageUrl = (name) => {
-  const url = getPublicUrl(name); 
-  navigator.clipboard.writeText(url).then(() => {
-    toast.add({ severity: 'info', summary: 'Link copiado!', detail: url, life: 2000 });
-  });
-};
-
 const deleteItem = async (fileName, isDir) => {
   if (!confirm(`Tem certeza que deseja apagar ${fileName}?`)) return;
   try {
@@ -324,25 +316,7 @@ const handleMove = async (destinationSubFolder) => {
     <header class="h-14 shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-[#141b18]">
       
       <div class="flex items-center gap-3 overflow-hidden flex-1 mr-4">
-        <Button 
-            v-if="folder !== 'content' && folder.includes('/')" 
-            icon="pi pi-arrow-left" text rounded 
-            @click="goBack" class="text-[#6f942e] shrink-0 !w-8 !h-8" v-tooltip.bottom="'Voltar'" 
-        />
-        
-        <div class="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1 leading-none">
-          <i class="pi pi-home text-slate-500 hover:text-white cursor-pointer transition-colors" @click="navigateTo('content')"></i>
-          <span class="text-slate-600 font-bold">/</span>
-          <div v-for="(crumb, index) in breadcrumbs" :key="crumb.path" class="flex items-center gap-2 whitespace-nowrap">
-            <span class="text-[10px] font-black uppercase tracking-widest cursor-pointer hover:text-[#6f942e] transition-colors"
-                  :class="index === breadcrumbs.length - 1 ? 'text-white' : 'text-slate-500'"
-                  @click="navigateTo(crumb.path)">
-              {{ crumb.name }}
-            </span>
-            <span v-if="index < breadcrumbs.length - 1" class="text-slate-600 font-bold">/</span>
-          </div>
         </div>
-      </div>
 
       <div class="flex items-center gap-3 shrink-0">
         <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
@@ -353,7 +327,8 @@ const handleMove = async (destinationSubFolder) => {
         <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" />
         
         <div class="relative overflow-hidden group">
-            <FileUpload mode="basic" name="demo[]" :url="uploadUrl" :key="folder" accept="image/*" :auto="true" @upload="onUpload" chooseLabel="UPLOAD" class="p-button-sm custom-upload-btn" />
+            <Button label="UPLOAD" icon="pi pi-cloud-upload" size="small" @click="triggerManualUpload" class="p-button-sm custom-upload-btn bg-white/5 text-[#6f942e] border-white/10 font-black tracking-widest hover:bg-[#6f942e]/20 hover:border-[#6f942e]/50 transition-colors" />
+            <input type="file" ref="hiddenFileInput" @change="handleManualFileSelect" accept="image/*" multiple class="hidden" />
         </div>
         <div class="w-px h-6 bg-white/10 mx-1"></div>
         <Button icon="pi pi-times" text rounded size="small" @click="$emit('close')" class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" />

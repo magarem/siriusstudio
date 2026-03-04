@@ -1,6 +1,10 @@
 // siriusstudio/nuxt.config.ts
 import Aura from "@primevue/themes/aura";
+
 export default defineNuxtConfig({
+  compatibilityDate: "2025-07-15",
+  devtools: { enabled: true },
+
   vite: {
     optimizeDeps: {
       exclude: [
@@ -11,24 +15,22 @@ export default defineNuxtConfig({
       ],
     },
   },
+
   runtimeConfig: {
-    storagePath: process.env.STORAGE_PATH,
-    jwtSecret: process.env.JWT_SECRET || "chave-de-emergencia-sirius-123",
+    // Removemos o storagePath e jwtSecret daqui! O Bun cuida disso agora.
     public: {
       siteURL: process.env.NUXT_PUBLIC_SITE_URL || "http://localhost:3000",
-      uploadPath: process.env.NUXT_PUBLIC_UPLOAD_PATH || "public/images",
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || "http://localhost:8080",
     },
   },
-  // css: [
-  //   'primeicons/primeicons.css'],
-  compatibilityDate: "2025-07-15",
-  devtools: { enabled: true },
+
   modules: [
     "@nuxtjs/mdc",
     "@nuxtjs/tailwindcss",
     "@nuxt/image",
     "@primevue/nuxt-module",
   ],
+
   primevue: {
     options: {
       ripple: true,
@@ -42,21 +44,23 @@ export default defineNuxtConfig({
       },
     },
     autoImport: true,
-  }, // 2. A Mágica do Proxy
+  }, 
+
+  // A Mágica do Proxy: Nuxt fala com Bun sem problemas de CORS!
   routeRules: {
-    "/api/**": {
-      // Lemos a variável do Docker Compose aqui no servidor!
-      proxy: process.env.NUXT_PUBLIC_API_BASE
-        ? `${process.env.NUXT_PUBLIC_API_BASE}/api/**`
-        : "http://localhost:8080/api/**",
+    "/api/**": { 
+      proxy: (process.env.NUXT_PUBLIC_API_BASE || "http://127.0.0.1:8080") + "/api/**" 
     },
-    "/assets/**": { proxy: "http://localhost:8080/assets/**" },
+    "/assets/**": { 
+      proxy: (process.env.NUXT_PUBLIC_API_BASE || "http://127.0.0.1:8080") + "/assets/**" 
+    }
   },
-  // 3. Otimização para o Bun (Opcional, mas recomendado já que migramos o Dockerfile)
+
+  // Otimização total para o Bun
   nitro: {
     preset: "bun",
   },
+
   // Força o Nuxt a vasculhar todos os componentes do SiriusStudio
   components: [{ path: "./components", pathPrefix: false }],
-  // pages: true // No Nuxt 3 isso é automático se houver a pasta /pages
 });
