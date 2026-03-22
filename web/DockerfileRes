@@ -1,0 +1,30 @@
+# --- Etapa 1: Build (Igual) ---
+FROM node:22 AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# --- Etapa 2: Produção (Ajustada para VOCÊ) ---
+FROM node:22-slim
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NUXT_HOST=0.0.0.0
+ENV NUXT_PORT=4003
+
+# 1. Cria a pasta de dados e dá para o ID 1001
+RUN mkdir -p /app/server/data && chown -R 1001:1001 /app/server/data
+
+# 2. Copia o app dando a posse para o ID 1001
+# Aqui está o segredo: usamos o número direto.
+COPY --from=builder --chown=1001:1001 /app/.output ./.output
+
+# 3. Define que o container vai rodar como usuário 1001
+USER 1001
+
+EXPOSE 3000
+
+CMD ["node", ".output/server/index.mjs"]

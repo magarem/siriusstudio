@@ -1,0 +1,8 @@
+const BackupManager_vue_vue_type_style_index_0_scoped_a55fd524_lang = "[data-v-a55fd524] .custom-progress .p-progressbar-value{background:#6f942e}[data-v-a55fd524] .custom-progress{background:#ffffff1a}[data-v-a55fd524] .p-datatable .p-datatable-thead>tr>th{background:#141b18;border-bottom:1px solid hsla(0,0%,100%,.1);color:#9ca3af;font-size:.7rem;text-transform:uppercase}[data-v-a55fd524] .p-datatable .p-datatable-tbody>tr{background:transparent;color:#e2e8f0}[data-v-a55fd524] .p-datatable .p-datatable-tbody>tr:hover{background:#ffffff05!important}[data-v-a55fd524] .p-datatable .p-datatable-tbody>tr>td{border-bottom:1px solid hsla(0,0%,100%,.05);padding:.5rem 1rem}";
+
+const BackupManagerStyles_IZnIdMd = [
+  BackupManager_vue_vue_type_style_index_0_scoped_a55fd524_lang
+];
+
+export { BackupManagerStyles_IZnIdMd as default };
+//# sourceMappingURL=BackupManager-styles.IZnId-md.mjs.map

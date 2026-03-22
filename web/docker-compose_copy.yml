@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  sirius:
+    container_name: sirius-app
+    build: .
+    restart: always
+    user: "1001:1001"    # Roda com SEU usuário
+    ports:
+      - "4003:3000"
+    environment:
+      - NUXT_HOST=0.0.0.0
+    volumes:
+      # Mapeia a pasta de dados para persistir imagens e banco
+      - ./data:/app/data

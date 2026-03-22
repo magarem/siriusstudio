@@ -1,0 +1,1 @@
+export { default } from "/Users/marceloamagalhaes/dev/sirius-eco-system/siriusstudio/web/node_modules/@nuxt/image/dist/runtime/components/NuxtImg.vue"

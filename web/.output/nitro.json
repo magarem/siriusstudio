@@ -1,0 +1,15 @@
+{
+  "date": "2026-03-14T19:51:08.980Z",
+  "preset": "bun",
+  "framework": {
+    "name": "nuxt",
+    "version": "4.3.1"
+  },
+  "versions": {
+    "nitro": "2.13.1"
+  },
+  "commands": {
+    "preview": "bun run server/index.mjs"
+  },
+  "config": {}
+}

@@ -1,0 +1,150 @@
+import { ref, mergeProps, unref, useSSRContext } from 'vue';
+import { ssrRenderAttrs, ssrRenderAttr, ssrIncludeBooleanAttr, ssrRenderClass } from 'vue/server-renderer';
+import { b as useRoute, a as useRouter } from './server.mjs';
+import { _ as _export_sfc } from './_plugin-vue_export-helper-1tPrXgE0.mjs';
+import 'node:http';
+import 'node:https';
+import '../../index.mjs';
+import 'node:events';
+import 'node:buffer';
+import 'node:fs';
+import 'node:path';
+import 'node:crypto';
+import '@primevue/core/base/style';
+import '@primevue/core/basecomponent/style';
+import '@primeuix/styles/autocomplete';
+import '@primeuix/utils/object';
+import '@primeuix/styles/cascadeselect';
+import '@primeuix/styles/checkbox';
+import '@primeuix/styles/checkboxgroup';
+import '@primeuix/styles/colorpicker';
+import '@primeuix/styles/datepicker';
+import '@primeuix/styles/floatlabel';
+import '@primeuix/styles/iconfield';
+import '@primeuix/styles/iftalabel';
+import '@primeuix/styles/inputchips';
+import '@primeuix/styles/inputgroup';
+import '@primeuix/styles/inputnumber';
+import '@primeuix/styles/inputotp';
+import '@primeuix/styles/inputtext';
+import '@primeuix/styles/knob';
+import '@primeuix/styles/listbox';
+import '@primeuix/styles/multiselect';
+import '@primeuix/styles/password';
+import '@primeuix/styles/radiobutton';
+import '@primeuix/styles/radiobuttongroup';
+import '@primeuix/styles/rating';
+import '@primeuix/styles/select';
+import '@primeuix/styles/selectbutton';
+import '@primeuix/styles/slider';
+import '@primeuix/styles/textarea';
+import '@primeuix/styles/togglebutton';
+import '@primeuix/styles/toggleswitch';
+import '@primeuix/styles/treeselect';
+import '@primeuix/styles/button';
+import '@primeuix/styles/buttongroup';
+import '@primeuix/styles/speeddial';
+import '@primeuix/styles/splitbutton';
+import '@primeuix/styles/datatable';
+import '@primeuix/styles/dataview';
+import '@primeuix/styles/orderlist';
+import '@primeuix/styles/organizationchart';
+import '@primeuix/styles/paginator';
+import '@primeuix/styles/picklist';
+import '@primeuix/styles/tree';
+import '@primeuix/styles/treetable';
+import '@primeuix/styles/timeline';
+import '@primeuix/styles/virtualscroller';
+import '@primeuix/styles/accordion';
+import '@primeuix/styles/card';
+import '@primeuix/styles/divider';
+import '@primeuix/styles/fieldset';
+import '@primeuix/styles/panel';
+import '@primeuix/styles/scrollpanel';
+import '@primeuix/styles/splitter';
+import '@primeuix/styles/stepper';
+import '@primeuix/styles/tabview';
+import '@primeuix/styles/tabs';
+import '@primeuix/styles/toolbar';
+import '@primeuix/styles/confirmdialog';
+import '@primeuix/styles/confirmpopup';
+import '@primeuix/styles/dialog';
+import '@primeuix/styles/drawer';
+import '@primeuix/styles/popover';
+import '@primeuix/styles/fileupload';
+import '@primeuix/styles/breadcrumb';
+import '@primeuix/styles/contextmenu';
+import '@primeuix/styles/dock';
+import '@primeuix/styles/menu';
+import '@primeuix/styles/menubar';
+import '@primeuix/styles/megamenu';
+import '@primeuix/styles/panelmenu';
+import '@primeuix/styles/steps';
+import '@primeuix/styles/tabmenu';
+import '@primeuix/styles/tieredmenu';
+import '@primeuix/styles/message';
+import '@primeuix/styles/inlinemessage';
+import '@primeuix/styles/toast';
+import '@primeuix/styles/carousel';
+import '@primeuix/styles/galleria';
+import '@primeuix/styles/image';
+import '@primeuix/styles/imagecompare';
+import '@primeuix/styles/avatar';
+import '@primeuix/styles/badge';
+import '@primeuix/styles/blockui';
+import '@primeuix/styles/chip';
+import '@primeuix/styles/inplace';
+import '@primeuix/styles/metergroup';
+import '@primeuix/styles/overlaybadge';
+import '@primeuix/styles/scrolltop';
+import '@primeuix/styles/skeleton';
+import '@primeuix/styles/progressbar';
+import '@primeuix/styles/progressspinner';
+import '@primeuix/styles/tag';
+import '@primeuix/styles/terminal';
+import '@primevue/forms/form/style';
+import '@primevue/forms/formfield/style';
+import '@primeuix/styles/tooltip';
+import '@primeuix/styles/ripple';
+import '@primeuix/styled';
+import 'node:url';
+import 'ipx';
+import 'vue-router';
+import '@primeuix/utils/eventbus';
+import '@primeuix/utils';
+import '@primeuix/styles/base';
+import '@primeuix/utils/dom';
+import '@primeuix/utils/zindex';
+import '@primeuix/utils/uuid';
+import '../routes/renderer.mjs';
+import 'vue-bundle-renderer/runtime';
+import 'unhead/server';
+import 'devalue';
+import 'unhead/utils';
+
+const _sfc_main = {
+  __name: "login",
+  __ssrInlineRender: true,
+  setup(__props) {
+    const route = useRoute();
+    useRouter();
+    const form = ref({
+      domain: route.query.site || "",
+      username: "",
+      password: ""
+    });
+    return (_ctx, _push, _parent, _attrs) => {
+      _push(`<div${ssrRenderAttrs(mergeProps({ class: "flex items-center justify-center min-h-screen bg-[#0f1110] font-sans relative overflow-hidden" }, _attrs))} data-v-a1575b8e><div class="absolute w-[500px] h-[500px] bg-[#6f942e] opacity-[0.03] blur-[100px] rounded-full -top-40 -right-20" data-v-a1575b8e></div><div class="p-10 bg-[#1a1d1c] rounded-[2.5rem] shadow-2xl w-full max-w-md border border-white/5 relative z-10" data-v-a1575b8e><div class="text-center mb-10" data-v-a1575b8e><div class="inline-block px-4 py-1 bg-[#6f942e]/10 rounded-full mb-3" data-v-a1575b8e><span class="text-[10px] font-black text-[#6f942e] uppercase tracking-[0.4em]" data-v-a1575b8e>Core Engine</span></div><h1 class="text-4xl font-black text-white tracking-tighter uppercase italic" data-v-a1575b8e> Sirius <span class="text-[#6f942e]" data-v-a1575b8e>Studio</span></h1></div><div class="space-y-6" data-v-a1575b8e><div class="flex flex-col gap-2" data-v-a1575b8e><label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1" data-v-a1575b8e>Domínio do Site</label><div class="relative" data-v-a1575b8e><i class="pi pi-globe absolute left-4 top-1/2 -translate-y-1/2 text-[#6f942e] text-sm" data-v-a1575b8e></i><input${ssrRenderAttr("value", unref(form).domain)} type="text"${ssrIncludeBooleanAttr(!!unref(route).query.site) ? " disabled" : ""} class="${ssrRenderClass([{ "opacity-50 cursor-not-allowed": !!unref(route).query.site }, "custom-input"])}" data-v-a1575b8e></div></div><div class="flex flex-col gap-2" data-v-a1575b8e><label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1" data-v-a1575b8e>Usuário</label><div class="relative" data-v-a1575b8e><i class="pi pi-user absolute left-4 top-1/2 -translate-y-1/2 text-[#6f942e] text-sm" data-v-a1575b8e></i><input${ssrRenderAttr("value", unref(form).username)} type="text" class="custom-input" data-v-a1575b8e></div></div><div class="flex flex-col gap-2" data-v-a1575b8e><label class="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1" data-v-a1575b8e>Senha</label><div class="relative" data-v-a1575b8e><i class="pi pi-lock absolute left-4 top-1/2 -translate-y-1/2 text-[#6f942e] text-sm" data-v-a1575b8e></i><input${ssrRenderAttr("value", unref(form).password)} type="password" class="custom-input" data-v-a1575b8e></div></div><button class="w-full bg-[#6f942e] hover:bg-[#82ad36] text-white font-black py-5 rounded-2xl transition-all duration-300 shadow-lg shadow-[#6f942e]/10 uppercase tracking-widest text-xs mt-4 flex items-center justify-center gap-2" data-v-a1575b8e><span data-v-a1575b8e>Acessar Painel</span><i class="pi pi-arrow-right text-xs" data-v-a1575b8e></i></button></div><p class="text-center text-[10px] text-slate-600 font-bold uppercase tracking-[0.2em] mt-10" data-v-a1575b8e> © 2026 Sirius Studio Core - Magaweb </p></div></div>`);
+    };
+  }
+};
+const _sfc_setup = _sfc_main.setup;
+_sfc_main.setup = (props, ctx) => {
+  const ssrContext = useSSRContext();
+  (ssrContext.modules || (ssrContext.modules = /* @__PURE__ */ new Set())).add("pages/login.vue");
+  return _sfc_setup ? _sfc_setup(props, ctx) : void 0;
+};
+const login = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-a1575b8e"]]);
+
+export { login as default };
+//# sourceMappingURL=login-w5fEPYFN.mjs.map
