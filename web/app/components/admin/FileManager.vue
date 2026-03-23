@@ -148,7 +148,7 @@ const handleIndexClick = () => {
 const onDragEnd = async () => {
   const orderedNames = localFiles.value.map((f) => f.name);
   try {
-    await $fetch("/api/admin/reorder", {
+    await $fetch("/api/admin/storage/reorder", {
       method: "POST",
       body: { folder: props.currentFolder, files: orderedNames },
     });
@@ -233,7 +233,7 @@ const confirmRename = async () => {
       finalNewName += extension;
     const fullOldPath = `${props.currentFolder}/${oldName}`;
     const fullNewPath = `${props.currentFolder}/${finalNewName}`;
-    const response = await $fetch("/api/admin/rename", {
+    const response = await $fetch("/api/admin/storage/rename", {
       method: "POST",
       body: { oldname: fullOldPath, newname: fullNewPath },
     });
@@ -319,9 +319,7 @@ const openMoveDialog = async (file) => {
   itemToMove.value = file;
   destinationPath.value = props.currentFolder;
   try {
-    const folders = await $fetch("/api/admin/folders", {
-      query: { site: props.siteContext },
-    });
+    const folders = await $fetch("/api/admin/storage/folders");
     const relevantFolders = folders.filter((p) => !p.includes("."));
     folderTree.value = buildTree(relevantFolders);
     const _expanded = {};
@@ -347,7 +345,7 @@ const handleMove = async () => {
   if (!itemToMove.value || !destinationPath.value) return;
   moveLoading.value = true;
   try {
-    const response = await $fetch("/api/admin/rename", {
+    const response = await $fetch("/api/admin/storage/rename", {
       method: "POST",
       body: {
         oldname: `${props.currentFolder}/${itemToMove.value.name}`,

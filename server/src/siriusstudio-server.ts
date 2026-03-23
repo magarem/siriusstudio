@@ -14,7 +14,8 @@ import { backupRoutes } from "./routes/backup";
 import { CONFIG } from "../config";
 
 // (Limpamos os imports de mkdir, rename e reorder, pois agora vivem no storageRoutes!)
-
+// 🚨 ADD THIS GIANT LOG 🚨
+console.log("🔥 ALERTA: O ARQUIVO STORAGE.TS FOI CARREGADO! 🔥");
 // 2. CONFIGURAÇÃO DE CAMINHOS CENTRALIZADA
 const isMac = process.platform === "darwin";
 export const STORAGE_PATH = process.env.STORAGE_PATH;

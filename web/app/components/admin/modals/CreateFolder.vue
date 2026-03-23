@@ -65,7 +65,7 @@ const handleCreate = async () => {
         const targetFolderPath = `${props.currentFolder}/${folderName}`;
 
         // 3. PASSO A: Criar a Pasta
-        await $fetch("/api/admin/mkdir", {
+        await $fetch("/api/admin/storage/mkdir", {
             method: "POST",
             body: {
                 site: props.siteContext,

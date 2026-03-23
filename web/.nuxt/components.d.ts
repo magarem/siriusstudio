@@ -31,6 +31,7 @@ export const ImageExplorer: typeof import("../app/components/admin/ImageExplorer
 export const MarkdownEditor: typeof import("../app/components/admin/MarkdownEditor.vue")['default']
 export const MetaEditor: typeof import("../app/components/admin/MetaEditor.vue")['default']
 export const RawEditor: typeof import("../app/components/admin/RawEditor.vue")['default']
+export const SchemaEditor: typeof import("../app/components/admin/SchemaEditor.vue")['default']
 export const Sidebar: typeof import("../app/components/admin/Sidebar.vue")['default']
 export const Topbar: typeof import("../app/components/admin/Topbar.vue")['default']
 export const VisualSplitEditor: typeof import("../app/components/admin/editors/VisualSplitEditor.vue")['default']
@@ -244,6 +245,7 @@ export const LazyImageExplorer: LazyComponent<typeof import("../app/components/a
 export const LazyMarkdownEditor: LazyComponent<typeof import("../app/components/admin/MarkdownEditor.vue")['default']>
 export const LazyMetaEditor: LazyComponent<typeof import("../app/components/admin/MetaEditor.vue")['default']>
 export const LazyRawEditor: LazyComponent<typeof import("../app/components/admin/RawEditor.vue")['default']>
+export const LazySchemaEditor: LazyComponent<typeof import("../app/components/admin/SchemaEditor.vue")['default']>
 export const LazySidebar: LazyComponent<typeof import("../app/components/admin/Sidebar.vue")['default']>
 export const LazyTopbar: LazyComponent<typeof import("../app/components/admin/Topbar.vue")['default']>
 export const LazyVisualSplitEditor: LazyComponent<typeof import("../app/components/admin/editors/VisualSplitEditor.vue")['default']>

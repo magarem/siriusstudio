@@ -22,6 +22,7 @@
 ---
 ### 📂 /ADMIN
 
+- **GET** `/api/admin/storage/folders`
 - **GET** `/api/admin/storage/`
 - **POST** `/api/admin/storage/`
 - **DELETE** `/api/admin/storage/`

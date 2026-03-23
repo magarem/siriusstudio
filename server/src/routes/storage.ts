@@ -5,7 +5,8 @@ import matter from "gray-matter";
 import yaml from "js-yaml";
 import { CONFIG } from "../../config";
 
-// Função de sanitização robusta para manter o padrão High Top
+console.log("🔥 ARQUIVO STORAGE.TS NOVO CARREGADO COM SUCESSO! 🔥");
+
 const sanitizeFilename = (filename: string) => {
   return filename
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -18,18 +19,47 @@ const sanitizeFilename = (filename: string) => {
 export const storageRoutes = new Elysia({ prefix: "/storage" })
   
   // ==========================================
+  // 0. LISTAR TODAS AS PASTAS (GET /folders)
+  // ==========================================
+  .get("/folders", async ({ site, set }) => {
+    const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
+    
+    const getFoldersRecursive = async (dir: string, base: string, list: string[] = []) => {
+      try {
+        const items = await readdir(dir, { withFileTypes: true });
+        for (const item of items) {
+          if (item.isDirectory() && !item.name.startsWith(".") && item.name !== "_schemas") {
+            const fullPath = join(dir, item.name);
+            const relativePath = fullPath.replace(base, "").replace(/\\/g, "/").replace(/^\//, "");
+            list.push(relativePath);
+            await getFoldersRecursive(fullPath, base, list);
+          }
+        }
+      } catch (e) {}
+      return list;
+    };
+
+    try {
+      const folders = await getFoldersRecursive(baseDir, baseDir);
+      return Array.from(new Set(["content", "content/_globals", ...folders]));
+    } catch (error: any) {
+      set.status = 500;
+      return { error: "Erro ao listar pastas: " + error.message };
+    }
+  })
+
+  // ==========================================
   // 1. LISTAR CONTEÚDO (GET /)
   // ==========================================
   .get("/", async ({ query, site, set }) => {
     const folder = query.folder || "";
     const file = query.file || null;
-
     const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
     const targetDir = normalize(join(baseDir, folder));
 
     if (!targetDir.startsWith(baseDir)) {
       set.status = 403;
-      return { error: "Acesso negado: Tentativa de sair do diretório do site." };
+      return { error: "Acesso negado." };
     }
 
     try {
@@ -41,16 +71,9 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
 
     if (file) {
       const filePath = normalize(join(targetDir, file));
-      if (!filePath.startsWith(baseDir)) {
-        set.status = 403;
-        return { error: "Acesso negado." };
-      }
-      
+      if (!filePath.startsWith(baseDir)) { set.status = 403; return { error: "Acesso negado." }; }
       const bunFile = Bun.file(filePath);
-      if (!(await bunFile.exists())) {
-        set.status = 404;
-        return { error: "Arquivo não encontrado." };
-      }
+      if (!(await bunFile.exists())) { set.status = 404; return { error: "Arquivo não encontrado." }; }
       return { name: file, content: await bunFile.text() };
     }
 
@@ -59,12 +82,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
       const hasCollectionMarker = rawItems.some((i) => i.name === ".collection");
       const subDirectories = rawItems.filter((i) => i.isDirectory());
       
-      let folderType = "folder";
-      if (hasCollectionMarker) {
-        folderType = "collection";
-      } else if (subDirectories.length === 0 && rawItems.some((i) => i.name === "_index.md")) {
-        folderType = "page";
-      }
+      let folderType = hasCollectionMarker ? "collection" : (subDirectories.length === 0 && rawItems.some((i) => i.name === "_index.md") ? "page" : "folder");
 
       const processedFiles = await Promise.all(
         rawItems.map(async (item) => {
@@ -75,7 +93,6 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
             const subPath = join(targetDir, item.name);
             const isCommonDir = await Bun.file(join(subPath, ".isDirFlag")).exists();
             const isCollection = await Bun.file(join(subPath, ".collection")).exists();
-
             const indexMdPath = join(subPath, "_index.md");
             let displayTitle = item.name;
             const indexFile = Bun.file(indexMdPath);
@@ -86,7 +103,6 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
                 if (data.title) displayTitle = data.title;
               } catch (e) {}
             }
-
             metadata = { title: displayTitle, isDir: isCommonDir, isCollection: isCollection };
           }
 
@@ -99,12 +115,10 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
         })
       );
 
-      const cleanFiles = processedFiles.filter(
-        (f) => ![".DS_Store", "_order.yml", "_order.json", "_schema.json"].includes(f.name)
-      );
-
+      const cleanFiles = processedFiles.filter((f) => ![".DS_Store", "_order.yml", "_order.json", "_schema.json"].includes(f.name));
       let orderList: string[] = [];
       const ymlOrderFile = Bun.file(join(targetDir, "_order.yml"));
+      
       try {
         if (await ymlOrderFile.exists()) {
           const parsed = yaml.load(await ymlOrderFile.text());
@@ -140,24 +154,15 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
     const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
     const targetPath = normalize(join(baseDir, folder, file));
 
-    if (!targetPath.startsWith(baseDir)) {
-      set.status = 403;
-      return { error: "Acesso negado: Caminho inválido." };
-    }
-
+    if (!targetPath.startsWith(baseDir)) { set.status = 403; return { error: "Acesso negado: Caminho inválido." }; }
     try {
       await Bun.write(targetPath, content || "");
       return { success: true, message: "Arquivo salvo com sucesso!" };
     } catch (err: any) {
-      set.status = 500;
-      return { error: "Erro ao salvar o arquivo: " + err.message };
+      set.status = 500; return { error: "Erro ao salvar o arquivo: " + err.message };
     }
   }, {
-    body: t.Object({
-      folder: t.String(),
-      file: t.String(),
-      content: t.Optional(t.String())
-    })
+    body: t.Object({ folder: t.String(), file: t.String(), content: t.Optional(t.String()) })
   })
   
   // ==========================================
@@ -166,87 +171,55 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
   .delete("/", async ({ body, site, set }) => {
     const { path: itemPath, folder, file } = body;
     const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
-    
-    const targetPath = itemPath 
-      ? normalize(join(baseDir, itemPath)) 
-      : normalize(join(baseDir, folder || "", file || ""));
+    const targetPath = itemPath ? normalize(join(baseDir, itemPath)) : normalize(join(baseDir, folder || "", file || ""));
 
-    if (!targetPath.startsWith(baseDir) || targetPath === baseDir) {
-      set.status = 403;
-      return { error: "Acesso negado ou tentativa de deletar diretório raiz." };
-    }
-
+    if (!targetPath.startsWith(baseDir) || targetPath === baseDir) { set.status = 403; return { error: "Acesso negado." }; }
     try {
       const stats = await stat(targetPath);
-      if (stats.isDirectory()) {
-        await rm(targetPath, { recursive: true, force: true });
-      } else {
-        await unlink(targetPath);
-      }
+      if (stats.isDirectory()) { await rm(targetPath, { recursive: true, force: true }); } 
+      else { await unlink(targetPath); }
       return { success: true, message: "Removido com sucesso!" };
     } catch (err: any) {
-      set.status = 500;
-      return { error: "Erro ao deletar: " + err.message };
+      set.status = 500; return { error: "Erro ao deletar: " + err.message };
     }
   }, {
-    body: t.Object({
-      path: t.Optional(t.String()),
-      folder: t.Optional(t.String()),
-      file: t.Optional(t.String())
-    })
+    body: t.Object({ path: t.Optional(t.String()), folder: t.Optional(t.String()), file: t.Optional(t.String()) })
   })
+
   // ==========================================
   // 4. CRIAR PASTA (POST /mkdir)
   // ==========================================
   .post("/mkdir", async ({ body, site, set }) => {
     const { name, folder } = body;
-
-    const safeName = sanitizeFilename(name).replace(/-+$/, ""); // Reaproveita a sanitização e tira o traço do final
-
-    if (!safeName) {
-      set.status = 400;
-      return { success: false, error: "Nome de pasta inválido após sanitização." };
-    }
+    const safeName = sanitizeFilename(name).replace(/-+$/, "");
+    if (!safeName) { set.status = 400; return { success: false, error: "Nome de pasta inválido." }; }
 
     const storageRoot = normalize(join(CONFIG.paths.storage, String(site)));
     const parentPath = normalize(join(storageRoot, folder));
     const targetPath = join(parentPath, safeName);
 
-    if (!targetPath.startsWith(storageRoot)) {
-      set.status = 403;
-      return { success: false, error: "Acesso negado: Tentativa de sair do diretório do site." };
-    }
-
+    if (!targetPath.startsWith(storageRoot)) { set.status = 403; return { success: false, error: "Acesso negado." }; }
     try {
       await mkdir(targetPath, { recursive: true });
-
       const sourceSchema = join(parentPath, "_schema.json");
       const destSchema = join(targetPath, "_schema.json");
-
       try {
         await access(sourceSchema);
         await copyFile(sourceSchema, destSchema);
-      } catch {
-        // Silencioso se não houver schema
-      }
-
+      } catch {}
       return { success: true, folderName: safeName, path: targetPath };
     } catch (error: any) {
-      set.status = 500;
-      return { success: false, error: `Erro de sistema ao criar pasta: ${error.message}` };
+      set.status = 500; return { success: false, error: `Erro ao criar pasta: ${error.message}` };
     }
   }, {
-    body: t.Object({
-      name: t.String(),
-      folder: t.String(),
-    })
+    body: t.Object({ name: t.String(), folder: t.String() })
   })
+
   // ==========================================
   // 5. RENOMEAR (POST /rename)
   // ==========================================
   .post("/rename", async ({ body, site, set }) => {
     const { oldname, newname } = body;
-
     const newDir = dirname(newname);
     const sanitizedBase = sanitizeFilename(basename(newname));
     const finalNewName = join(newDir, sanitizedBase);
@@ -255,64 +228,35 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
     const oldPath = normalize(join(storageRoot, oldname));
     const newPath = normalize(join(storageRoot, finalNewName));
 
-    if (!oldPath.startsWith(storageRoot) || !newPath.startsWith(storageRoot)) {
-      set.status = 403;
-      return { success: false, error: 'Acesso negado: Caminho fora do diretório permitido.' };
-    }
-
+    if (!oldPath.startsWith(storageRoot) || !newPath.startsWith(storageRoot)) { set.status = 403; return { success: false, error: 'Acesso negado.' }; }
     try {
       await fsRename(oldPath, newPath);
       return { success: true, oldname, newname: finalNewName };
     } catch (error: any) {
-      console.error("❌ Erro ao renomear:", error.message);
-      set.status = 500;
-      return { success: false, error: "Erro de sistema ao renomear ficheiro ou pasta." };
+      set.status = 500; return { success: false, error: "Erro ao renomear ficheiro ou pasta." };
     }
-  }, 
-  {
-    body: t.Object({
-      oldname: t.String(),
-      newname: t.String()
-    })
+  }, {
+    body: t.Object({ oldname: t.String(), newname: t.String() })
   })
+
   // ==========================================
   // 6. REORDENAR ITENS (POST /reorder)
   // ==========================================
   .post("/reorder", async ({ body, site, set }) => {
     const { folder, files } = body;
-
-    // Resolução de Caminhos usando a constante centralizada
     const storageRoot = normalize(join(CONFIG.paths.storage, String(site)));
     const baseDir = normalize(join(storageRoot, folder));
 
-    // Trava de segurança contra Path Traversal
-    if (!baseDir.startsWith(storageRoot)) {
-      set.status = 403;
-      return { success: false, error: "Acesso negado: Tentativa de sair do diretório do site." };
-    }
-
+    if (!baseDir.startsWith(storageRoot)) { set.status = 403; return { success: false, error: "Acesso negado." }; }
     const orderFilePath = normalize(join(baseDir, "_order.yml"));
 
     try {
-      // Converte o Array JS para formato YAML (estilo PrimeVue Reorder)
-      const yamlContent = yaml.dump(files, {
-        indent: 2,
-        lineWidth: -1, // Mantém nomes de arquivos longos em uma única linha
-      });
-
-      // Grava o arquivo na velocidade do Bun
+      const yamlContent = yaml.dump(files, { indent: 2, lineWidth: -1 });
       await Bun.write(orderFilePath, yamlContent);
-
       return { success: true, message: "Ordenação salva com sucesso!" };
     } catch (error: any) {
-      console.error("❌ Erro ao salvar _order.yml:", error);
-      set.status = 500;
-      return { success: false, error: "Erro interno ao salvar a ordenação." };
+      set.status = 500; return { success: false, error: "Erro ao salvar a ordenação." };
     }
   }, {
-    // A Blindagem High Top
-    body: t.Object({
-      folder: t.String(),
-      files: t.Array(t.String()), 
-    })
+    body: t.Object({ folder: t.String(), files: t.Array(t.String()) })
   });

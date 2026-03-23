@@ -14,6 +14,7 @@ import CreateFileModal from "~/components/admin/modals/CreateFile.vue";
 import CreateFolderModal from "~/components/admin/modals/CreateFolder.vue";
 import CreateCollectionModal from "~/components/admin/modals/CreateCollection.vue";
 import BackupManager from "~/components/admin/BackupManager.vue";
+import SchemaEditor from "~/components/admin/SchemaEditor.vue";
 
 const siteContext = useCookie("cms_site_context");
 const toast = useToast();
@@ -37,6 +38,7 @@ const lastPreviewPath = ref("");
 const sidebarFiles = ref([]);
 const mainFiles = ref([]);
 const fileData = ref({ frontmatter: {}, content: "" });
+const loadedSchema = ref(null);
 
 // Flags e Controle
 const isCollectionFolder = ref(false);
@@ -437,15 +439,54 @@ const getFileContent = async (filepath) => {
     if (data?.content) {
       fileData.value = parseFile(data.content, filepath);
 
-      if (fileData.value.isRaw) {
-        fmSchema.value = "none";
+      // ✨ NEW SCHEMA INTERPRETER LOGIC ✨
+      // Check if this file explicitly declared a schema in its content
+      // Because json files don't use frontmatter, we check fileData.value.content directly
+      let potentialSchema = null;
+      try {
+        const parsedContent =
+          typeof fileData.value.content === "string"
+            ? JSON.parse(fileData.value.content)
+            : fileData.value.content;
+        if (parsedContent && parsedContent._schema) {
+          potentialSchema = parsedContent._schema;
+        }
+      } catch (e) {
+        // Not a valid JSON, safely ignore
+      }
+
+      if (potentialSchema) {
+        // It declared a schema! Fetch the adjacent file
+        const schemaFilename = potentialSchema.includes(".json")
+          ? potentialSchema
+          : `${potentialSchema}.json`;
+
+        try {
+          const schemaRaw = await $fetch("/api/admin/storage", {
+            params: { site: siteContext.value, folder, file: schemaFilename },
+          });
+
+          if (schemaRaw && schemaRaw.content) {
+            loadedSchema.value = JSON.parse(schemaRaw.content);
+          } else {
+            loadedSchema.value = null;
+          }
+        } catch (schemaError) {
+          console.warn(`Schema ${schemaFilename} não encontrado.`);
+          loadedSchema.value = null;
+        }
       } else {
-        // AQUI ACONTECE A MÁGICA:
-        // O schema é inferido e atribuído ANTES de buscar os fields
-        fmSchema.value = await resolveSmartSchema(
-          filepath,
-          fileData.value.frontmatter?.schema,
-        );
+        // Normal file flow
+        loadedSchema.value = null;
+
+        if (fileData.value.isRaw) {
+          fmSchema.value = "none";
+        } else {
+          fmSchema.value = await resolveSmartSchema(
+            filepath,
+            fileData.value.frontmatter?.schema,
+          );
+        }
       }
     }
   } catch (error) {
@@ -1161,15 +1202,37 @@ onUnmounted(() => {
     <div class="flex-1 flex flex-col overflow-hidden relative">
       <div v-show="!isPreviewMode" class="flex-1 flex flex-row overflow-hidden">
         <aside
-          class="w-12 h-full bg-[#141b19] border-r border-white/5 flex flex-col items-center py-3 shrink-0 z-30 gap-4"
+          class="w-12 h-full bg-[#141b19] border-r border-white/5 flex flex-col items-center py-4 shrink-0 z-30 gap-3"
         >
           <button
             @click="showFileManager = !showFileManager"
-            class="w-8 h-8 rounded-md flex items-center justify-center transition-all"
-            :class="showFileManager ? 'text-[#6f942e]' : 'text-zinc-500'"
+            class="w-8 h-8 rounded-md flex items-center justify-center transition-all text-slate-500 hover:text-white hover:bg-white/5"
+            title="Ocultar/Mostrar Menu"
           >
-            <i class="pi pi-folder text-lg"></i>
+            <i class="pi pi-bars text-lg"></i>
           </button>
+
+          <div class="w-6 h-[1px] bg-white/10 my-1"></div>
+
+          <button
+            @click="handleNavigate.navigate({ path: 'content', absolute: true }); showFileManager = true"
+            class="w-8 h-8 rounded-md flex items-center justify-center transition-all shadow-sm"
+            :class="!currentPath.startsWith('content/_globals') ? 'bg-[#6f942e] text-black' : 'text-slate-500 hover:text-white hover:bg-white/5'"
+            title="Páginas do Site"
+          >
+            <i class="pi pi-file text-lg"></i>
+          </button>
+
+          <button
+            @click="handleNavigate.navigate({ path: 'content/_globals', absolute: true }); showFileManager = true"
+            class="w-8 h-8 rounded-md flex items-center justify-center transition-all shadow-sm"
+            :class="currentPath.startsWith('content/_globals') ? 'bg-[#6f942e] text-black' : 'text-slate-500 hover:text-white hover:bg-white/5'"
+            title="Layout Global"
+          >
+            <i class="pi pi-desktop text-lg"></i>
+          </button>
+
+          <div class="flex-1"></div>
 
           <Menu ref="settingsMenu" :model="settingsItems" :popup="true" />
         </aside>
@@ -1208,7 +1271,6 @@ onUnmounted(() => {
         <main
           class="flex-1 flex flex-col min-w-0 bg-[#0a0f0d] relative overflow-hidden"
         >
-
           <div class="flex items-center justify-between w-full gap-4 p-2">
             <nav
               v-if="!isPreviewMode"
@@ -1238,20 +1300,17 @@ onUnmounted(() => {
               v-if="!collectionPanelVisible"
               class="flex items-center bg-black/40 border border-white/10 rounded-md overflow-hidden shrink-0 h-[28px] shadow-lg backdrop-blur-sm"
             >
-
-             <button
-                     v-if="currentPath.endsWith('_index.json')"
-                      @click="showRawJson = !showRawJson"
-                      class="flex items-center gap-2 px-3 py-1.5 bg-[#141b18] hover:bg-white/10 border border-white/10 rounded-md text-xs font-bold uppercase tracking-wider text-slate-300 hover:text-white transition-all shadow-sm"
-                    >
-                      <i
-                        class="pi text-[#6f942e]"
-                        :class="showRawJson ? 'pi-list' : 'pi-code'"
-                      ></i>
-                      <span>{{
-                        showRawJson ? "Modo Visual" : "Editar JSON"
-                      }}</span>
-                    </button>
+              <button
+                v-if="currentPath.endsWith('.json')"
+                @click="showRawJson = !showRawJson"
+                class="flex items-center gap-2 px-3 py-1.5 bg-[#141b18] hover:bg-white/10 border border-white/10 rounded-md text-xs font-bold uppercase tracking-wider text-slate-300 hover:text-white transition-all shadow-sm"
+              >
+                <i
+                  class="pi text-[#6f942e]"
+                  :class="showRawJson ? 'pi-list' : 'pi-code'"
+                ></i>
+                <span>{{ showRawJson ? "Modo Visual" : "Editar JSON" }}</span>
+              </button>
               <button
                 @click="saveFile"
                 v-if="currentFile"
@@ -1298,40 +1357,47 @@ onUnmounted(() => {
                 class="flex-1 flex flex-col bg-[#0a0f0d] min-w-0 h-full relative"
               >
                 <div
-                  v-if="currentPath.endsWith('_index.json')"
-                  class="h-screen w-full overflow-y-auto bg-[#0a0f0d] _p-6 text-slate-200"
+                  v-if="currentPath.endsWith('.json') && !currentPath.endsWith('.schema.json')"
+                  class="h-full w-full overflow-y-auto p-6 text-slate-200"
                 >
-                  <div class="flex items-center justify-between _mb-6">
-                    <!-- <h2 class="text-xl font-bold text-white tracking-tight">Construtor de Página</h2> -->
-
-                   
-                  </div>
-
-                  <div
-                    v-if="!showRawJson"
-                    class="border border-dashed border-white/20 p-4 rounded text-center text-slate-500"
-                  >
-                    <DynamicBlockEditor 
-                    v-model="fileData.content" 
-                   :current-folder="mainFolder"
-                    @open-image="imageActions.open"
+                  <template v-if="!showRawJson">
+                    <SchemaEditor
+                      v-if="loadedSchema"
+                      v-model="fileData.content"
+                      :schema="loadedSchema"
+                      :current-folder="mainFolder"
+                      @open-image="imageActions.open"
                     />
-                  </div>
+
+                    <DynamicBlockEditor
+                      v-else
+                      v-model="fileData.content"
+                      :current-folder="mainFolder"
+                      @open-image="imageActions.open"
+                    />
+                  </template>
+
+                  <AdminMarkdownEditor
+                    v-else
+                    ref="markdownEditorRef"
+                    class="w-full h-full mt-4"
+                    :content="fileData.content"
+                    @update:content="fileData.content = $event"
+                    :is-raw-mode="true"
+                  />
                 </div>
 
                 <CollectionFiles
-                  v-if="collectionPanelVisible"
+                  v-else-if="collectionPanelVisible"
                   :files="mainFiles"
                   :current-folder="mainFolder"
                   @select="handleNavigate.loadFile"
                   @create-item="createActions.openFile(mainFolder)"
                   @refresh="handleNavigate.refresh"
                 />
+
                 <AdminMarkdownEditor
-                  v-else-if="
-                    currentFile &&
-                    (!currentPath.endsWith('_index.json') || showRawJson)
-                  "
+                  v-else-if="currentFile"
                   ref="markdownEditorRef"
                   class="w-full h-full"
                   :content="fileData.content"
