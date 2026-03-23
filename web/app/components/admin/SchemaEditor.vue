@@ -34,7 +34,8 @@
               <InputText v-model="localData[field.name]" placeholder="URL ou caminho da imagem..." class="w-full bg-[#141b18] text-white border-white/10 text-sm p-3 pl-10 focus:border-[#6f942e] transition-colors" />
               <i class="pi pi-image absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm"></i>
             </div>
-            <Button icon="pi pi-folder-open" severity="secondary" @click="$emit('open-image', { mode: 'set', obj: localData, key: field.name })" />
+            
+            <Button icon="pi pi-folder-open" severity="secondary" v-tooltip="'Escolher Imagem'" @click="$emit('open-image', { mode: 'set', obj: localData, key: field.name })" />
             
             <div v-if="localData[field.name]" class="w-12 shrink-0 aspect-square bg-black rounded border border-white/20 overflow-hidden relative">
               <img :src="getImageUrl(localData[field.name])" class="w-full h-full object-cover" />
@@ -62,7 +63,19 @@
               
               <div v-else-if="subField.type === 'image'" class="flex gap-2 items-stretch">
                 <InputText v-model="localData[field.name][subField.name]" class="bg-[#0a0f0d] text-white border-white/10 text-sm p-3 flex-1 focus:border-[#6f942e] transition-colors" />
+                
                 <Button icon="pi pi-folder-open" size="small" severity="secondary" @click="$emit('open-image', { mode: 'set', obj: localData[field.name], key: subField.name })" />
+                
+                <Button 
+                  v-if="subField.name === 'imageLight' || subField.name === 'imageDark'" 
+                  icon="pi pi-pen-to-square" 
+                  severity="info" 
+                  size="small"
+                  class="!bg-blue-600 !border-none"
+                  v-tooltip="'Criar Logo em Texto'"
+                  @click="$emit('open-wordmark', { obj: localData[field.name] })" 
+                />
+
                 <div v-if="localData[field.name][subField.name]" class="w-10 shrink-0 aspect-square bg-black rounded border border-white/20 overflow-hidden relative">
                   <img :src="getImageUrl(localData[field.name][subField.name])" class="w-full h-full object-cover" />
                 </div>
@@ -102,28 +115,28 @@
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
                 <div v-for="arrField in field.fields" :key="arrField.name" :class="{'md:col-span-2': arrField.type === 'array'}">
   
-  <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{{ arrField.label }}</label>
-  
-  <InputText v-if="arrField.type === 'string' || !arrField.type" v-model="item[arrField.name]" class="bg-[#141b18] text-white border-white/10 w-full text-sm p-2 focus:border-[#6f942e] transition-colors" />
-  
-  <div v-else-if="arrField.type === 'array'" class="bg-black/40 p-3 rounded-lg border border-white/5 mt-1">
-    <span class="hidden">{{ ensureArray(item, arrField.name) }}</span>
-    
-    <div v-for="(subItem, subIndex) in item[arrField.name]" :key="subIndex" class="flex gap-2 items-center mb-2">
-      <div v-for="subField in arrField.fields" :key="subField.name" class="flex-1">
-        <InputText v-model="subItem[subField.name]" :placeholder="subField.label" class="bg-[#0a0f0d] text-white border-white/10 w-full text-xs p-2 focus:border-[#6f942e] transition-colors" />
-      </div>
-      <button @click="item[arrField.name].splice(subIndex, 1)" class="text-slate-500 hover:text-red-500 p-2 transition-colors" title="Remover submenu">
-        <i class="pi pi-trash text-sm"></i>
-      </button>
-    </div>
-    
-    <button @click="addArrayItem(item[arrField.name], arrField.fields)" class="text-[10px] text-[#6f942e] border border-[#6f942e]/30 hover:bg-[#6f942e]/10 py-1.5 rounded w-full transition-colors flex justify-center gap-2 items-center mt-2 font-medium">
-      <i class="pi pi-plus"></i> Adicionar {{ arrField.label }}
-    </button>
-  </div>
+                  <label class="text-[9px] font-bold text-slate-500 uppercase tracking-widest block mb-1">{{ arrField.label }}</label>
+                  
+                  <InputText v-if="arrField.type === 'string' || !arrField.type" v-model="item[arrField.name]" class="bg-[#141b18] text-white border-white/10 w-full text-sm p-2 focus:border-[#6f942e] transition-colors" />
+                  
+                  <div v-else-if="arrField.type === 'array'" class="bg-black/40 p-3 rounded-lg border border-white/5 mt-1">
+                    <span class="hidden">{{ ensureArray(item, arrField.name) }}</span>
+                    
+                    <div v-for="(subItem, subIndex) in item[arrField.name]" :key="subIndex" class="flex gap-2 items-center mb-2">
+                      <div v-for="subField in arrField.fields" :key="subField.name" class="flex-1">
+                        <InputText v-model="subItem[subField.name]" :placeholder="subField.label" class="bg-[#0a0f0d] text-white border-white/10 w-full text-xs p-2 focus:border-[#6f942e] transition-colors" />
+                      </div>
+                      <button @click="item[arrField.name].splice(subIndex, 1)" class="text-slate-500 hover:text-red-500 p-2 transition-colors" title="Remover submenu">
+                        <i class="pi pi-trash text-sm"></i>
+                      </button>
+                    </div>
+                    
+                    <button @click="addArrayItem(item[arrField.name], arrField.fields)" class="text-[10px] text-[#6f942e] border border-[#6f942e]/30 hover:bg-[#6f942e]/10 py-1.5 rounded w-full transition-colors flex justify-center gap-2 items-center mt-2 font-medium">
+                      <i class="pi pi-plus"></i> Adicionar {{ arrField.label }}
+                    </button>
+                  </div>
 
-</div>
+                </div>
               </div>
               
               <button @click="localData[field.name].splice(itemIndex, 1)" class="text-slate-600 hover:text-red-500 p-3 bg-black/40 rounded-lg transition-colors self-end border border-white/5" title="Remover item">
@@ -151,7 +164,7 @@ const props = defineProps({
   currentFolder: { type: String, default: '' }
 });
 
-const emit = defineEmits(['update:modelValue', 'open-image']);
+const emit = defineEmits(['update:modelValue', 'open-image', 'open-wordmark']);
 
 // The internal reactive object
 const localData = ref({});

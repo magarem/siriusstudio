@@ -1,0 +1,70 @@
+# -------------------------------------------------------------------------
+# DEPENDENCIES
+# -------------------------------------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+
+# (Note: bun.lockb, package-lock.json, or pnpm-lock.yaml SHOULD be committed)
+
+# -------------------------------------------------------------------------
+# NUXT / VUE / BUILD OUTPUTS
+# -------------------------------------------------------------------------
+.nuxt/
+.nitro/
+.output/
+dist/
+public/_nuxt/
+.vercel/
+.netlify/
+
+# -------------------------------------------------------------------------
+# ENVIRONMENT VARIABLES (Keep secrets out of Git!)
+# -------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.test
+
+# -------------------------------------------------------------------------
+# SQLITE DATABASES (Prevents committing live client data)
+# -------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# -------------------------------------------------------------------------
+# LOGS
+# -------------------------------------------------------------------------
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.log
+
+# -------------------------------------------------------------------------
+# OS & EDITOR FILES
+# -------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

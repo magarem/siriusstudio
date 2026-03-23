@@ -34,6 +34,7 @@ export const RawEditor: typeof import("../app/components/admin/RawEditor.vue")['
 export const SchemaEditor: typeof import("../app/components/admin/SchemaEditor.vue")['default']
 export const Sidebar: typeof import("../app/components/admin/Sidebar.vue")['default']
 export const Topbar: typeof import("../app/components/admin/Topbar.vue")['default']
+export const WordmarkBuilder: typeof import("../app/components/admin/WordmarkBuilder.vue")['default']
 export const VisualSplitEditor: typeof import("../app/components/admin/editors/VisualSplitEditor.vue")['default']
 export const BackupRestore: typeof import("../app/components/admin/modals/BackupRestore.vue")['default']
 export const CreateCollection: typeof import("../app/components/admin/modals/CreateCollection.vue")['default']
@@ -248,6 +249,7 @@ export const LazyRawEditor: LazyComponent<typeof import("../app/components/admin
 export const LazySchemaEditor: LazyComponent<typeof import("../app/components/admin/SchemaEditor.vue")['default']>
 export const LazySidebar: LazyComponent<typeof import("../app/components/admin/Sidebar.vue")['default']>
 export const LazyTopbar: LazyComponent<typeof import("../app/components/admin/Topbar.vue")['default']>
+export const LazyWordmarkBuilder: LazyComponent<typeof import("../app/components/admin/WordmarkBuilder.vue")['default']>
 export const LazyVisualSplitEditor: LazyComponent<typeof import("../app/components/admin/editors/VisualSplitEditor.vue")['default']>
 export const LazyBackupRestore: LazyComponent<typeof import("../app/components/admin/modals/BackupRestore.vue")['default']>
 export const LazyCreateCollection: LazyComponent<typeof import("../app/components/admin/modals/CreateCollection.vue")['default']>

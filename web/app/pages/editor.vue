@@ -15,6 +15,7 @@ import CreateFolderModal from "~/components/admin/modals/CreateFolder.vue";
 import CreateCollectionModal from "~/components/admin/modals/CreateCollection.vue";
 import BackupManager from "~/components/admin/BackupManager.vue";
 import SchemaEditor from "~/components/admin/SchemaEditor.vue";
+import WordmarkBuilderModal from "~/components/admin/WordmarkBuilder.vue"; // ✨ NEW IMPORT
 
 const siteContext = useCookie("cms_site_context");
 const toast = useToast();
@@ -69,6 +70,27 @@ const previewIframe = ref(null);
 // --- MENU & CONFIG ---
 const userMenu = ref();
 const settingsMenu = ref();
+
+
+const showWordmarkModal = ref(false);
+const wordmarkTargetObj = ref(null);
+
+const handleOpenWordmark = (payload) => {
+  wordmarkTargetObj.value = payload.obj; // Reference to the 'logo' object in your JSON
+  showWordmarkModal.value = true;
+};
+
+const saveWordmarkToSchema = (generatedHtml) => {
+  if (wordmarkTargetObj.value) {
+    // 1. Save the generated CSS/HTML
+    wordmarkTargetObj.value.customHtml = generatedHtml;
+    // 2. Wipe existing images so the Wordmark renders properly
+    wordmarkTargetObj.value.imageLight = "";
+    wordmarkTargetObj.value.imageDark = "";
+    wordmarkTargetObj.value.image = "";
+  }
+};
+
 // --- LÓGICA DE LOGOUT ---
 const handleLogout = async () => {
   try {
@@ -1361,13 +1383,14 @@ onUnmounted(() => {
                   class="h-full w-full overflow-y-auto p-6 text-slate-200"
                 >
                   <template v-if="!showRawJson">
-                    <SchemaEditor
-                      v-if="loadedSchema"
-                      v-model="fileData.content"
-                      :schema="loadedSchema"
-                      :current-folder="mainFolder"
-                      @open-image="imageActions.open"
-                    />
+                   <SchemaEditor
+  v-if="loadedSchema"
+  v-model="fileData.content"
+  :schema="loadedSchema"
+  :current-folder="mainFolder"
+  @open-image="imageActions.open"
+  @open-wordmark="handleOpenWordmark" 
+/>
 
                     <DynamicBlockEditor
                       v-else
@@ -1536,6 +1559,12 @@ onUnmounted(() => {
       class="bg-[#141b18]"
       ><BackupManager
     /></Dialog>
+
+    <WordmarkBuilderModal 
+      v-model:visible="showWordmarkModal"
+      :initialName="wordmarkTargetObj?.text || 'Magaweb'"
+      @select="saveWordmarkToSchema"
+    />
 
     <div
       class="fixed bottom-8 right-4 z-[9999] w-172 bg-black/80 border border-white/10 rounded-lg p-2 font-mono text-[10px] pointer-events-none opacity-50 hidden"

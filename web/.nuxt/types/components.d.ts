@@ -34,6 +34,7 @@ interface _GlobalComponents {
   SchemaEditor: typeof import("../../app/components/admin/SchemaEditor.vue")['default']
   Sidebar: typeof import("../../app/components/admin/Sidebar.vue")['default']
   Topbar: typeof import("../../app/components/admin/Topbar.vue")['default']
+  WordmarkBuilder: typeof import("../../app/components/admin/WordmarkBuilder.vue")['default']
   VisualSplitEditor: typeof import("../../app/components/admin/editors/VisualSplitEditor.vue")['default']
   BackupRestore: typeof import("../../app/components/admin/modals/BackupRestore.vue")['default']
   CreateCollection: typeof import("../../app/components/admin/modals/CreateCollection.vue")['default']
@@ -248,6 +249,7 @@ interface _GlobalComponents {
   LazySchemaEditor: LazyComponent<typeof import("../../app/components/admin/SchemaEditor.vue")['default']>
   LazySidebar: LazyComponent<typeof import("../../app/components/admin/Sidebar.vue")['default']>
   LazyTopbar: LazyComponent<typeof import("../../app/components/admin/Topbar.vue")['default']>
+  LazyWordmarkBuilder: LazyComponent<typeof import("../../app/components/admin/WordmarkBuilder.vue")['default']>
   LazyVisualSplitEditor: LazyComponent<typeof import("../../app/components/admin/editors/VisualSplitEditor.vue")['default']>
   LazyBackupRestore: LazyComponent<typeof import("../../app/components/admin/modals/BackupRestore.vue")['default']>
   LazyCreateCollection: LazyComponent<typeof import("../../app/components/admin/modals/CreateCollection.vue")['default']>
