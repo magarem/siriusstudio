@@ -60,13 +60,13 @@ watch(
       return true;
     });
 
-    list.sort((a, b) => {
-      if (isIndexFile(a)) return -1;
-      if (isIndexFile(b)) return 1;
-      const titleA = (a.data?.title || a.name).toLowerCase();
-      const titleB = (b.data?.title || b.name).toLowerCase();
-      return titleA.localeCompare(titleB);
-    });
+    // list.sort((a, b) => {
+    //   if (isIndexFile(a)) return -1;
+    //   if (isIndexFile(b)) return 1;
+    //   const titleA = (a.data?.title || a.name).toLowerCase();
+    //   const titleB = (b.data?.title || b.name).toLowerCase();
+    //   return titleA.localeCompare(titleB);
+    // });
 
     localFiles.value = list;
   },
@@ -74,10 +74,21 @@ watch(
 );
 
 // --- 2. DELEGAÇÃO DE AÇÕES PARA O PAI (ARQUITETURA DUMB COMPONENT) ---
-const onRowReorder = (event: any) => {
+const onRowReorder = async (event: any) => {
   localFiles.value = event.value; 
   const orderedNames = localFiles.value.map((f: FileItem) => f.name);
-  emit("reorder-items", { folder: props.currentFolder, files: orderedNames });
+  // emit("reorder-items", { folder: props.currentFolder, files: orderedNames });
+  try {
+    await $fetch("/api/admin/storage/reorder", {
+      method: "POST",
+      body: { folder: props.currentFolder, files: orderedNames },
+    });
+    //emit("refresh");
+  } catch (error) {
+    console.error("Erro ao reordenar");
+  }
+
+
 };
 
 const confirmDelete = (event: Event, item: FileItem) => {

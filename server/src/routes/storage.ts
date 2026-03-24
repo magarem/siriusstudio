@@ -243,6 +243,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
   // 6. REORDENAR ITENS (POST /reorder)
   // ==========================================
   .post("/reorder", async ({ body, site, set }) => {
+    console.log("Reordenar itens:", body);
     const { folder, files } = body;
     const storageRoot = normalize(join(CONFIG.paths.storage, String(site)));
     const baseDir = normalize(join(storageRoot, folder));
