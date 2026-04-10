@@ -157,7 +157,7 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
     >
       <div v-show="!isCollapsed" class="flex items-center gap-2 overflow-hidden">
         <i class="pi pi-sliders-h text-[#6f942e] text-sm shrink-0"></i>
-        <span class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-300 truncate">Propriedades</span>
+        <span class="text-[15px] font-black uppercase tracking-[0.15em] text-slate-300 truncate">Propriedades</span>
       </div>
       
       <button 
@@ -179,27 +179,27 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
         
         <div @click="toggleField(field.key)" class="p-3 flex items-center justify-between cursor-pointer hover:bg-white/5 select-none" :class="{ 'border-b border-white/5': !collapsedFields[field.key] }">
           <div class="flex items-center gap-3">
-            <i class="pi pi-chevron-down text-[10px] text-[#6f942e] transition-transform duration-300" :class="{ '-rotate-90': collapsedFields[field.key] }"></i>
+            <i class="pi pi-chevron-down text-[15px] text-[#6f942e] transition-transform duration-300" :class="{ '-rotate-90': collapsedFields[field.key] }"></i>
             <div>
-              <label class="text-[10px] font-black text-[#6f942e] uppercase tracking-[0.2em] cursor-pointer">{{ field.label }}</label>
-              <div v-if="collapsedFields[field.key]" class="text-[9px] text-slate-500 font-mono mt-1">Result: <span class="text-slate-300">{{ getFieldSummary(field) }}</span></div>
+              <label class="text-[15px] font-black text-[#6f942e] uppercase tracking-[0.2em] cursor-pointer">{{ field.label }}</label>
+              <div v-if="collapsedFields[field.key]" class="text-[15px] text-slate-500 font-mono mt-1">Result: <span class="text-slate-300">{{ getFieldSummary(field) }}</span></div>
             </div>
           </div>
-          <i v-if="field.description && !collapsedFields[field.key]" class="pi pi-info-circle text-[10px] text-slate-600" v-tooltip.top="field.description"></i>
+          <i v-if="field.description && !collapsedFields[field.key]" class="pi pi-info-circle text-[15px] text-slate-600" v-tooltip.top="field.description"></i>
         </div>
 
         <div v-show="!collapsedFields[field.key]" class="p-5 pt-4 bg-[#0a0f0d]/30">
           
           <div v-if="field.key === 'schema'">
-              <select v-model="frontmatter[field.key]" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:border-[#6f942e] outline-none transition-colors appearance-none cursor-pointer">
+              <select v-model="frontmatter[field.key]" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-[15px] text-white focus:border-[#6f942e] outline-none transition-colors appearance-none cursor-pointer">
                   <option v-for="opt in localSchemaOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
-              <div class="text-[9px] text-slate-500 mt-1 italic break-all px-1">Path: {{ frontmatter[field.key] }}</div>
+              <div class="text-[15px] text-slate-500 mt-1 italic break-all px-1">Path: {{ frontmatter[field.key] }}</div>
           </div>
 
-          <input v-else-if="field.type === 'text'" v-model="frontmatter[field.key]" :placeholder="field.placeholder" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:border-[#6f942e] outline-none transition-colors" />
+          <input v-else-if="field.type === 'text'" v-model="frontmatter[field.key]" :placeholder="field.placeholder" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-[15px] text-white focus:border-[#6f942e] outline-none transition-colors" />
           
-          <textarea v-else-if="field.type === 'textarea'" v-model="frontmatter[field.key]" rows="3" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-sm text-white focus:border-[#6f942e] outline-none transition-colors resize-none"></textarea>
+          <textarea v-else-if="field.type === 'textarea'" v-model="frontmatter[field.key]" rows="3" class="w-full bg-[#0a0f0d] border border-white/10 rounded-sm px-3 py-2 text-[15px] text-white focus:border-[#6f942e] outline-none transition-colors resize-none"></textarea>
           
           <div v-else-if="field.type === 'image'" class="flex gap-2 items-stretch">
             <div class="relative flex-1">
@@ -225,7 +225,7 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
                 </template>
               </draggable>
               <div v-else class="text-center py-4 text-[10px] text-slate-600 italic">Galeria vazia</div>
-              <Button label="Adicionar Imagens" icon="pi pi-plus" size="small" outlined class="w-full text-[10px] border-dashed border-[#6f942e]/30 text-[#6f942e]" @click="requestImageList(frontmatter[field.key])" />
+              <Button label="Adicionar Imagens" icon="pi pi-plus" size="small" outlined class="w-full text-[15px] border-dashed border-[#6f942e]/30 text-[#6f942e]" @click="requestImageList(frontmatter[field.key])" />
           </div>
 
           <div v-else-if="field.type === 'simple_list'" class="mt-2">
@@ -239,7 +239,7 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
                 </div>
               </template>
             </draggable>
-            <button @click="addSimpleListItem(field.key)" class="w-full py-2 mt-3 border border-dashed border-[#6f942e]/30 rounded-sm text-[10px] font-bold text-[#6f942e] hover:bg-[#6f942e]/10 uppercase tracking-widest transition-all">+ Adicionar Item</button>
+            <button @click="addSimpleListItem(field.key)" class="w-full py-2 mt-3 border border-dashed border-[#6f942e]/30 rounded-sm text-[15px] font-bold text-[#6f942e] hover:bg-[#6f942e]/10 uppercase tracking-widest transition-all">+ Adicionar Item</button>
           </div>
           
           <div v-else-if="field.type === 'repeater'" class="mt-2">
@@ -249,13 +249,13 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
                   <div class="flex justify-between items-center mb-3 border-b border-white/5 pb-2">
                     <div class="flex items-center gap-2">
                       <i class="pi pi-bars drag-handle cursor-grab text-slate-600 hover:text-white"></i>
-                      <span class="text-[9px] font-bold text-slate-500 uppercase">{{ field.itemLabel || 'Item' }} {{ index + 1 }}</span>
+                      <span class="text-[15px] font-bold text-slate-500 uppercase">{{ field.itemLabel || 'Item' }} {{ index + 1 }}</span>
                     </div>
                     <button @click="removeRepeaterItem(field.key, index)" class="text-slate-700 hover:text-red-500 transition-colors"><i class="pi pi-trash text-xs"></i></button>
                   </div>
                   <div class="space-y-3">
                     <div v-for="subField in field.schema" :key="subField.key">
-                      <label class="text-[8px] text-slate-500 uppercase font-bold block mb-1">{{ subField.label }}</label>
+                      <label class="text-[14px] text-slate-500 uppercase font-bold block mb-1">{{ subField.label }}</label>
                       <input v-if="subField.type === 'text'" v-model="element[subField.key]" class="w-full bg-transparent border-b border-white/10 text-sm py-1 outline-none focus:border-[#6f942e]" />
                       <textarea v-else-if="subField.type === 'textarea'" v-model="element[subField.key]" rows="2" class="w-full bg-transparent border-b border-white/10 text-sm py-1 outline-none focus:border-[#6f942e] resize-none"></textarea>
                       <div v-else-if="subField.type === 'image'" class="flex gap-2 items-stretch">
@@ -270,7 +270,7 @@ const requestImageList = (targetArray) => emit('open-image', { mode: 'push', lis
                 </div>
               </template>
             </draggable>
-            <button @click="addRepeaterItem(field.key, field.schema)" class="w-full py-3 mt-4 border-2 border-dashed border-[#6f942e]/20 rounded-sm text-[10px] font-bold text-[#6f942e] hover:bg-[#6f942e]/10 uppercase tracking-widest transition-all">+ Adicionar {{ field.itemLabel || 'Item' }}</button>
+            <button @click="addRepeaterItem(field.key, field.schema)" class="w-full py-3 mt-4 border-2 border-dashed border-[#6f942e]/20 rounded-sm text-[15px] font-bold text-[#6f942e] hover:bg-[#6f942e]/10 uppercase tracking-widest transition-all">+ Adicionar {{ field.itemLabel || 'Item' }}</button>
           </div>
 
         </div>

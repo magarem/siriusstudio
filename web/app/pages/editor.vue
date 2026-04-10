@@ -71,9 +71,70 @@ const previewIframe = ref(null);
 const userMenu = ref();
 const settingsMenu = ref();
 
-
 const showWordmarkModal = ref(false);
 const wordmarkTargetObj = ref(null);
+
+
+// ✨ STATE DO EDITOR MARKDOWN
+const showMarkdownModal = ref(false);
+const markdownTarget = ref({ blockId: null, fileName: '', folder: '', content: '' });
+const isSavingMarkdown = ref(false);
+
+// ✨ FUNÇÃO QUE ESCUTA O COMPONENTE FILHO
+const handleOpenMarkdown = async (payload) => {
+  markdownTarget.value = { 
+    blockId: payload.blockId, 
+    fileName: payload.fileName || 'novo-bloco.md',
+    folder: payload.folder,
+    content: 'A carregar o texto do servidor...' 
+  };
+  
+  showMarkdownModal.value = true; // Abre o Modal logo para dar feedback
+
+  try {
+    // ⚠️ Ajusta este fetch para a tua rota real do Bun que lê ficheiros MD
+    const { data } = await $fetch('/api/content', {
+      query: { folder: payload.folder, file: markdownTarget.value.fileName }
+    });
+    
+    // Supondo que a API devolve o texto bruto ou num objeto:
+    markdownTarget.value.content = data?.content || typeof data === 'string' ? data : '';
+  } catch (e) {
+    console.error("Ficheiro não encontrado ou erro:", e);
+    markdownTarget.value.content = ''; // Limpa se for um ficheiro novo
+  }
+};
+
+// ✨ FUNÇÃO QUE GRAVA NO SERVIDOR BUN
+const saveMarkdownContent = async () => {
+  isSavingMarkdown.value = true;
+  
+  try {
+    // ⚠️ Ajusta este fetch para a tua rota real do Bun que guarda o ficheiro!
+    /*
+    await $fetch('/api/content/save-file', {
+      method: 'POST',
+      body: {
+        folder: markdownTarget.value.folder,
+        fileName: markdownTarget.value.fileName,
+        content: markdownTarget.value.content
+      }
+    });
+    */
+    
+    // Simulação temporária (remove depois de conectares a API)
+    await new Promise(r => setTimeout(r, 800)); 
+    
+    showMarkdownModal.value = false;
+    alert("Ficheiro gravado com sucesso!"); // Pode ser substituído por um Toast do PrimeVue
+  } catch (error) {
+    alert("Erro ao gravar o ficheiro Markdown.");
+  } finally {
+    isSavingMarkdown.value = false;
+  }
+};
+
+
 
 const handleOpenWordmark = (payload) => {
   wordmarkTargetObj.value = payload.obj; // Reference to the 'logo' object in your JSON
@@ -155,7 +216,7 @@ const currentPreviewDisplayUrl = computed(() => {
     // Fallback visual enquanto o iframe não manda mensagem
     path = currentFile.value
       .replace("content", "")
-      .replace("/_index.md", "")
+      .replace("/_index.json", "")
       .replace(".md", "");
     if (!path) path = "/";
   }
@@ -337,8 +398,8 @@ const syncStateFromUrl = async () => {
     // 3. TENTATIVA DE AUTO-LOAD DO INDEX (A Mágica acontece aqui)
     // Verifica na lista carregada (mainFiles) se existe um _index na ordem de prioridade
     const candidates = [
-      "_index.md",
       "_index.json",
+      "_index.md",
       "_index.yml",
       "_index.toml",
     ];
@@ -454,6 +515,9 @@ const getFileContent = async (filepath) => {
   try {
     const folder = filepath.substring(0, filepath.lastIndexOf("/"));
     const filename = filepath.split("/").pop();
+    if (folder == "content" && !filename) {
+      filename = "_index.json";
+    }
     const data = await $fetch("/api/admin/storage", {
       params: { site: siteContext.value, folder, file: filename },
     });
@@ -518,19 +582,53 @@ const getFileContent = async (filepath) => {
 
 const parseFile = (fullText, filename = "") => {
   if (!fullText) return { frontmatter: {}, content: "" };
+  
   const normalized = fullText.replace(/\r\n/g, "\n");
   const lower = filename.toLowerCase();
-  const isRaw =
-    lower.endsWith(".json") ||
-    lower.endsWith(".yml") ||
-    lower.endsWith(".yaml") ||
-    lower.endsWith(".toml");
 
+  // ✨ NOVO: Lógica para desmontar o JSON estruturado do nosso CMS
+  if (lower.endsWith(".json")) {
+    try {
+      const parsed = JSON.parse(normalized);
+      
+      // Verifica se é a nossa estrutura de página (tem props ou blocks)
+      if (parsed.props || parsed.blocks) {
+        // 1. Extrai os metadados para alimentar o painel lateral de configurações
+        const frontmatter = parsed.props || {};
+        
+        // 2. Extrai os blocos e configurações visuais para o DynamicBlockEditor
+        const contentObj = {
+          blocks: parsed.blocks || [],
+          marginTop: parsed.marginTop !== undefined ? parsed.marginTop : "15px",
+          marginX: parsed.marginX !== undefined ? parsed.marginX : "0px"
+        };
+        
+        return { 
+          frontmatter, 
+          // O DynamicBlockEditor espera uma string JSON ou Objeto
+          content: JSON.stringify(contentObj, null, 2), 
+          isRaw: false // Força a abrir no editor visual (DynamicBlockEditor)
+        };
+      }
+      
+      // Se for um JSON qualquer (ex: ficheiro de tradução), abre como texto puro
+      return { frontmatter: {}, content: normalized, isRaw: true };
+    } catch (e) {
+      console.warn("Erro ao fazer parse do JSON", e);
+      return { frontmatter: {}, content: normalized, isRaw: true };
+    }
+  }
+
+  // Lógica para ficheiros nativamente RAW
+  const isRaw = lower.endsWith(".yml") || lower.endsWith(".yaml") || lower.endsWith(".toml");
   if (isRaw) return { frontmatter: {}, content: normalized, isRaw: true };
+
+  // Lógica clássica para ficheiros antigos .md com Frontmatter (Retrocompatibilidade)
   const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
   if (match) {
     try {
       return {
+        // Usa a biblioteca yaml que já tinhas importada
         frontmatter: yaml.load(match[1]) || {},
         content: match[2].trimStart(),
       };
@@ -538,6 +636,8 @@ const parseFile = (fullText, filename = "") => {
       return { frontmatter: {}, content: normalized };
     }
   }
+  
+  // Ficheiro de texto/markdown simples sem frontmatter
   return { frontmatter: {}, content: normalized };
 };
 
@@ -654,7 +754,9 @@ const handleNavigate = {
     }
   },
   loadFile: (item) => {
-    const targetPath = item.isDirectory ? `${item.path}/_index.md` : item.path;
+    const targetPath = item.isDirectory
+      ? `${item.path}/_index.md`
+      : item.path;
     router.push({ query: { ...route.query, path: targetPath } });
   },
   refresh: async () => {
@@ -753,9 +855,37 @@ const saveFile = async () => {
   if (!currentFile.value) return;
   try {
     let finalContent = "";
-    if (isRawFile.value || isRawMode.value) {
+    const lowerFileName = currentFile.value.toLowerCase();
+
+    // ✨ NOVO: Interceta a gravação se for um ficheiro JSON estruturado
+    if (lowerFileName.endsWith('.json') && !isRawMode.value) {
+      try {
+        // O DynamicBlockEditor envia o conteúdo como uma string JSON (ou objeto, dependendo do estado)
+        const parsedContent = typeof fileData.value.content === 'string'
+          ? JSON.parse(fileData.value.content || "{}")
+          : fileData.value.content;
+
+        // Remonta o objeto final combinando Meta (props) + Conteúdo (blocks)
+        const finalJson = {
+          props: fileData.value.frontmatter || {},
+          blocks: parsedContent.blocks || [],
+          marginTop: parsedContent.marginTop !== undefined ? parsedContent.marginTop : "15px",
+          marginX: parsedContent.marginX !== undefined ? parsedContent.marginX : "0px"
+        };
+
+        // Converte o objeto final numa string JSON bem formatada (com 2 espaços de indentação)
+        finalContent = JSON.stringify(finalJson, null, 2);
+      } catch (e) {
+        console.error("Erro ao compilar JSON para gravar", e);
+        finalContent = fileData.value.content; // Fallback de segurança
+      }
+    } 
+    // Lógica para modo Raw ou ficheiros puros (.yml, .toml, etc)
+    else if (isRawFile.value || isRawMode.value) {
       finalContent = fileData.value.content;
-    } else {
+    } 
+    // Lógica clássica para ficheiros Markdown (.md) com Frontmatter
+    else {
       const fm = yaml
         .dump(fileData.value.frontmatter, {
           indent: 2,
@@ -767,6 +897,7 @@ const saveFile = async () => {
       finalContent = `${separator}${fileData.value.content}`;
     }
 
+    // Envia o ficheiro processado para a API de Storage (Bun)
     await $fetch("/api/admin/storage", {
       method: "POST",
       body: {
@@ -777,6 +908,7 @@ const saveFile = async () => {
       },
     });
 
+    // Se estivermos em modo visualização de código (Raw), atualiza as props ao gravar
     if (isRawMode.value) {
       const parsed = parseFile(fileData.value.content, currentFile.value);
       fileData.value.frontmatter = parsed.frontmatter;
@@ -1012,7 +1144,7 @@ const editPageFromPreview = async () => {
 
   // CASO 1: HOME (Raiz)
   if (path === "" || path === "/") {
-    handleNavigate.selectFile("content/_index.md");
+    handleNavigate.selectFile("content/_index.json");
     isPreviewMode.value = false;
     return;
   }
@@ -1021,8 +1153,8 @@ const editPageFromPreview = async () => {
   // Como garantimos que path começa com "/", a concatenação "content/..." funcionará perfeitamente.
   const candidates = [
     `content${path}.md`, // ex: content/sobre.md
-    `content${path}/_index.md`, // ex: content/sobre/_index.md
-    `content${path}/index.md`, // ex: content/sobre/index.md
+    `content${path}/_index.json`, // ex: content/sobre/_index.md
+    `content${path}/_index.md`, // ex: content/sobre/index.md
   ];
 
   // Mostra no console do navegador quais arquivos ele está tentando achar (ótimo para debugar)
@@ -1237,18 +1369,35 @@ onUnmounted(() => {
           <div class="w-6 h-[1px] bg-white/10 my-1"></div>
 
           <button
-            @click="handleNavigate.navigate({ path: 'content', absolute: true }); showFileManager = true"
+            @click="
+              handleNavigate.navigate({ path: 'content', absolute: true });
+              showFileManager = true;
+            "
             class="w-8 h-8 rounded-md flex items-center justify-center transition-all shadow-sm"
-            :class="!currentPath.startsWith('content/_globals') ? 'bg-[#6f942e] text-black' : 'text-slate-500 hover:text-white hover:bg-white/5'"
+            :class="
+              !currentPath.startsWith('content/_globals')
+                ? 'bg-[#6f942e] text-black'
+                : 'text-slate-500 hover:text-white hover:bg-white/5'
+            "
             title="Páginas do Site"
           >
             <i class="pi pi-file text-lg"></i>
           </button>
 
           <button
-            @click="handleNavigate.navigate({ path: 'content/_globals', absolute: true }); showFileManager = true"
+            @click="
+              handleNavigate.navigate({
+                path: 'content/_globals',
+                absolute: true,
+              });
+              showFileManager = true;
+            "
             class="w-8 h-8 rounded-md flex items-center justify-center transition-all shadow-sm"
-            :class="currentPath.startsWith('content/_globals') ? 'bg-[#6f942e] text-black' : 'text-slate-500 hover:text-white hover:bg-white/5'"
+            :class="
+              currentPath.startsWith('content/_globals')
+                ? 'bg-[#6f942e] text-black'
+                : 'text-slate-500 hover:text-white hover:bg-white/5'
+            "
             title="Layout Global"
           >
             <i class="pi pi-desktop text-lg"></i>
@@ -1379,18 +1528,21 @@ onUnmounted(() => {
                 class="flex-1 flex flex-col bg-[#0a0f0d] min-w-0 h-full relative"
               >
                 <div
-                  v-if="currentPath.endsWith('.json') && !currentPath.endsWith('.schema.json')"
-                  class="h-full w-full overflow-y-auto p-6 text-slate-200"
+                  v-if="
+                    currentPath.endsWith('.json') &&
+                    !currentPath.endsWith('.schema.json')
+                  "
+                  class="h-full w-full overflow-y-auto p-0 text-slate-200"
                 >
                   <template v-if="!showRawJson">
-                   <SchemaEditor
-  v-if="loadedSchema"
-  v-model="fileData.content"
-  :schema="loadedSchema"
-  :current-folder="mainFolder"
-  @open-image="imageActions.open"
-  @open-wordmark="handleOpenWordmark" 
-/>
+                    <SchemaEditor
+                      v-if="loadedSchema"
+                      v-model="fileData.content"
+                      :schema="loadedSchema"
+                      :current-folder="mainFolder"
+                      @open-image="imageActions.open"
+                      @open-wordmark="handleOpenWordmark"
+                    />
 
                     <DynamicBlockEditor
                       v-else
@@ -1398,6 +1550,54 @@ onUnmounted(() => {
                       :current-folder="mainFolder"
                       @open-image="imageActions.open"
                     />
+
+                    <Dialog 
+                      v-model:visible="showMarkdownModal" 
+                      modal 
+                      :header="`Editando: ${markdownTarget.fileName}`" 
+                      :style="{ width: '90vw', maxWidth: '1200px' }" 
+                      class="bg-[#0a0f0d] border border-white/10"
+                      maximizable
+                      :pt="{
+                        root: { class: 'bg-[#0a0f0d] text-white' },
+                        header: { class: 'bg-[#141b18] border-b border-white/10 text-white p-4' },
+                        content: { class: 'bg-[#0a0f0d] p-0 overflow-hidden' },
+                        title: { class: 'text-sm font-bold uppercase tracking-wider text-[#6f942e]' },
+                        closeButton: { class: 'text-slate-400 hover:text-white hover:bg-white/10 transition-colors' }
+                      }"
+                    >
+                      <div class="flex flex-col h-[70vh]">
+                        <div class="bg-black/40 p-3 border-b border-white/5 flex gap-4 text-xs text-slate-500">
+                          <span><i class="pi pi-folder mr-1"></i> Pasta: {{ markdownTarget.folder || 'Raiz' }}</span>
+                          <span><i class="pi pi-file mr-1"></i> Ficheiro: {{ markdownTarget.fileName }}</span>
+                        </div>
+
+                        <Textarea 
+                          v-model="markdownTarget.content" 
+                          class="flex-1 w-full bg-transparent text-slate-300 border-none p-6 font-mono text-sm focus:ring-0 focus:outline-none resize-none leading-relaxed" 
+                          placeholder="## Escreve aqui o teu Markdown..."
+                        />
+                      </div>
+
+                      <template #footer>
+                        <div class="bg-[#141b18] border-t border-white/5 p-4 flex justify-end gap-3 mt-0">
+                          <Button 
+                            label="Cancelar" 
+                            icon="pi pi-times" 
+                            text 
+                            severity="secondary" 
+                            @click="showMarkdownModal = false" 
+                          />
+                          <Button 
+                            label="Gravar Alterações" 
+                            icon="pi pi-check" 
+                            class="bg-[#6f942e] hover:bg-[#5a7825] border-none font-bold tracking-wider"
+                            :loading="isSavingMarkdown"
+                            @click="saveMarkdownContent" 
+                          />
+                        </div>
+                      </template>
+                    </Dialog>
                   </template>
 
                   <AdminMarkdownEditor
@@ -1434,8 +1634,9 @@ onUnmounted(() => {
                 />
               </div>
 
+              <!-- ✨ AQUI ESTÁ A CORREÇÃO PRINCIPAL DO PAINEL LATERAL ✨ -->
               <div
-                v-if="showMetaSidebar && !collectionPanelVisible"
+                v-if="(showMetaSidebar || (currentPath && currentPath.endsWith('.json') && !currentPath.endsWith('.schema.json') && !showRawJson)) && !collectionPanelVisible"
                 class="flex flex-row h-full shrink-0"
               >
                 <div
@@ -1560,7 +1761,7 @@ onUnmounted(() => {
       ><BackupManager
     /></Dialog>
 
-    <WordmarkBuilderModal 
+    <WordmarkBuilderModal
       v-model:visible="showWordmarkModal"
       :initialName="wordmarkTargetObj?.text || 'Magaweb'"
       @select="saveWordmarkToSchema"

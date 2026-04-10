@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { join, normalize, extname, basename } from "node:path";
 import { mkdir } from "node:fs/promises";
 import { CONFIG } from "../../config"; 
-import sharp from "sharp"; // ✨ NEW: Import Sharp
+import sharp from "sharp"; 
 
 export const uploadRoutes = new Elysia({ prefix: "/upload" })
   .post("/", async ({ body, query, site, set }) => {
@@ -16,6 +16,7 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" })
 
     let fileDataToSave: File | ArrayBuffer | null = null;
     let originalFilename = "";
+    let isVideo = false; // ✨ NEW: Flag to detect video files
 
     const bodyData = body as any;
 
@@ -66,6 +67,11 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" })
 
       fileDataToSave = uploadedFile;
       originalFilename = uploadedFile.name;
+      
+      // ✨ NEW: Detect if the file is a video based on its MIME type
+      if (uploadedFile.type.startsWith('video/')) {
+        isVideo = true;
+      }
     }
 
     // --- 3. PREPARAR PASTA DE DESTINO ---
@@ -77,55 +83,59 @@ export const uploadRoutes = new Elysia({ prefix: "/upload" })
       return { error: "Acesso negado." };
     }
 
-    // --- 4. NOMEAÇÃO E CONVERSÃO PARA WEBP ---
-    // Remove the old extension entirely because we are forcing WebP
-    const nameBody = basename(originalFilename, extname(originalFilename))
+    // --- 4. NOMEAÇÃO INTELIGENTE ---
+    const originalExt = extname(originalFilename).toLowerCase();
+    const nameBody = basename(originalFilename, originalExt)
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9\-_]/g, "-")
       .toLowerCase();
     
     const cleanNameBody = nameBody.replace(/\-\-+/g, "-").replace(/-+$/, "");
     
-    // ✨ Force the .webp extension for maximum compression
-    const safeFilename = `${cleanNameBody}.webp`;
+    // ✨ NEW: If video, keep original extension. If image, force .webp
+    const finalExt = isVideo ? originalExt : ".webp";
+    const safeFilename = `${cleanNameBody}${finalExt}`;
     const filePath = normalize(join(uploadDir, safeFilename));
 
     try {
       await mkdir(uploadDir, { recursive: true });
       
-      // --- 5. ✨ COMPRESSION & RESIZING MAGIC WITH SHARP ✨ ---
-      
-      // Convert the Bun File or ArrayBuffer into a standard Node Buffer
-      let bufferToProcess: Buffer;
-      if (fileDataToSave instanceof File) {
-        bufferToProcess = Buffer.from(await fileDataToSave.arrayBuffer());
+      // --- 5. ✨ THE TRAFFIC COP: PROCESS BASED ON FILE TYPE ✨ ---
+      if (isVideo) {
+        // Bypass Sharp completely and write the raw video buffer directly
+        await Bun.write(filePath, fileDataToSave);
       } else {
-        bufferToProcess = Buffer.from(fileDataToSave as ArrayBuffer);
+        // It's an image: Convert to Buffer and run it through Sharp
+        let bufferToProcess: Buffer;
+        if (fileDataToSave instanceof File) {
+          bufferToProcess = Buffer.from(await fileDataToSave.arrayBuffer());
+        } else {
+          bufferToProcess = Buffer.from(fileDataToSave as ArrayBuffer);
+        }
+
+        const processedImageBuffer = await sharp(bufferToProcess)
+          .resize({ 
+            width: 1600, 
+            withoutEnlargement: true 
+          })
+          .webp({ quality: 80, effort: 4 })
+          .toBuffer();
+
+        await Bun.write(filePath, processedImageBuffer);
       }
-
-      // Run it through Sharp
-      const processedImageBuffer = await sharp(bufferToProcess)
-        .resize({ 
-          width: 1600, // Maximum width of 1600px (great for Hero banners)
-          withoutEnlargement: true // Never scale up small images (prevents pixelation)
-        })
-        .webp({ quality: 80, effort: 4 }) // Convert to WebP with 80% quality
-        .toBuffer();
-
-      // Write the compressed WebP buffer to disk
-      await Bun.write(filePath, processedImageBuffer);
 
       return {
         success: true,
         path: targetFolder.startsWith("content") ? safeFilename : `/${targetFolder}/${safeFilename}`, 
         filename: safeFilename,
         folder: targetFolder,
-        message: "Upload otimizado concluído!"
+        type: isVideo ? "video" : "image", // Good to return the type for your frontend!
+        message: isVideo ? "Upload de vídeo concluído!" : "Upload de imagem otimizada concluído!"
       };
     } catch (err: any) {
       console.error("❌ Erro no processamento/upload:", err);
       set.status = 500;
-      return { error: "Erro interno ao otimizar e gravar arquivo." };
+      return { error: "Erro interno ao gravar arquivo." };
     }
   }, {
     body: t.Any(), 

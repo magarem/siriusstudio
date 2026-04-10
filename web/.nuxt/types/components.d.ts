@@ -16,7 +16,6 @@ type LazyComponent<T> = DefineComponent<HydrationStrategies, {}, {}, {}, {}, {},
 interface _GlobalComponents {
   Card2: typeof import("../../app/components/Card2.vue")['default']
   ComponentsExplorer: typeof import("../../app/components/ComponentsExplorer.vue")['default']
-  FileExplorer: typeof import("../../app/components/FileExplorer.vue")['default']
   TopBar: typeof import("../../app/components/TopBar.vue")['default']
   WelcomeSection: typeof import("../../app/components/WelcomeSection.vue")['default']
   WhatsAppFab: typeof import("../../app/components/WhatsAppFab.vue")['default']
@@ -231,7 +230,6 @@ interface _GlobalComponents {
   NuxtIsland: typeof import("../../node_modules/nuxt/dist/app/components/nuxt-island")['default']
   LazyCard2: LazyComponent<typeof import("../../app/components/Card2.vue")['default']>
   LazyComponentsExplorer: LazyComponent<typeof import("../../app/components/ComponentsExplorer.vue")['default']>
-  LazyFileExplorer: LazyComponent<typeof import("../../app/components/FileExplorer.vue")['default']>
   LazyTopBar: LazyComponent<typeof import("../../app/components/TopBar.vue")['default']>
   LazyWelcomeSection: LazyComponent<typeof import("../../app/components/WelcomeSection.vue")['default']>
   LazyWhatsAppFab: LazyComponent<typeof import("../../app/components/WhatsAppFab.vue")['default']>

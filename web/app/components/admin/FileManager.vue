@@ -116,7 +116,6 @@ const handleItemClick = (file) => {
   // Pega o caminho atual da pasta onde estamos listando (ex: "content" ou "content/institucional")
   // Remove barras extras no final para evitar "content//file"
   const baseFolder = props.currentFolder.replace(/\/$/, "");
-
   if (file.isDirectory) {
     // === É UMA PASTA ===
 
@@ -127,7 +126,7 @@ const handleItemClick = (file) => {
     } else {
       // É uma Pasta-Página: Abre o _index.md
       // CORREÇÃO: Montamos o caminho COMPLETO aqui
-      const fullPath = `${baseFolder}/${file.name}/_index.md`;
+      const fullPath = `${baseFolder}/${file.name}/_index.json`;
       emit("select", fullPath);
     }
   } else {
@@ -469,12 +468,12 @@ const handleMove = async () => {
   ]"
 >
   <div class="flex items-center gap-2 overflow-hidden">
-    <i class="pi" 
+    <i class="pi text-[20px]" 
        :class="currentFolder === 'content' ? 'pi-home' : 'pi-id-card'" 
        :style="{ color: isIndexActive ? '#6f942e' : '#64748b' }">
     </i>
     
-    <span class="text-sm truncate" :class="{ 'font-bold': isIndexActive }">
+    <span class="text-[20px] truncate" :class="{ 'font-bold': isIndexActive }">
       {{ indexLabel }}
     </span>
   </div>
@@ -504,7 +503,7 @@ const handleMove = async () => {
         >
           <i
             @click.stop="emit('navigate', file.name)"
-            class="drag-handle pi text-sm cursor-pointer hover:scale-110 transition-transform"
+            class="drag-handle pi text-[18px] cursor-pointer hover:scale-110 transition-transform"
             :class="[
               file.data?.isCollection
                 ? 'pi-database text-cyan-500'
@@ -515,7 +514,7 @@ const handleMove = async () => {
                   : 'pi-file text-slate-600',
             ]"
           ></i>
-          <span class="drag-handle text-sm truncate flex-1">{{
+          <span class="drag-handle text-[18px] truncate flex-1">{{
             file.name.replace(/\.(md|json|yml)$/, "")
           }}</span>
           <i

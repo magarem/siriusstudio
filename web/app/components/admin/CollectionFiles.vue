@@ -178,9 +178,9 @@ const formatDate = (dateString?: string) => {
 
 <template>
   <div class="flex flex-col h-full bg-[#0a0f0d]">
-    <div class="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-[#0a0f0d]">
+    <div class="flex items-center justify-between px-4 py-1  bg-[#0a0f0d]">
       <div class="flex flex-col">
-        <h2 class="text-xl font-bold text-slate-200 tracking-tight capitalize flex items-center gap-2">
+        <h2 class="text-[25px] font-bold text-slate-200 tracking-tight capitalize flex items-center gap-2">
           <i class="pi" :class="showSystemFiles ? 'pi-cog text-cyan-500' : 'pi-database text-[#6f942e]'"></i>
           <span v-if="!showSystemFiles">{{ currentFolder.split("/").pop()?.replace(/-/g, " ") }}</span>
           <span v-else class="text-cyan-500">Modelos (_schemas)</span>
@@ -188,26 +188,26 @@ const formatDate = (dateString?: string) => {
       </div>
 
       <div class="flex items-center gap-3">
-        <span v-if="isLoadingSchemas" class="text-[10px] text-slate-500 italic flex items-center gap-1">
+        <span v-if="isLoadingSchemas" class="text-[15px] text-slate-500 italic flex items-center gap-1">
           <i class="pi pi-spin pi-spinner"></i>
         </span>
 
         <div class="flex items-center bg-black/40 border border-white/10 rounded-md overflow-hidden shrink-0 h-[32px] shadow-lg backdrop-blur-sm">
           <button
             @click="showSystemFiles = !showSystemFiles"
-            class="flex items-center gap-2 px-3 h-full font-black text-[10px] uppercase tracking-wider transition-all border-r border-white/5"
+            class="flex items-center gap-2 px-3 h-full font-black text-[15px] uppercase tracking-wider transition-all border-r border-white/5"
             :class="[showSystemFiles ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5']"
           >
-            <i class="pi pi-cog text-[11px]"></i>
+            <i class="pi pi-cog text-[15px]"></i>
             <span>{{ showSystemFiles ? 'Ver Conteúdo' : 'Modelos' }}</span>
           </button>
 
           <button
             v-if="!showSystemFiles"
             @click="emit('create-item')"
-            class="flex items-center gap-2 px-4 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[10px] uppercase tracking-wider transition-all"
+            class="flex items-center gap-2 px-4 h-full text-slate-300 hover:text-white hover:bg-white/10 font-black text-[15px] uppercase tracking-wider transition-all"
           >
-            <i class="pi pi-plus text-[10px]"></i>
+            <i class="pi pi-plus text-[15px]"></i>
             <span>Novo Item</span>
           </button>
         </div>
@@ -234,7 +234,7 @@ const formatDate = (dateString?: string) => {
         currentPageReportTemplate="{first} a {last} de {totalRecords}"
         :pt="{
           root: { class: 'bg-transparent flex flex-col h-full' },
-          headerRow: { class: 'text-slate-500 text-[10px] uppercase tracking-widest font-black border-b border-white/5' },
+          headerRow: { class: 'text-slate-500 text-[15px] uppercase tracking-widest font-black border-b border-white/5' },
           bodyRow: ({ context }) => ({
             class: [
               'transition-colors border-b border-white/5 text-slate-300',
@@ -259,17 +259,18 @@ const formatDate = (dateString?: string) => {
           },
         }"
       >
-        <Column rowReorder headerStyle="width: 3rem" v-if="!showSystemFiles" />
+        <Column rowReorder headerStyle="width: 0rem" v-if="!showSystemFiles" />
         
         <Column header="Título" class="font-medium" sortable field="data.title">
           <template #body="{ data }">
-            <div class="flex flex-col py-2.5">
+            <div class="flex flex-col _py-2.5">
               <div class="flex items-center gap-2">
-                <span class="text-[13px] tracking-tight" :class="[isIndexFile(data) ? 'text-white font-black' : 'text-slate-300 font-medium']">
+              
+                <span v-if="!isIndexFile(data)" class="text-[22px] tracking-tight" :class="[isIndexFile(data) ? 'text-white font-black' : 'text-slate-300 font-medium']">
                   {{ data.data?.title || data.name.replace(/-/g, " ") }}
                 </span>
 
-                <span v-if="isIndexFile(data)" class="text-[8px] border border-white/20 text-white px-1.5 py-0.5 rounded-sm uppercase tracking-tighter font-black bg-white/10">
+                <span v-if="isIndexFile(data)" class="text-[22px] border border-white/20 text-white px-2.5 py-1.5 rounded-sm uppercase tracking-tighter font-black bg-white/10">
                   Capa
                 </span>
 
@@ -284,7 +285,7 @@ const formatDate = (dateString?: string) => {
 
         <Column header="Data" style="width: 8rem" sortable field="data.date">
           <template #body="{ data }">
-            <span class="text-slate-500 text-[11px] font-mono">{{ formatDate(data.data?.date) }}</span>
+            <span class="text-slate-500 text-[18px] font-mono">{{ formatDate(data.data?.date) }}</span>
           </template>
         </Column>
 
@@ -296,7 +297,7 @@ const formatDate = (dateString?: string) => {
             <span v-else-if="data.isSchema" class="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
               <i class="pi pi-cog text-[10px]"></i> Config
             </span>
-            <span v-else class="text-[9px] font-black text-white/40 uppercase tracking-widest flex items-center gap-1.5">
+            <span v-else class="text-[15px] font-black text-white/40 uppercase tracking-widest flex items-center gap-1.5">
               <span class="w-1 h-1 rounded-full bg-white/20"></span> Publicado
             </span>
           </template>
@@ -307,10 +308,10 @@ const formatDate = (dateString?: string) => {
             <div class="flex justify-center">
               <button
                 @click="confirmDelete($event, data)"
-                class="w-7 h-7 flex items-center justify-center rounded text-slate-600 hover:text-white hover:bg-red-500/20 transition-all"
+                class="w-7 h-7 flex items-center justify-center rounded text-slate-100 hover:text-white hover:bg-red-500/20 transition-all"
                 title="Excluir item"
               >
-                <i class="pi pi-trash text-[12px]"></i>
+                <i class="pi pi-trash text-[20px]"></i>
               </button>
             </div>
           </template>

@@ -16,7 +16,6 @@ type LazyComponent<T> = DefineComponent<HydrationStrategies, {}, {}, {}, {}, {},
 
 export const Card2: typeof import("../app/components/Card2.vue")['default']
 export const ComponentsExplorer: typeof import("../app/components/ComponentsExplorer.vue")['default']
-export const FileExplorer: typeof import("../app/components/FileExplorer.vue")['default']
 export const TopBar: typeof import("../app/components/TopBar.vue")['default']
 export const WelcomeSection: typeof import("../app/components/WelcomeSection.vue")['default']
 export const WhatsAppFab: typeof import("../app/components/WhatsAppFab.vue")['default']
@@ -231,7 +230,6 @@ export const Body: typeof import("../node_modules/nuxt/dist/head/runtime/compone
 export const NuxtIsland: typeof import("../node_modules/nuxt/dist/app/components/nuxt-island")['default']
 export const LazyCard2: LazyComponent<typeof import("../app/components/Card2.vue")['default']>
 export const LazyComponentsExplorer: LazyComponent<typeof import("../app/components/ComponentsExplorer.vue")['default']>
-export const LazyFileExplorer: LazyComponent<typeof import("../app/components/FileExplorer.vue")['default']>
 export const LazyTopBar: LazyComponent<typeof import("../app/components/TopBar.vue")['default']>
 export const LazyWelcomeSection: LazyComponent<typeof import("../app/components/WelcomeSection.vue")['default']>
 export const LazyWhatsAppFab: LazyComponent<typeof import("../app/components/WhatsAppFab.vue")['default']>

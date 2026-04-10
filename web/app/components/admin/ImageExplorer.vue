@@ -35,15 +35,23 @@ const hiddenFileInput = ref(null);
 
 // --- DATA FETCHING ---
 const { data: files, refresh, pending } = await useFetch('/api/admin/storage', {
-  query: { folder: folder }, // No Nuxt 3+, passar a ref diretamente torna a query reativa!
+  query: { folder: folder }, 
   transform: (input) => input.files || []
 });
+
+// --- ✨ NEW: VIDEO DETECTION HELPER ---
+const isVideo = (filename) => {
+  if (!filename) return false;
+  const lowerName = filename.toLowerCase();
+  return lowerName.endsWith('.mp4') || lowerName.endsWith('.webm') || lowerName.endsWith('.mov') || lowerName.endsWith('.ogg');
+};
 
 // --- COMPUTEDS AUXILIARES ---
 const filteredFiles = computed(() => {
   if (!files.value || !Array.isArray(files.value)) return []; 
   
-  const validExtensions = ['.avif', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp'];
+  // ✨ UPDATED: Added video extensions to the allowed list
+  const validExtensions = ['.avif', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico', '.bmp', '.mp4', '.webm', '.mov', '.ogg'];
 
   return files.value.filter(f => {
     if (f.isDirectory) return true;
@@ -53,7 +61,8 @@ const filteredFiles = computed(() => {
   });
 });
 
-const imageFiles = computed(() => {
+// ✨ UPDATED: Renamed to mediaFiles to reflect that it holds both images and videos
+const mediaFiles = computed(() => {
   return filteredFiles.value.filter(f => !f.isDirectory);
 });
 
@@ -62,8 +71,8 @@ const subDirectories = computed(() => {
 });
 
 const currentZoomedFile = computed(() => {
-  if (!imageFiles.value.length) return null;
-  return imageFiles.value[zoomedFileIndex.value];
+  if (!mediaFiles.value.length) return null;
+  return mediaFiles.value[zoomedFileIndex.value];
 });
 
 const breadcrumbs = computed(() => {
@@ -98,16 +107,16 @@ const goBack = () => {
   }
 };
 
-// --- AÇÃO PRINCIPAL: SELECIONAR IMAGEM ---
+// --- AÇÃO PRINCIPAL: SELECIONAR ARQUIVO ---
 const selectImage = (name) => {
   const cleanName = folder.value === props.initialFolder ? name : getPublicUrl(name);
   emit('select', cleanName);
-  toast.add({ severity: 'success', summary: 'Imagem Selecionada', life: 1000 });
+  toast.add({ severity: 'success', summary: 'Arquivo Selecionado', life: 1000 });
 };
 
 // --- ZOOM & PREVIEW ---
 const openZoom = (file) => {
-  const index = imageFiles.value.findIndex(f => f.name === file.name);
+  const index = mediaFiles.value.findIndex(f => f.name === file.name);
   if (index !== -1) {
     zoomedFileIndex.value = index;
     showZoom.value = true;
@@ -115,13 +124,13 @@ const openZoom = (file) => {
 };
 
 const nextImage = () => {
-  if (zoomedFileIndex.value < imageFiles.value.length - 1) zoomedFileIndex.value++;
+  if (zoomedFileIndex.value < mediaFiles.value.length - 1) zoomedFileIndex.value++;
   else zoomedFileIndex.value = 0; 
 };
 
 const prevImage = () => {
   if (zoomedFileIndex.value > 0) zoomedFileIndex.value--;
-  else zoomedFileIndex.value = imageFiles.value.length - 1; 
+  else zoomedFileIndex.value = mediaFiles.value.length - 1; 
 };
 
 const handleKeydown = (e) => {
@@ -160,7 +169,6 @@ const handleManualFileSelect = async (event) => {
     const files = event.target.files;
     if (files && files.length > 0) {
         await uploadDroppedFiles(files);
-        // Limpa o input para permitir enviar a mesma imagem duas vezes seguidas se necessário
         event.target.value = null; 
     }
 };
@@ -189,16 +197,17 @@ const uploadDroppedFiles = async (fileList) => {
     isUploading.value = true;
     try {
         const formData = new FormData();
-        let hasImage = false;
+        let hasValidFile = false;
         for (let i = 0; i < fileList.length; i++) {
             const file = fileList[i];
-            if (file.type.startsWith('image/')) {
+            // ✨ UPDATED: Accept both image and video MIME types
+            if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
                 formData.append('file', file);
-                hasImage = true;
+                hasValidFile = true;
             }
         }
-        if (!hasImage) {
-            toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens são permitidas.' });
+        if (!hasValidFile) {
+            toast.add({ severity: 'warn', summary: 'Arquivo inválido', detail: 'Apenas imagens e vídeos são permitidos.' });
             return;
         }
         await $fetch('/api/admin/upload', {
@@ -221,26 +230,24 @@ const processRemoteImage = async (url) => {
     toast.add({ severity: 'info', summary: 'Processando...', detail: 'Solicitando download ao servidor.' });
     
     try {
-        // Envia a URL como JSON para o backend (O backend atualizado via Elysia cuidará do resto)
         await $fetch('/api/admin/upload', {
             method: 'POST',
             body: { imageUrl: url },
             params: { site: siteContext.value, folder: folder.value }
         });
         
-        toast.add({ severity: 'success', summary: 'Sucesso!', detail: 'Imagem importada para o CMS.', life: 2000 });
-        refresh(); // Atualiza a grade para mostrar a nova imagem
+        toast.add({ severity: 'success', summary: 'Sucesso!', detail: 'Arquivo importado para o CMS.', life: 2000 });
+        refresh(); 
     } catch (e) {
-        console.error("Erro ao processar imagem remota:", e);
-        toast.add({ severity: 'error', summary: 'Erro de Download', detail: 'O servidor não conseguiu baixar esta imagem.', life: 4000 });
+        console.error("Erro ao processar arquivo remoto:", e);
+        toast.add({ severity: 'error', summary: 'Erro de Download', detail: 'O servidor não conseguiu baixar este arquivo.', life: 4000 });
     } finally {
         isUploading.value = false;
         showUrlModal.value = false;
-        importUrl.value = ''; // Limpa o input
+        importUrl.value = ''; 
     }
 };
 
-// ✨ NEW: Handler for the modal button
 const handleUrlImport = async () => {
     if (!importUrl.value || !importUrl.value.startsWith('http')) {
         toast.add({ severity: 'warn', summary: 'URL Inválida', detail: 'Por favor, insira um link HTTP/HTTPS válido.' });
@@ -323,28 +330,26 @@ const handleMove = async (destinationSubFolder) => {
     <Toast :baseZIndex="10000" position="top-right" :life="2000" />
     
     <header class="h-14 shrink-0 flex items-center justify-between px-4 border-b border-white/5 bg-[#141b18]">
-      
-      <div class="flex items-center gap-3 overflow-hidden flex-1 mr-4">
-        </div>
+      <div class="flex items-center gap-3 overflow-hidden flex-1 mr-4"></div>
 
-     <div class="flex items-center gap-3 shrink-0">
-  <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
-     <Button icon="pi pi-th-large" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'grid' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'grid'" />
-     <Button icon="pi pi-list" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'list' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'list'" />
-  </div>
-  <div class="w-px h-6 bg-white/10 mx-1"></div>
-  <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" />
-  
-  <div class="relative overflow-hidden group flex gap-2">
-      <Button label="URL" icon="pi pi-link" size="small" @click="showUrlModal = true" class="p-button-sm custom-upload-btn bg-white/5 text-slate-300 border-white/10 font-black tracking-widest hover:bg-white/10 hover:border-slate-400 transition-colors" />
-      
-      <Button label="UPLOAD" icon="pi pi-cloud-upload" size="small" @click="triggerManualUpload" class="p-button-sm custom-upload-btn bg-white/5 text-[#6f942e] border-white/10 font-black tracking-widest hover:bg-[#6f942e]/20 hover:border-[#6f942e]/50 transition-colors" />
-      <input type="file" ref="hiddenFileInput" @change="handleManualFileSelect" accept="image/*" multiple class="hidden" />
-  </div>
-  
-  <div class="w-px h-6 bg-white/10 mx-1"></div>
-  <Button icon="pi pi-times" text rounded size="small" @click="$emit('close')" class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" />
-</div>
+      <div class="flex items-center gap-3 shrink-0">
+        <div class="flex items-center bg-black/30 rounded border border-white/5 p-0.5">
+          <Button icon="pi pi-th-large" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'grid' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'grid'" />
+          <Button icon="pi pi-list" text rounded size="small" class="!w-7 !h-7" :class="viewMode === 'list' ? 'text-[#6f942e] bg-white/5' : 'text-slate-500 hover:text-white'" @click="viewMode = 'list'" />
+        </div>
+        <div class="w-px h-6 bg-white/10 mx-1"></div>
+        <Button icon="pi pi-folder-plus" text rounded class="text-slate-400 hover:text-white !w-8 !h-8" @click="confirmCreateFolder" />
+        
+        <div class="relative overflow-hidden group flex gap-2">
+            <Button label="URL" icon="pi pi-link" size="small" @click="showUrlModal = true" class="p-button-sm custom-upload-btn bg-white/5 text-slate-300 border-white/10 font-black tracking-widest hover:bg-white/10 hover:border-slate-400 transition-colors" />
+            
+            <Button label="UPLOAD" icon="pi pi-cloud-upload" size="small" @click="triggerManualUpload" class="p-button-sm custom-upload-btn bg-white/5 text-[#6f942e] border-white/10 font-black tracking-widest hover:bg-[#6f942e]/20 hover:border-[#6f942e]/50 transition-colors" />
+            <input type="file" ref="hiddenFileInput" @change="handleManualFileSelect" accept="image/*, video/mp4, video/webm, video/quicktime, .mp4, .webm, .mov" multiple class="hidden" />
+          </div>
+        
+        <div class="w-px h-6 bg-white/10 mx-1"></div>
+        <Button icon="pi pi-times" text rounded size="small" @click="$emit('close')" class="text-slate-500 hover:text-red-500 hover:bg-red-500/10 transition-colors !w-8 !h-8" />
+      </div>
     </header>
 
     <section 
@@ -375,20 +380,34 @@ const handleMove = async (destinationSubFolder) => {
              @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
         >
           <div class="w-full h-full overflow-hidden rounded-lg bg-[#0a0c0b] flex items-center justify-center relative">
+            
             <div v-if="file.isDirectory" class="flex flex-col items-center justify-center w-full h-full hover:bg-white/5 transition-colors">
               <i class="pi pi-folder text-5xl text-amber-600 mb-2"></i>
               <span class="text-[10px] text-amber-600/70 font-bold uppercase tracking-widest truncate w-full text-center px-2">{{ file.name }}</span>
             </div>
             
-            <img v-else
-              :src="getPublicUrl(file.name)" 
-              class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-              loading="lazy"
-              @error="(e) => e.target.src = 'https://placehold.co/200?text=Indisponivel'"
-            />
+            <template v-else>
+              <template v-if="isVideo(file.name)">
+                <video 
+                  :src="getPublicUrl(file.name)" 
+                  class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
+                  muted loop autoplay playsinline preload="auto"
+                ></video>
+                <div class="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-1 rounded text-white text-[10px] font-bold flex items-center gap-1 z-10">
+                  <i class="pi pi-video text-[10px]"></i>
+                </div>
+              </template>
+              
+              <img v-else
+                :src="getPublicUrl(file.name)" 
+                class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                loading="lazy"
+                @error="(e) => e.target.src = 'https://placehold.co/200?text=Indisponivel'"
+              />
+            </template>
           </div>
           
-          <div class="absolute inset-0 bg-[#0f1110]/90 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity duration-300 gap-2">
+          <div class="absolute inset-0 bg-[#0f1110]/90 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity duration-300 gap-2 z-20">
               <div v-if="!file.isDirectory" class="flex gap-2">
                  <Button icon="pi pi-eye" severity="secondary" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="openZoom(file)" />
                  <Button icon="pi pi-check" severity="success" rounded size="small" class="!w-8 !h-8 !p-0" @click.stop="selectImage(file.name)" />
@@ -407,9 +426,15 @@ const handleMove = async (destinationSubFolder) => {
               @click="file.isDirectory ? enterFolder(file.name) : openZoom(file)"
          >
             <div class="flex items-center gap-4 flex-1 min-w-0">
-               <div class="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center">
+               <div class="w-10 h-10 shrink-0 rounded-lg overflow-hidden bg-black/20 border border-white/5 flex items-center justify-center relative">
                   <i v-if="file.isDirectory" class="pi pi-folder text-xl text-amber-500"></i>
-                  <img v-else :src="getPublicUrl(file.name)" class="w-full h-full object-cover" loading="lazy" />
+                  <template v-else>
+                     <video v-if="isVideo(file.name)" :src="getPublicUrl(file.name)" class="w-full h-full object-cover" muted loop autoplay playsinline></video>
+                     <img v-else :src="getPublicUrl(file.name)" class="w-full h-full object-cover" loading="lazy" />
+                     <div v-if="isVideo(file.name)" class="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <i class="pi pi-video text-white/80 text-[10px]"></i>
+                     </div>
+                  </template>
                </div>
                <div class="flex flex-col truncate">
                   <span class="text-sm font-bold text-slate-200 truncate group-hover:text-[#6f942e] transition-colors">{{ file.name }}</span>
@@ -428,7 +453,7 @@ const handleMove = async (destinationSubFolder) => {
       <div v-if="!pending && filteredFiles && filteredFiles.length === 0" class="absolute inset-0 flex flex-col items-center justify-center opacity-30 pointer-events-none">
         <i class="pi pi-folder-open text-6xl mb-4 text-slate-600"></i>
         <p class="text-sm uppercase tracking-widest text-slate-500 font-bold">Pasta Vazia</p>
-        <p class="text-[10px] text-slate-600 mt-2">Arraste imagens para cá</p>
+        <p class="text-[10px] text-slate-600 mt-2">Arraste arquivos para cá</p>
       </div>
 
     </section>
@@ -436,14 +461,26 @@ const handleMove = async (destinationSubFolder) => {
     <Dialog v-model:visible="showZoom" modal :dismissableMask="true" :showHeader="false" :style="{ width: '100vw', height: '100vh', margin: 0 }" class="bg-transparent" :contentStyle="{ padding: 0 }">
       <div class="relative flex flex-col items-center justify-center bg-[#020302]/95 backdrop-blur-md w-full h-full p-4 overflow-hidden select-none" v-if="currentZoomedFile">
          <Button icon="pi pi-times" text rounded class="!absolute top-4 right-4 text-white/60 hover:text-white z-50 !w-12 !h-12 !text-xl" @click="showZoom = false" />
+         
          <div class="flex items-center justify-between w-full gap-4 h-full relative max-w-7xl mx-auto">
              <div class="h-full flex items-center px-4 cursor-pointer" @click="prevImage"><Button icon="pi pi-chevron-left" text rounded class="text-white/40 !w-16 !h-16 !text-4xl" /></div>
+             
              <div class="relative flex-1 flex flex-col items-center justify-center h-full w-full">
-                <img :src="getPublicUrl(currentZoomedFile.name)" class="max-h-[80vh] max-w-full object-contain shadow-2xl rounded-sm" />
-                <div class="absolute bottom-6 flex gap-2">
+                <video v-if="isVideo(currentZoomedFile.name)" 
+                  :src="getPublicUrl(currentZoomedFile.name)" 
+                  class="max-h-[80vh] max-w-full object-contain shadow-2xl rounded-sm" 
+                  controls autoplay
+                ></video>
+                <img v-else 
+                  :src="getPublicUrl(currentZoomedFile.name)" 
+                  class="max-h-[80vh] max-w-full object-contain shadow-2xl rounded-sm" 
+                />
+                
+                <div class="absolute bottom-6 flex gap-2 z-50">
                     <Button label="Inserir" icon="pi pi-check" class="bg-[#6f942e] border-none text-black font-bold" @click="selectImage(currentZoomedFile.name); showZoom = false" />
                 </div>
              </div>
+             
              <div class="h-full flex items-center px-4 cursor-pointer" @click="nextImage"><Button icon="pi pi-chevron-right" text rounded class="text-white/40 !w-16 !h-16 !text-4xl" /></div>
          </div>
       </div>
@@ -456,7 +493,7 @@ const handleMove = async (destinationSubFolder) => {
        </div>
     </Dialog>
 
-     <Dialog v-model:visible="showMove" modal header="Mover Para" :style="{ width: '350px' }" class="bg-[#141b18]">
+    <Dialog v-model:visible="showMove" modal header="Mover Para" :style="{ width: '350px' }" class="bg-[#141b18]">
       <div class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pt-2">
             <div v-if="folder !== 'content'" @click="handleMove('..')" class="p-3 bg-white/5 hover:bg-[#6f942e]/20 border border-white/10 rounded cursor-pointer flex items-center gap-3 transition-colors">
                 <i class="pi pi-level-up text-[#6f942e]"></i><span class="text-sm font-bold text-slate-300">.. (Pasta Anterior)</span>
@@ -468,24 +505,24 @@ const handleMove = async (destinationSubFolder) => {
     </Dialog>
 
     <Dialog v-model:visible="showUrlModal" modal header="Importar da Web" :style="{ width: '400px' }" class="bg-[#141b18]">
-   <div class="flex flex-col gap-4 pt-2">
-    <span class="text-xs text-slate-400">Cole o link direto da imagem (ex: Unsplash, Pexels, AWS):</span>
-    <InputText 
-      v-model="importUrl" 
-      placeholder="https://images.unsplash.com/..." 
-      class="w-full bg-[#0a0f0d] border border-white/10 text-white focus:border-[#6f942e]" 
-      autofocus 
-      @keyup.enter="handleUrlImport" 
-    />
-    <Button 
-      label="Baixar Imagem" 
-      icon="pi pi-cloud-download" 
-      @click="handleUrlImport" 
-      :loading="isUploading" 
-      class="bg-[#6f942e] border-none text-black font-bold w-full" 
-    />
-   </div>
-</Dialog>
+      <div class="flex flex-col gap-4 pt-2">
+        <span class="text-xs text-slate-400">Cole o link direto do arquivo (ex: Unsplash, AWS):</span>
+        <InputText 
+          v-model="importUrl" 
+          placeholder="https://exemplo.com/arquivo.mp4" 
+          class="w-full bg-[#0a0f0d] border border-white/10 text-white focus:border-[#6f942e]" 
+          autofocus 
+          @keyup.enter="handleUrlImport" 
+        />
+        <Button 
+          label="Baixar Arquivo" 
+          icon="pi pi-cloud-download" 
+          @click="handleUrlImport" 
+          :loading="isUploading" 
+          class="bg-[#6f942e] border-none text-black font-bold w-full" 
+        />
+      </div>
+    </Dialog>
 
   </div>
 </template>

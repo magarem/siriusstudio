@@ -17,13 +17,13 @@ const sanitizeFilename = (filename: string) => {
 }
 
 export const storageRoutes = new Elysia({ prefix: "/storage" })
-  
+
   // ==========================================
   // 0. LISTAR TODAS AS PASTAS (GET /folders)
   // ==========================================
   .get("/folders", async ({ site, set }) => {
     const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
-    
+
     const getFoldersRecursive = async (dir: string, base: string, list: string[] = []) => {
       try {
         const items = await readdir(dir, { withFileTypes: true });
@@ -35,7 +35,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
             await getFoldersRecursive(fullPath, base, list);
           }
         }
-      } catch (e) {}
+      } catch (e) { }
       return list;
     };
 
@@ -51,7 +51,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
   // ==========================================
   // 1. LISTAR CONTEÚDO (GET /)
   // ==========================================
-  .get("/", async ({ query, site, set }) => {
+.get("/", async ({ query, site, set }) => {
     const folder = query.folder || "";
     const file = query.file || null;
     const baseDir = normalize(join(CONFIG.paths.storage, String(site)));
@@ -81,7 +81,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
       const rawItems = await readdir(targetDir, { withFileTypes: true });
       const hasCollectionMarker = rawItems.some((i) => i.name === ".collection");
       const subDirectories = rawItems.filter((i) => i.isDirectory());
-      
+
       let folderType = hasCollectionMarker ? "collection" : (subDirectories.length === 0 && rawItems.some((i) => i.name === "_index.md") ? "page" : "folder");
 
       const processedFiles = await Promise.all(
@@ -101,9 +101,30 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
               try {
                 const { data } = matter(await indexFile.text());
                 if (data.title) displayTitle = data.title;
-              } catch (e) {}
+                // Caso o _index.md também tenha data, capturamos aqui
+                if (data.date) metadata.date = data.date;
+              } catch (e) { }
             }
-            metadata = { title: displayTitle, isDir: isCommonDir, isCollection: isCollection };
+            metadata = { ...metadata, title: displayTitle, isDir: isCommonDir, isCollection: isCollection };
+          } else {
+            // ✅ NOVO: Processamento para ficheiros normais (não-pastas)
+            if (item.name.endsWith('.md')) {
+              const filePath = join(targetDir, item.name);
+              const fileObj = Bun.file(filePath);
+              if (await fileObj.exists()) {
+                try {
+                  const { data } = matter(await fileObj.text());
+                  // Substitui o título pelo frontmatter se existir
+                  if (data.title) metadata.title = data.title;
+                  // Captura a data
+                  if (data.date) metadata.date = data.date;
+                  
+                  // Bónus: Se quiseres retornar TUDO do frontmatter (como roast, imagens),
+                  // podes descomentar a linha abaixo para injetar todos os campos no CMS:
+                  // metadata = { ...metadata, ...data };
+                } catch (e) { }
+              }
+            }
           }
 
           return {
@@ -118,22 +139,36 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
       const cleanFiles = processedFiles.filter((f) => ![".DS_Store", "_order.yml", "_order.json", "_schema.json"].includes(f.name));
       let orderList: string[] = [];
       const ymlOrderFile = Bun.file(join(targetDir, "_order.yml"));
-      
+
       try {
         if (await ymlOrderFile.exists()) {
           const parsed = yaml.load(await ymlOrderFile.text());
           if (Array.isArray(parsed)) orderList = parsed;
         }
-      } catch (e) {}
+      } catch (e) { }
 
       cleanFiles.sort((a, b) => {
-        const indexA = orderList.indexOf(a.name);
-        const indexB = orderList.indexOf(b.name);
-        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-        if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name);
-        return a.isDirectory ? -1 : 1;
-      });
+        // PRIORIDADE MÁXIMA: _index.md e _index.js sempre no topo
+        const isIndexA = a.name === "_index.md" || a.name === "_index.js";
+        const isIndexB = b.name === "_index.md" || b.name === "_index.js";
 
+        if (isIndexA && !isIndexB) return -1;
+        if (!isIndexA && isIndexB) return 1;
+        if (isIndexA && isIndexB) return a.name.localeCompare(b.name);
+
+        // compare sem a extensão
+        const nameA = a.name.replace(/\.[^/.]+$/, '')
+        const nameB = b.name.replace(/\.[^/.]+$/, '')
+
+        const indexA = orderList.indexOf(nameA) !== -1 ? orderList.indexOf(nameA) : orderList.indexOf(a.name)
+        const indexB = orderList.indexOf(nameB) !== -1 ? orderList.indexOf(nameB) : orderList.indexOf(b.name)
+
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
       return { type: folderType, files: cleanFiles };
     } catch (error: any) {
       set.status = 500;
@@ -164,7 +199,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
   }, {
     body: t.Object({ folder: t.String(), file: t.String(), content: t.Optional(t.String()) })
   })
-  
+
   // ==========================================
   // 3. DELETAR (DELETE /)
   // ==========================================
@@ -176,7 +211,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
     if (!targetPath.startsWith(baseDir) || targetPath === baseDir) { set.status = 403; return { error: "Acesso negado." }; }
     try {
       const stats = await stat(targetPath);
-      if (stats.isDirectory()) { await rm(targetPath, { recursive: true, force: true }); } 
+      if (stats.isDirectory()) { await rm(targetPath, { recursive: true, force: true }); }
       else { await unlink(targetPath); }
       return { success: true, message: "Removido com sucesso!" };
     } catch (err: any) {
@@ -206,7 +241,7 @@ export const storageRoutes = new Elysia({ prefix: "/storage" })
       try {
         await access(sourceSchema);
         await copyFile(sourceSchema, destSchema);
-      } catch {}
+      } catch { }
       return { success: true, folderName: safeName, path: targetPath };
     } catch (error: any) {
       set.status = 500; return { success: false, error: `Erro ao criar pasta: ${error.message}` };

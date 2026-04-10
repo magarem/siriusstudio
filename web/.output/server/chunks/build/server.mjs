@@ -569,7 +569,7 @@ const _routes = [
   {
     name: "editor",
     path: "/editor",
-    component: () => import('./editor-CEQrh3CE.mjs')
+    component: () => import('./editor-DO_S6Op5.mjs')
   }
 ];
 const _wrapInTransition = (props, children) => {

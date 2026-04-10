@@ -3,6 +3,10 @@ import { computed, ref, shallowRef, onMounted } from 'vue';
 import { useToast } from "primevue/usetoast";
 import { Codemirror } from 'vue-codemirror';
 
+// --- Importar o teu Catálogo de Componentes ---
+// Assumindo que exporta um array ou objeto (ajusta o path se necessário)
+import { componentCatalog } from '~/utils/componentCatalog.js';
+
 // --- CodeMirror Imports ---
 import { json } from '@codemirror/lang-json';
 import { markdown } from '@codemirror/lang-markdown';
@@ -29,6 +33,9 @@ const { settings, editorStyles, loadSettings } = useEditorSettings();
 const editorView = shallowRef(null);
 const isDragging = ref(false);
 const isUploading = ref(false);
+
+// Estado do Modal de Componentes
+const isComponentModalOpen = ref(false);
 
 onMounted(() => {
   loadSettings();
@@ -136,6 +143,37 @@ const insertAtCursor = (text) => {
 
 defineExpose({ insertAtCursor });
 
+// --- MÁGICA DOS COMPONENTES (MDC SYNTAX) ---
+const injectComponent = (comp) => {
+  // Ajusta consoante a estrutura do teu componentCatalog
+  const typeName = comp.type || comp.name || 'Componente';
+  const propsObj = comp.props || comp.defaultProps || {};
+
+  let snippet = '';
+
+  // Se estiver a editar um JSON puro, insere formato JSON
+  if (props.currentFile.toLowerCase().endsWith('.json')) {
+    snippet = JSON.stringify({ type: typeName, props: propsObj }, null, 2) + ',\n';
+  } else {
+    // Se for Markdown, usa a sintaxe MDC do Nuxt Content
+    snippet = `::${typeName}\n`;
+    
+    const propKeys = Object.keys(propsObj);
+    if (propKeys.length > 0) {
+      snippet += `---\n`;
+      for (const key of propKeys) {
+        snippet += `${key}: "${propsObj[key]}"\n`;
+      }
+      snippet += `---\n`;
+    }
+    snippet += `::\n`;
+  }
+
+  insertBlock(snippet);
+  isComponentModalOpen.value = false;
+  toast.add({ severity: 'success', summary: 'Componente inserido', detail: `Bloco ${typeName} adicionado.`, life: 2500 });
+};
+
 // --- UPLOAD LOGIC ---
 const uploadImage = async (file) => {
     if (!file.type.startsWith('image/')) {
@@ -150,7 +188,6 @@ const uploadImage = async (file) => {
         let targetFolder = props.currentFolder;
         if (!targetFolder || targetFolder === '.') targetFolder = 'content';
         
-        // Chamada API perfeitamente alinhada com o Bun!
         const response = await $fetch('/api/admin/upload', {
             method: 'POST',
             body: formData,
@@ -193,7 +230,6 @@ function handlePaste(event) {
     }
 }
 
-// Transformado em COMPUTED para garantir que a interface reaja à prop `isRawMode`
 const actions = computed(() => [
   { icon: 'pi pi-bold', title: 'Negrito (Ctrl+B)', action: () => insertFormat('**', '**') },
   { icon: 'pi pi-italic', title: 'Itálico (Ctrl+I)', action: () => insertFormat('*', '*') },
@@ -212,14 +248,26 @@ const actions = computed(() => [
   { icon: 'pi pi-minus', title: 'Linha Horizontal', action: () => insertBlock('---\n') },
   { separator: true },
   { icon: 'pi pi-image', title: 'Inserir Imagem', action: () => emit('open-image') },
+  // NOVO BOTÃO: Inserir Componente Vue (MDC)
+  { icon: 'pi pi-box', title: 'Inserir Componente Dinâmico', action: () => { isComponentModalOpen.value = true; } },
   { separator: true },
   { 
       icon: 'pi pi-file-edit', 
       title: 'Ver Fonte Completo (Raw)', 
       action: () => emit('toggle-raw'),
-      isActive: props.isRawMode // Agora é apenas um booleano reativo!
+      isActive: props.isRawMode 
   }
 ]);
+
+// Helper para converter objeto do catálogo (pode ser dict ou array no teu JS)
+const availableComponents = computed(() => {
+  if (!componentCatalog) return [];
+  // Se for objeto { Banner: {...}, ArticleList: {...} }
+  if (!Array.isArray(componentCatalog)) {
+    return Object.values(componentCatalog);
+  }
+  return componentCatalog;
+});
 
 </script>
 
@@ -269,8 +317,8 @@ const actions = computed(() => [
                 :extensions="extensions"
                 :autofocus="true"
                 :indent-with-tab="true"
-                placeholder="Comece a escrever sua história..."
-                :style="{ height: '100%', width: '100%' }"
+                placeholder=""
+                :style="{ height: '100%', width: '100%', fontSize: '20px' }"
                 @ready="handleReady"
             />
         </div>
@@ -281,6 +329,41 @@ const actions = computed(() => [
         <div class="flex items-center gap-1"><span class="text-slate-300 font-bold">{{ stats.words }}</span> <span class="text-slate-600">PALAVRAS</span></div>
         <div class="flex items-center gap-1"><span class="text-slate-300 font-bold">{{ stats.chars }}</span> <span class="text-slate-600">CARACTERES</span></div>
     </footer>
+
+    <div 
+      v-if="isComponentModalOpen" 
+      class="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <div class="bg-[#141b18] w-full max-w-2xl rounded-xl border border-white/10 shadow-2xl flex flex-col max-h-[80vh]">
+        <div class="flex items-center justify-between p-4 border-b border-white/5 shrink-0">
+          <h3 class="text-white font-bold flex items-center gap-2">
+            <i class="pi pi-box text-[#6f942e]"></i> Biblioteca de Blocos
+          </h3>
+          <button @click="isComponentModalOpen = false" class="text-slate-400 hover:text-white transition-colors w-8 h-8 flex items-center justify-center rounded bg-white/5 hover:bg-white/10">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        
+        <div class="p-4 overflow-y-auto custom-scrollbar flex-1">
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <button 
+              v-for="(comp, i) in availableComponents" 
+              :key="i"
+              @click="injectComponent(comp)"
+              class="flex flex-col items-center justify-center gap-3 p-4 bg-[#0a0f0d] border border-white/5 rounded-lg hover:border-[#6f942e]/50 hover:bg-[#6f942e]/10 transition-all text-slate-300 hover:text-[#6f942e] group"
+            >
+              <i :class="comp.icon || 'pi pi-th-large'" class="text-2xl group-hover:scale-110 transition-transform duration-300"></i>
+              <span class="text-xs font-bold font-mono tracking-wide">{{ comp.name || comp.type }}</span>
+            </button>
+            
+            <div v-if="availableComponents.length === 0" class="col-span-full py-8 text-center text-slate-500 text-sm">
+              Nenhum componente encontrado no catálogo.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -300,22 +383,15 @@ const actions = computed(() => [
 .cm-quote { color: #5c6370; font-style: italic; }
 .cm-list { color: #e06c75; }
 
-/* --- JSON SPECIFIC COLORS (Override ou Add-on) --- */
-/* Estes seletores dependem do parser JSON do CodeMirror 6 */
-
-/* Propriedades (Chaves) - Azul Ciano Brilhante */
+/* --- JSON SPECIFIC COLORS --- */
 .cm-json-property, .cm-propertyName { color: #56b6c2 !important; }
-
-/* Strings (Valores de Texto) - Verde Suave */
 .cm-json-string, .cm-string { color: #98c379 !important; }
-
-/* Números - Laranja */
 .cm-json-number, .cm-number { color: #d19a66 !important; }
-
-/* Booleanos e Null (Atoms) - Roxo/Magenta */
 .cm-json-atom, .cm-atom, .cm-keyword { color: #c678dd !important; }
-
-/* Pontuação (Chaves, Colchetes, Vírgulas) - Cinza Claro */
 .cm-punctuation { color: #abb2bf !important; }
 
+/* Custom Scrollbar pro Modal */
+.custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 </style>

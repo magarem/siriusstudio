@@ -43,6 +43,7 @@
     "js-yaml": "^4.1.1",
     "jsonwebtoken": "^9.0.3",
     "marked": "^17.0.1",
+    "md-editor-v3": "^6.4.2",
     "nuxt": "^4.2.2",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.4",
